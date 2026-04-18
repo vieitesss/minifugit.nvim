@@ -8,4 +8,6 @@ vim.pack.add({
     { src = vim.env.HOME .. '/personal/minifugit.nvim' },
 })
 
-require('minifugit')
+local mf = require('minifugit')
+
+vim.keymap.set('n', '<leader>gs', function() mf.status() end)

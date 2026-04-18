@@ -1,7 +1,9 @@
 local M = {}
 
-M.hello = function()
-    vim.print("hello")
+local state = require('minifugit.state')
+
+M.status = function()
+    state.open_win()
 end
 
 return M
