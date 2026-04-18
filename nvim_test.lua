@@ -9,5 +9,7 @@ vim.pack.add({
 })
 
 local mf = require('minifugit')
+local log = require('minifugit.log')
 
 vim.keymap.set('n', '<leader>gs', function() mf.status() end)
+vim.keymap.set('n', '<leader>l', function() log.open() end)

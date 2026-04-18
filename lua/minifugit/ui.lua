@@ -13,7 +13,7 @@ local ui = {
     _buf = -1,
     _buf_lines = {},
     open_win = function() end,
-    append_lines = function() end
+    append_lines = function() end,
 }
 
 local create_win = function()
@@ -22,7 +22,7 @@ local create_win = function()
 
     local width = math.max(math.floor(parent_width * 0.3), 20)
 
-    vim.cmd("botright " .. width .. "vsplit")
+    vim.cmd('botright ' .. width .. 'vsplit')
 
     local win = vim.api.nvim_get_current_win()
     local buf = vim.api.nvim_create_buf(true, true)
@@ -38,29 +38,59 @@ local create_win = function()
     return win
 end
 
+---@param lines string[]
+---@return string[]
+local function normalize_lines(lines)
+    local normalized = {}
+
+    for _, line in ipairs(lines) do
+        if line == '' then
+            table.insert(normalized, line)
+        else
+            vim.list_extend(normalized, vim.split(line, '\n', { plain = true }))
+        end
+    end
+
+    return normalized
+end
+
 ---@param lines string[] Array of lines to append to the window
 function ui.append_lines(lines)
-    if not vim.api.nvim_buf_is_valid(ui._buf) or
-        not vim.api.nvim_win_is_valid(ui._win) then
-        log.error("there isn't a window opened")
+    if
+        not vim.api.nvim_buf_is_valid(ui._buf)
+        or not vim.api.nvim_win_is_valid(ui._win)
+    then
+        log.error("imposible to append lines, there isn't a window opened")
         return
     end
 
-    vim.api.nvim_buf_set_lines(ui._buf, #ui._buf_lines, #ui._buf_lines, false, lines)
+    local normalized_lines = normalize_lines(lines)
 
-    for line in pairs(lines) do
+    vim.api.nvim_buf_set_lines(
+        ui._buf,
+        #ui._buf_lines,
+        #ui._buf_lines,
+        false,
+        normalized_lines
+    )
+
+    for _, line in ipairs(normalized_lines) do
         table.insert(ui._buf_lines, line)
     end
 end
 
 ---@return number The window id
 function ui.open_win()
-    if not vim.api.nvim_buf_is_valid(ui._buf) or
-        not vim.api.nvim_win_is_valid(ui._win) then
+    if
+        not vim.api.nvim_buf_is_valid(ui._buf)
+        or not vim.api.nvim_win_is_valid(ui._win)
+    then
         return create_win()
     end
 
-    log.info(string.format('reusing status window win=%d buf=%d', ui._win, ui._buf))
+    log.info(
+        string.format('reusing status window win=%d buf=%d', ui._win, ui._buf)
+    )
     vim.api.nvim_set_current_win(ui._win)
 
     return ui._win
