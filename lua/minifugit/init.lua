@@ -1,9 +1,9 @@
 local M = {}
 
-local state = require('minifugit.state')
+local ui = require('minifugit.ui')
 
 M.status = function()
-    state.open_win()
+    ui.open_win()
 end
 
 return M
