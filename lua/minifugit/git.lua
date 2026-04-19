@@ -75,17 +75,23 @@ end
 
 ---@param res GitResult
 local return_result = function(res)
-    if res.exit_code == 0 then
-        return vim.trim(res.output)
-    end
+    local value = res.exit_code == 0 and res.output or res.stderr
 
-    return vim.trim(res.stderr)
+    -- Preserve meaningful leading spaces in outputs like `git status --porcelain`.
+    return value:gsub('[\r\n]+$', '')
 end
 
 function git.branch()
     ensure_git()
 
     local out = git.run({ 'branch', '--show-current' })
+    return return_result(out)
+end
+
+function git.status()
+    ensure_git()
+
+    local out = git.run({ 'status', '--short' })
     return return_result(out)
 end
 
