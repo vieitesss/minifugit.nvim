@@ -12,7 +12,11 @@ M.status = function()
     local content = {}
 
     local branch = "HEAD: " .. git.branch()
+    local status = git.status()
+
     table.insert(content, branch)
+    table.insert(content, "")
+    table.insert(content, status)
 
     ui.append_lines(content)
 end
