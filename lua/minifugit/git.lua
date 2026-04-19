@@ -15,7 +15,7 @@ local log = require('minifugit.log')
 local ensure_git = function()
     local ok = vim.fn.executable('git')
 
-    if not ok == 0 then
+    if ok == 0 then
         log.error('`git` is not executable')
         vim.print('[minifugit] `git` is not executable')
     end
@@ -85,8 +85,14 @@ end
 function git.branch()
     ensure_git()
 
-    local res = git.run({ 'branch', '--show-current' })
-    return return_result(res)
+    local info = "HEAD: "
+
+    local out = git.run({ 'branch', '--show-current' })
+    local res = return_result(out)
+
+    info = info .. res
+
+    return info
 end
 
 return git
