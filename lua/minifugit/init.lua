@@ -10,7 +10,9 @@ M.status = function()
     ui.open_win()
 
     local content = {}
-    table.insert(content, git.branch())
+
+    local branch = "HEAD: " .. git.branch()
+    table.insert(content, branch)
 
     ui.append_lines(content)
 end

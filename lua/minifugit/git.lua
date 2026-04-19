@@ -85,14 +85,8 @@ end
 function git.branch()
     ensure_git()
 
-    local info = "HEAD: "
-
     local out = git.run({ 'branch', '--show-current' })
-    local res = return_result(out)
-
-    info = info .. res
-
-    return info
+    return return_result(out)
 end
 
 return git
