@@ -79,8 +79,8 @@ function highlight.ensure()
     )
     set_foreground_highlight(
         highlight.groups.untracked,
-        { 'Changed', 'DiagnosticWarn', 'WarningMsg' },
-        0xE5C07B
+        { 'DiagnosticInfo', 'Directory', 'Identifier' },
+        0x61AFEF
     )
     set_foreground_highlight(highlight.groups.ignored, { 'Comment' }, 0x5C6370)
     set_foreground_highlight(
