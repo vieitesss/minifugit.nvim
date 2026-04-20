@@ -6,6 +6,16 @@
 ---@field append_lines function Appends the given lines into the window, if created
 
 local log = require('minifugit.log')
+local namespace = vim.api.nvim_create_namespace('minifugit.ui')
+
+---@class UILineHighlight
+---@field group string
+---@field start_col integer
+---@field end_col integer
+
+---@class UILine
+---@field text string
+---@field highlights UILineHighlight[]
 
 ---@type UI
 local ui = {
@@ -38,23 +48,32 @@ local create_win = function()
     return win
 end
 
----@param lines string[]
----@return string[]
+---@param lines (string|UILine)[]
+---@return UILine[]
 local function normalize_lines(lines)
     local normalized = {}
 
     for _, line in ipairs(lines) do
-        if line == '' then
-            table.insert(normalized, line)
+        if type(line) == 'string' then
+            if line == '' then
+                table.insert(normalized, { text = line, highlights = {} })
+            else
+                for _, value in ipairs(vim.split(line, '\n', { plain = true })) do
+                    table.insert(normalized, { text = value, highlights = {} })
+                end
+            end
         else
-            vim.list_extend(normalized, vim.split(line, '\n', { plain = true }))
+            table.insert(normalized, {
+                text = line.text,
+                highlights = line.highlights or {},
+            })
         end
     end
 
     return normalized
 end
 
----@param lines string[] Array of lines to append to the window
+---@param lines (string|UILine)[] Array of lines to append to the window
 function ui.append_lines(lines)
     if
         not vim.api.nvim_buf_is_valid(ui._buf)
@@ -71,11 +90,26 @@ function ui.append_lines(lines)
         #ui._buf_lines,
         #ui._buf_lines,
         false,
-        normalized_lines
+        vim.tbl_map(function(line) return line.text end, normalized_lines)
     )
 
-    for _, line in ipairs(normalized_lines) do
-        table.insert(ui._buf_lines, line)
+    local start_line = #ui._buf_lines
+
+    for index, line in ipairs(normalized_lines) do
+        local line_number = start_line + index - 1
+
+        for _, highlight in ipairs(line.highlights) do
+            vim.api.nvim_buf_add_highlight(
+                ui._buf,
+                namespace,
+                highlight.group,
+                line_number,
+                highlight.start_col,
+                highlight.end_col
+            )
+        end
+
+        table.insert(ui._buf_lines, line.text)
     end
 end
 
