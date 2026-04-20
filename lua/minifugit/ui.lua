@@ -4,19 +4,9 @@
 ---@field _buf_lines string[] The lines written on the buffer
 ---@field open_win function Opens a new window or enters one already created
 ---@field set_lines function Replaces the window contents, if created
----@field append_lines function Appends the given lines into the window, if created
 
 local log = require('minifugit.log')
-local namespace = vim.api.nvim_create_namespace('minifugit.ui')
-
----@class UILineHighlight
----@field group string
----@field start_col integer
----@field end_col integer
-
----@class UILine
----@field text string
----@field highlights UILineHighlight[]
+local highlight = require('minifugit.highlight')
 
 ---@type UI
 local ui = {
@@ -25,7 +15,6 @@ local ui = {
     _buf_lines = {},
     open_win = function() end,
     set_lines = function() end,
-    append_lines = function() end,
 }
 
 local create_win = function()
@@ -51,25 +40,22 @@ local create_win = function()
     return win
 end
 
----@param lines (string|UILine)[]
----@return UILine[]
+---@param lines (string|MiniFugitLine)[]
+---@return MiniFugitLine[]
 local function normalize_lines(lines)
     local normalized = {}
 
     for _, line in ipairs(lines) do
         if type(line) == 'string' then
             if line == '' then
-                table.insert(normalized, { text = line, highlights = {} })
+                table.insert(normalized, highlight.plain_line(line))
             else
                 for _, value in ipairs(vim.split(line, '\n', { plain = true })) do
-                    table.insert(normalized, { text = value, highlights = {} })
+                    table.insert(normalized, highlight.plain_line(value))
                 end
             end
         else
-            table.insert(normalized, {
-                text = line.text,
-                highlights = line.highlights or {},
-            })
+            table.insert(normalized, highlight.line(line.text, line.highlights))
         end
     end
 
@@ -89,7 +75,7 @@ local function ensure_open_buffer()
     return true
 end
 
----@param lines (string|UILine)[] Array of lines to replace in the window
+---@param lines (string|MiniFugitLine)[] Array of lines to replace in the window
 function ui.set_lines(lines)
     if not ensure_open_buffer() then
         return
@@ -97,7 +83,6 @@ function ui.set_lines(lines)
 
     local normalized_lines = normalize_lines(lines)
 
-    vim.api.nvim_buf_clear_namespace(ui._buf, namespace, 0, -1)
     vim.api.nvim_buf_set_lines(
         ui._buf,
         0,
@@ -110,39 +95,11 @@ function ui.set_lines(lines)
 
     ui._buf_lines = {}
 
-    for index, line in ipairs(normalized_lines) do
-        local line_number = index - 1
-
-        for _, highlight in ipairs(line.highlights) do
-            vim.api.nvim_buf_set_extmark(
-                ui._buf,
-                namespace,
-                line_number,
-                highlight.start_col,
-                {
-                    end_col = highlight.end_col,
-                    hl_group = highlight.group,
-                }
-            )
-        end
-
+    for _, line in ipairs(normalized_lines) do
         table.insert(ui._buf_lines, line.text)
     end
-end
 
----@param lines (string|UILine)[] Array of lines to append to the window
-function ui.append_lines(lines)
-    if not ensure_open_buffer() then
-        return
-    end
-
-    local existing_lines = vim.api.nvim_buf_get_lines(ui._buf, 0, -1, false)
-    local content = {}
-
-    vim.list_extend(content, existing_lines)
-    vim.list_extend(content, lines)
-
-    ui.set_lines(content)
+    highlight.apply(ui._buf, normalized_lines)
 end
 
 ---@return number The window id
