@@ -35,23 +35,52 @@ local conflict_statuses = {
     UU = true,
 }
 
+---@param names string[]
+---@return vim.api.keyset.get_hl_info
+local get_highlight = function(names)
+    for _, name in ipairs(names) do
+        local ok, highlight = pcall(vim.api.nvim_get_hl, 0, {
+            name = name,
+            link = false,
+        })
+
+        if ok and next(highlight) ~= nil then
+            return highlight
+        end
+    end
+
+    return {}
+end
+
+---@param target string
+---@param sources string[]
+---@param fallback integer
+local set_foreground_highlight = function(target, sources, fallback)
+    local source = get_highlight(sources)
+    local foreground = source.fg or fallback
+
+    vim.api.nvim_set_hl(0, target, {
+        default = true,
+        fg = foreground,
+        bold = source.bold,
+        italic = source.italic,
+        underline = source.underline,
+    })
+end
+
 function git_status.ensure_highlights()
-    vim.api.nvim_set_hl(0, status_groups.staged, { default = true, link = 'DiffAdd' })
-    vim.api.nvim_set_hl(
-        0,
-        status_groups.unstaged,
-        { default = true, link = 'DiffDelete' }
-    )
-    vim.api.nvim_set_hl(
-        0,
+    set_foreground_highlight(status_groups.staged, { 'Added', 'String' }, 0x98C379)
+    set_foreground_highlight(status_groups.unstaged, { 'Removed', 'Error' }, 0xE06C75)
+    set_foreground_highlight(
         status_groups.untracked,
-        { default = true, link = 'DiagnosticWarn' }
+        { 'Changed', 'DiagnosticWarn', 'WarningMsg' },
+        0xE5C07B
     )
-    vim.api.nvim_set_hl(0, status_groups.ignored, { default = true, link = 'Comment' })
-    vim.api.nvim_set_hl(
-        0,
+    set_foreground_highlight(status_groups.ignored, { 'Comment' }, 0x5C6370)
+    set_foreground_highlight(
         status_groups.conflict,
-        { default = true, link = 'DiagnosticError' }
+        { 'DiagnosticError', 'ErrorMsg', 'Error' },
+        0xE06C75
     )
 end
 
