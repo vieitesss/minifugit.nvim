@@ -20,7 +20,7 @@ M.status = function()
     table.insert(content, "")
     vim.list_extend(content, status_lines)
 
-    ui.append_lines(content)
+    ui.set_lines(content)
 end
 
 return M

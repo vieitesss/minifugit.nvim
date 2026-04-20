@@ -3,6 +3,7 @@
 ---@field _buf number The buffer id
 ---@field _buf_lines string[] The lines written on the buffer
 ---@field open_win function Opens a new window or enters one already created
+---@field set_lines function Replaces the window contents, if created
 ---@field append_lines function Appends the given lines into the window, if created
 
 local log = require('minifugit.log')
@@ -23,6 +24,7 @@ local ui = {
     _buf = -1,
     _buf_lines = {},
     open_win = function() end,
+    set_lines = function() end,
     append_lines = function() end,
 }
 
@@ -42,6 +44,7 @@ local create_win = function()
 
     ui._win = win
     ui._buf = buf
+    ui._buf_lines = {}
 
     log.info(string.format('created status window win=%d buf=%d', win, buf))
 
@@ -73,44 +76,73 @@ local function normalize_lines(lines)
     return normalized
 end
 
----@param lines (string|UILine)[] Array of lines to append to the window
-function ui.append_lines(lines)
+---@return boolean
+local function ensure_open_buffer()
     if
         not vim.api.nvim_buf_is_valid(ui._buf)
         or not vim.api.nvim_win_is_valid(ui._win)
     then
         log.error("imposible to append lines, there isn't a window opened")
+        return false
+    end
+
+    return true
+end
+
+---@param lines (string|UILine)[] Array of lines to replace in the window
+function ui.set_lines(lines)
+    if not ensure_open_buffer() then
         return
     end
 
     local normalized_lines = normalize_lines(lines)
 
+    vim.api.nvim_buf_clear_namespace(ui._buf, namespace, 0, -1)
     vim.api.nvim_buf_set_lines(
         ui._buf,
-        #ui._buf_lines,
-        #ui._buf_lines,
+        0,
+        -1,
         false,
-        vim.tbl_map(function(line) return line.text end, normalized_lines)
+        vim.tbl_map(function(line)
+            return line.text
+        end, normalized_lines)
     )
 
-    local start_line = #ui._buf_lines
+    ui._buf_lines = {}
 
     for index, line in ipairs(normalized_lines) do
-        local line_number = start_line + index - 1
+        local line_number = index - 1
 
         for _, highlight in ipairs(line.highlights) do
-            vim.api.nvim_buf_add_highlight(
+            vim.api.nvim_buf_set_extmark(
                 ui._buf,
                 namespace,
-                highlight.group,
                 line_number,
                 highlight.start_col,
-                highlight.end_col
+                {
+                    end_col = highlight.end_col,
+                    hl_group = highlight.group,
+                }
             )
         end
 
         table.insert(ui._buf_lines, line.text)
     end
+end
+
+---@param lines (string|UILine)[] Array of lines to append to the window
+function ui.append_lines(lines)
+    if not ensure_open_buffer() then
+        return
+    end
+
+    local existing_lines = vim.api.nvim_buf_get_lines(ui._buf, 0, -1, false)
+    local content = {}
+
+    vim.list_extend(content, existing_lines)
+    vim.list_extend(content, lines)
+
+    ui.set_lines(content)
 end
 
 ---@return number The window id
