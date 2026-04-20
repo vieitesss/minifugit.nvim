@@ -63,7 +63,7 @@ local function normalize_lines(lines)
 end
 
 ---@return boolean
-local function ensure_open_buffer()
+local ensure_open_buffer = function()
     if
         not vim.api.nvim_buf_is_valid(ui._buf)
         or not vim.api.nvim_win_is_valid(ui._win)

@@ -3,7 +3,7 @@ local M = {}
 local log_dir = vim.fn.stdpath('state') .. '/minifugit'
 local log_file = log_dir .. '/minifugit.log'
 
-local function ensure_dir()
+local ensure_dir = function()
     vim.fn.mkdir(log_dir, 'p')
 end
 
