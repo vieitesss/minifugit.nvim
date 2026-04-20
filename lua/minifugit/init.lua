@@ -19,7 +19,7 @@ M.status = function()
 
     table.insert(content, head_line)
     if #status_lines > 0 then
-        table.insert(content, "")
+        table.insert(content, '')
         vim.list_extend(content, status_lines)
     end
 

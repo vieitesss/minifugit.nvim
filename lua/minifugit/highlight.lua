@@ -67,8 +67,16 @@ local function set_foreground_highlight(target, sources, fallback)
 end
 
 function highlight.ensure()
-    set_foreground_highlight(highlight.groups.staged, { 'Added', 'String' }, 0x98C379)
-    set_foreground_highlight(highlight.groups.unstaged, { 'Removed', 'Error' }, 0xE06C75)
+    set_foreground_highlight(
+        highlight.groups.staged,
+        { 'Added', 'String' },
+        0x98C379
+    )
+    set_foreground_highlight(
+        highlight.groups.unstaged,
+        { 'Removed', 'Error' },
+        0xE06C75
+    )
     set_foreground_highlight(
         highlight.groups.untracked,
         { 'Changed', 'DiagnosticWarn', 'WarningMsg' },
@@ -80,7 +88,11 @@ function highlight.ensure()
         { 'DiagnosticError', 'ErrorMsg', 'Error' },
         0xE06C75
     )
-    set_foreground_highlight(highlight.groups.head, { 'Identifier', 'Keyword' }, 0x61AFEF)
+    set_foreground_highlight(
+        highlight.groups.head,
+        { 'Identifier', 'Keyword' },
+        0x61AFEF
+    )
 end
 
 ---@param text string
@@ -124,10 +136,16 @@ function highlight.apply(buf, lines)
         local line_number = index - 1
 
         for _, range in ipairs(line.highlights) do
-            vim.api.nvim_buf_set_extmark(buf, namespace, line_number, range.start_col, {
-                end_col = range.end_col,
-                hl_group = range.group,
-            })
+            vim.api.nvim_buf_set_extmark(
+                buf,
+                namespace,
+                line_number,
+                range.start_col,
+                {
+                    end_col = range.end_col,
+                    hl_group = range.group,
+                }
+            )
         end
     end
 end

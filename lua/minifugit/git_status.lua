@@ -77,8 +77,16 @@ function git_status.lines(status)
             local unstage = line:sub(2, 2)
             local formatted_line = highlight.plain_line(line)
 
-            highlight.add(formatted_line, status_group_for(stage, unstage, true), 0)
-            highlight.add(formatted_line, status_group_for(stage, unstage, false), 1)
+            highlight.add(
+                formatted_line,
+                status_group_for(stage, unstage, true),
+                0
+            )
+            highlight.add(
+                formatted_line,
+                status_group_for(stage, unstage, false),
+                1
+            )
 
             table.insert(formatted_lines, formatted_line)
         end

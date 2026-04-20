@@ -1,7 +1,7 @@
 local M = {}
 
 local check_git_installed = function()
-    if vim.fn.executable("git") then
+    if vim.fn.executable('git') then
         vim.health.ok('`git` is installed')
     else
         vim.health.error('`git` is not installed')
@@ -9,10 +9,10 @@ local check_git_installed = function()
 end
 
 local check_nvim_version = function()
-    if vim.version.ge(vim.version(), "0.10") then
-        vim.health.ok("Version v0.10+")
+    if vim.version.ge(vim.version(), '0.10') then
+        vim.health.ok('Version v0.10+')
     else
-        vim.health.error("Version should be v0.10+")
+        vim.health.error('Version should be v0.10+')
     end
 end
 

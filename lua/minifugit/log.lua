@@ -33,12 +33,18 @@ end
 ---@alias log_func function(string)
 
 ---@type log_func
-function M.info(msg) write('INFO', msg) end
+function M.info(msg)
+    write('INFO', msg)
+end
 
 ---@type log_func
-function M.debug(msg) write('DEBUG', msg) end
+function M.debug(msg)
+    write('DEBUG', msg)
+end
 
 ---@type log_func
-function M.error(msg) write('ERROR', msg) end
+function M.error(msg)
+    write('ERROR', msg)
+end
 
 return M
