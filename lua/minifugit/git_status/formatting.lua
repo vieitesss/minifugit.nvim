@@ -1,6 +1,6 @@
 ---@class GitStatusFormatting
 ---@field head_line function Returns highlighted branch line
----@field lines function Formats raw git status output into highlighted lines
+---@field lines function Formats parsed git status entries into highlighted lines
 
 local highlight = require('minifugit.highlight')
 
@@ -19,6 +19,16 @@ local conflict_statuses = {
     UD = true,
     UU = true,
 }
+
+---@param entry GitStatusEntry
+---@return string
+local function entry_text(entry)
+    if entry.orig_path ~= nil then
+        return entry.staged .. entry.unstaged .. ' ' .. entry.orig_path .. ' -> ' .. entry.path
+    end
+
+    return entry.staged .. entry.unstaged .. ' ' .. entry.path
+end
 
 ---@param stage string
 ---@param unstage string
@@ -63,33 +73,26 @@ function gsf.head_line(branch)
     return line
 end
 
----@param status string
+---@param entries GitStatusEntry[]
 ---@return MiniFugitLine[]
-function gsf.lines(status)
-    local lines = vim.split(status, '\n', { plain = true, trimempty = true })
+function gsf.lines(entries)
     local formatted_lines = {}
 
-    for _, line in ipairs(lines) do
-        if not line:match('^.. ') then
-            table.insert(formatted_lines, highlight.plain_line(line))
-        else
-            local stage = line:sub(1, 1)
-            local unstage = line:sub(2, 2)
-            local formatted_line = highlight.plain_line(line)
+    for _, entry in ipairs(entries) do
+        local formatted_line = highlight.line(entry_text(entry), nil, entry)
 
-            highlight.add(
-                formatted_line,
-                status_group_for(stage, unstage, true),
-                0
-            )
-            highlight.add(
-                formatted_line,
-                status_group_for(stage, unstage, false),
-                1
-            )
+        highlight.add(
+            formatted_line,
+            status_group_for(entry.staged, entry.unstaged, true),
+            0
+        )
+        highlight.add(
+            formatted_line,
+            status_group_for(entry.staged, entry.unstaged, false),
+            1
+        )
 
-            table.insert(formatted_lines, formatted_line)
-        end
+        table.insert(formatted_lines, formatted_line)
     end
 
     return formatted_lines
