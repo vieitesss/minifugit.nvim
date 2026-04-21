@@ -20,14 +20,24 @@ end
 local write = function(level, msg)
     ensure_dir()
 
+    local text = tostring(msg)
+    text = text:gsub('\0', '\\0')
+
     local line = string.format(
         '[%s] [%s] %s',
         os.date('%Y-%m-%d %H:%M:%S'),
         level,
-        tostring(msg)
+        text
     )
 
-    vim.fn.writefile({ line }, log_file, 'a')
+    local file = io.open(log_file, 'a')
+
+    if file == nil then
+        return
+    end
+
+    file:write(line .. '\n')
+    file:close()
 end
 
 ---@alias log_func function(string)
