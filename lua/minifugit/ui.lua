@@ -27,7 +27,7 @@ local create_win = function()
 
     local win = vim.api.nvim_get_current_win()
     local buf = vim.api.nvim_create_buf(true, true)
-    vim.api.nvim_buf_set_name(buf, "Minifugit")
+    vim.api.nvim_buf_set_name(buf, 'Minifugit')
 
     vim.api.nvim_win_set_buf(win, buf)
     vim.api.nvim_set_current_win(win)
@@ -109,6 +109,9 @@ function ui.open_win()
         not vim.api.nvim_buf_is_valid(ui._buf)
         or not vim.api.nvim_win_is_valid(ui._win)
     then
+        if ui._buf ~= -1 then
+            vim.api.nvim_buf_delete(ui._buf, { unload = true })
+        end
         return create_win()
     end
 
