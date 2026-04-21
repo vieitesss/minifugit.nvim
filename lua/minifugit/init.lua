@@ -5,12 +5,18 @@ local log = require('minifugit.log')
 local ui = require('minifugit.ui')
 local git = require('minifugit.git')
 local gsf = require('minifugit.git_status.formatting')
+local keymaps = require('minifugit.git_status.keymaps')
 
 M.status = function()
     log.info('status command called')
 
-    ui.open_win()
+    ---@type UIBufWin
+    local info = ui.open_win()
+
+    log.info(string.format("Window opened win=%d buf=%d", info.win, info.buf))
+
     highlight.ensure()
+    keymaps.apply(info.buf)
 
     local content = {}
 
