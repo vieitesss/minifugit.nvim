@@ -4,7 +4,7 @@ local highlight = require('minifugit.highlight')
 local log = require('minifugit.log')
 local ui = require('minifugit.ui')
 local git = require('minifugit.git')
-local git_status = require('minifugit.git_status')
+local gsf = require('minifugit.git_status.formatting')
 
 M.status = function()
     log.info('status command called')
@@ -14,8 +14,8 @@ M.status = function()
 
     local content = {}
 
-    local head_line = git_status.head_line(git.branch())
-    local status_lines = git_status.lines(git.status())
+    local head_line = gsf.head_line(git.branch())
+    local status_lines = gsf.lines(git.status())
 
     table.insert(content, head_line)
     if #status_lines > 0 then

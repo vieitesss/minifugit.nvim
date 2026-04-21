@@ -1,11 +1,11 @@
----@class GitStatus
+---@class GitStatusFormatting
 ---@field head_line function Returns highlighted branch line
 ---@field lines function Formats raw git status output into highlighted lines
 
 local highlight = require('minifugit.highlight')
 
----@type GitStatus
-local git_status = {
+---@type GitStatusFormatting
+local gsf = {
     head_line = function() end,
     lines = function() end,
 }
@@ -52,7 +52,7 @@ end
 
 ---@param branch string
 ---@return MiniFugitLine
-function git_status.head_line(branch)
+function gsf.head_line(branch)
     local prefix = 'HEAD: '
     local text = prefix .. branch
     local line = highlight.plain_line(text)
@@ -65,7 +65,7 @@ end
 
 ---@param status string
 ---@return MiniFugitLine[]
-function git_status.lines(status)
+function gsf.lines(status)
     local lines = vim.split(status, '\n', { plain = true, trimempty = true })
     local formatted_lines = {}
 
@@ -95,4 +95,4 @@ function git_status.lines(status)
     return formatted_lines
 end
 
-return git_status
+return gsf
