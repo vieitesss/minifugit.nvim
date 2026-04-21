@@ -171,7 +171,7 @@ function ui.focus_edit_target(source_win)
         return
     end
 
-    vim.cmd('belowright new')
+    vim.cmd('aboveleft vnew')
 end
 
 ---@param lines (string|MiniFugitLine)[] Array of lines to replace in the window
