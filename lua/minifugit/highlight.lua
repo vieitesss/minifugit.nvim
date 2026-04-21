@@ -6,6 +6,7 @@
 ---@class MiniFugitLine
 ---@field text string
 ---@field highlights MiniFugitHighlight[]
+---@field data any?
 
 ---@class MiniFugitHighlightModule
 ---@field groups table<string, string>
@@ -97,11 +98,13 @@ end
 
 ---@param text string
 ---@param highlights MiniFugitHighlight[]?
+---@param data any?
 ---@return MiniFugitLine
-function highlight.line(text, highlights)
+function highlight.line(text, highlights, data)
     return {
         text = text,
         highlights = highlights or {},
+        data = data,
     }
 end
 
