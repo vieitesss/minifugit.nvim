@@ -3,6 +3,12 @@
 ---@field branch function Gets the current repository branch
 ---@field run function Executes a git command
 
+---@class GitStatusEntry
+---@field staged string
+---@field unstaged string
+---@field path string
+---@field orig_path string?
+
 ---@type Git
 local git = {
     status = function() end,
@@ -11,6 +17,62 @@ local git = {
 }
 
 local log = require('minifugit.log')
+
+---@param output string
+---@param start integer
+---@return string?, integer?
+local function read_nul_field(output, start)
+    local stop = output:find('\0', start, true)
+
+    if stop == nil then
+        return nil, nil
+    end
+
+    return output:sub(start, stop - 1), stop + 1
+end
+
+---@param staged string
+---@param unstaged string
+---@return boolean
+local function is_rename_or_copy(staged, unstaged)
+    return staged == 'R' or staged == 'C' or unstaged == 'R' or unstaged == 'C'
+end
+
+---@param output string
+---@return GitStatusEntry[]
+local function parse_status(output)
+    local entries = {}
+    local index = 1
+
+    while index <= #output do
+        local record
+        record, index = read_nul_field(output, index)
+
+        if record == nil then
+            break
+        end
+
+        if record ~= '' then
+            local staged = record:sub(1, 1)
+            local unstaged = record:sub(2, 2)
+
+            ---@type GitStatusEntry
+            local entry = {
+                staged = staged,
+                unstaged = unstaged,
+                path = record:sub(4),
+            }
+
+            if is_rename_or_copy(staged, unstaged) then
+                entry.orig_path, index = read_nul_field(output, index)
+            end
+
+            table.insert(entries, entry)
+        end
+    end
+
+    return entries
+end
 
 local ensure_git = function()
     local ok = vim.fn.executable('git')
@@ -91,12 +153,17 @@ function git.branch()
     return return_result(out)
 end
 
----@return string
+---@return GitStatusEntry[]
 function git.status()
     ensure_git()
 
-    local out = git.run({ '-c', 'color.status=false', 'status', '--short' })
-    return return_result(out)
+    local out = git.run({ 'status', '--porcelain=v1', '-z' })
+
+    if out.exit_code ~= 0 then
+        return {}
+    end
+
+    return parse_status(out.output or '')
 end
 
 return git
