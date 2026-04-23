@@ -21,7 +21,6 @@ local write = function(level, msg)
     ensure_dir()
 
     local text = tostring(msg)
-    text = text:gsub('\0', '\\0')
 
     local line = string.format(
         '[%s] [%s] %s',
