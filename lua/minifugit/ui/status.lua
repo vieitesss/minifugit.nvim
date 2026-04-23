@@ -5,6 +5,7 @@
 ---@field open_win function
 ---@field create_win function
 ---@field get_win function
+---@field get_buf function
 ---@field get_line function
 ---@field set_lines function
 
@@ -20,10 +21,12 @@ local ui_status = {
     open_win = function() end,
     create_win = function() end,
     get_win = function() end,
+    get_buf = function() end,
     get_line = function() end,
     set_lines = function() end,
 }
 
+---@return UIBufWin
 local function create_win()
     local parent_win = vim.api.nvim_get_current_win()
     local parent_width = vim.api.nvim_win_get_width(parent_win)
@@ -33,17 +36,22 @@ local function create_win()
     vim.cmd('botright ' .. width .. 'vsplit')
 
     local win = vim.api.nvim_get_current_win()
-    local buf = vim.api.nvim_create_buf(true, true)
-    vim.api.nvim_buf_set_name(buf, 'Minifugit')
+    local buf = ui_status._buf
+
+    if buf == -1 then
+        buf = vim.api.nvim_create_buf(true, true)
+        vim.api.nvim_buf_set_name(buf, 'Minifugit')
+    end
 
     vim.api.nvim_win_set_buf(win, buf)
     vim.api.nvim_set_current_win(win)
 
-    ui_status._win = win
-    ui_status._buf = buf
-    ui_status._lines = {}
-
     log.info(string.format('created status window win=%d buf=%d', win, buf))
+
+    return {
+        win = win,
+        buf = buf,
+    }
 end
 
 ---@param lines (string|MiniFugitLine)[]
@@ -82,6 +90,11 @@ function ui_status.get_win()
     return ui_status._win
 end
 
+---@return integer
+function ui_status.get_buf()
+    return ui_status._buf
+end
+
 ---@return UIBufWin
 function ui_status.open_win()
     if
@@ -92,7 +105,11 @@ function ui_status.open_win()
             ui.close_win()
         end
 
-        create_win()
+        local bufwin = create_win()
+
+        ui_status._buf = bufwin.buf
+        ui_status._win = bufwin.win
+        ui_status._lines = {}
 
         return {
             buf = ui_status._buf,
