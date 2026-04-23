@@ -1,5 +1,6 @@
 ---@class Git
 ---@field status function Gets the current status
+---@field diff function Gets the current status
 ---@field branch function Gets the current repository branch
 ---@field run function Executes a git command
 
@@ -14,6 +15,7 @@ local git = {
     status = function() end,
     branch = function() end,
     run = function() end,
+    diff = function() end,
 }
 
 local log = require('minifugit.log')
@@ -165,6 +167,31 @@ function git.status()
     end
 
     return parse_status(out.output or '')
+end
+
+---@param diff string?
+---@return string[]
+local function parse_diff(diff)
+    if diff == '' or diff == nil then
+        return {}
+    end
+
+    return vim.split(diff, "\n", {plain=true})
+end
+
+---@param file string
+---@return string[]
+function git.diff(file)
+    ensure_git()
+
+    ---@type GitResult
+    local res = git.run({ 'diff', 'HEAD', file })
+
+    if res.exit_code ~= 0 then
+        return {}
+    end
+
+    return parse_diff(res.output)
 end
 
 return git
