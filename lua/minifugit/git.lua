@@ -42,13 +42,14 @@ end
 ---@return GitStatusEntry[]
 local function parse_status(output)
     local entries = {}
-    local index = 1
+    local index
+    index = 1
 
     while index <= #output do
         local record
         record, index = read_nul_field(output, index)
 
-        if record == nil then
+        if record == nil or index == nil then
             break
         end
 

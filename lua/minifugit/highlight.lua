@@ -6,7 +6,7 @@
 ---@class MiniFugitLine
 ---@field text string
 ---@field highlights MiniFugitHighlight[]
----@field data any?
+---@field data GitStatusEntry?
 
 ---@class MiniFugitHighlightModule
 ---@field groups table<string, string>
@@ -98,7 +98,7 @@ end
 
 ---@param text string
 ---@param highlights MiniFugitHighlight[]?
----@param data any?
+---@param data GitStatusEntry?
 ---@return MiniFugitLine
 function highlight.line(text, highlights, data)
     return {

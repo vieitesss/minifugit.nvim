@@ -49,7 +49,11 @@ local function is_usable_edit_target(win, source_win)
         return false
     end
 
-    if vim.wo[win].previewwindow or vim.wo[win].winfixwidth or (ok and winfixbuf) then
+    if
+        vim.wo[win].previewwindow
+        or vim.wo[win].winfixwidth
+        or (ok and winfixbuf)
+    then
         return false
     end
 
@@ -57,7 +61,12 @@ local function is_usable_edit_target(win, source_win)
         return false
     end
 
-    if buftype == 'nofile' or buftype == 'help' or buftype == 'quickfix' or buftype == 'terminal' then
+    if
+        buftype == 'nofile'
+        or buftype == 'help'
+        or buftype == 'quickfix'
+        or buftype == 'terminal'
+    then
         return false
     end
 
@@ -77,7 +86,11 @@ local function pick_edit_target(source_win)
         return previous_win
     end
 
-    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(vim.api.nvim_get_current_tabpage())) do
+    for _, win in
+        ipairs(
+            vim.api.nvim_tabpage_list_wins(vim.api.nvim_get_current_tabpage())
+        )
+    do
         if is_usable_edit_target(win, source_win) then
             return win
         end
@@ -141,7 +154,10 @@ local function normalize_lines(lines)
                 end
             end
         else
-            table.insert(normalized, highlight.line(line.text, line.highlights, line.data))
+            table.insert(
+                normalized,
+                highlight.line(line.text, line.highlights, line.data)
+            )
         end
     end
 
@@ -171,6 +187,7 @@ function ui.focus_edit_target(source_win)
         return
     end
 
+    -- Create a new window by default, keeping the Minifugit window on the right
     vim.cmd('aboveleft vnew')
 end
 
