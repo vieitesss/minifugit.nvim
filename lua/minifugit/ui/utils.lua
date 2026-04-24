@@ -3,6 +3,7 @@
 ---@field ensure_buf function Returns whether a buffer is valid or not
 ---@field ensure_win function Returns whether a window is valid or not
 ---@field focus_edit_target function Focus previous usable window or create one
+---@field set_lines function Populate all the buffer with the lines
 
 ---@alias UIBufWin {buf:integer, win:integer}
 
@@ -14,6 +15,7 @@ local ui = {
     ensure_buf = function() end,
     ensure_win = function() end,
     focus_edit_target = function() end,
+    set_lines = function() end,
 }
 
 ---@param win integer
@@ -126,6 +128,30 @@ function ui.focus_edit_target(source_win)
 
     -- Create a new window by default, keeping the Minifugit window on the right
     vim.cmd('aboveleft vnew')
+end
+
+---@param lines (string|MiniFugitLine)[] Array of lines to replace in the window
+---@param buf number In which buffer to set the lines
+function ui.set_lines(lines, buf)
+    if not ui.ensure_buf(buf) then
+        log.error('Cannot set lines into buf=' .. buf)
+        return
+    end
+
+    if #lines == 0 then
+        return
+    end
+
+    if type(lines[1]) == 'string' then
+        log.debug('setting strings')
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    else
+        lines = vim.tbl_map(function(line)
+            return line.text
+        end, lines)
+        log.debug('setting minufugit lines')
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    end
 end
 
 return ui

@@ -59,10 +59,11 @@ function gsa.diff_file()
 
     local diff_buf = vim.api.nvim_create_buf(true, false)
     vim.api.nvim_buf_set_name(diff_buf, 'Minifugit diff')
-    uis.set_lines(diff, diff_buf)
+    ui.set_lines(diff, diff_buf)
 
     ui.focus_edit_target(status_win)
     vim.api.nvim_win_set_buf(0, diff_buf)
 end
+
 
 return gsa

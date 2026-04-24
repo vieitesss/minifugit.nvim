@@ -133,28 +133,13 @@ function ui_status.open_win()
 end
 
 ---@param lines (string|MiniFugitLine)[] Array of lines to replace in the window
----@param buf number? In which buffer to set the lines
-function ui_status.set_lines(lines, buf)
-    local b = buf or ui_status._buf
-    if not ui.ensure_buf(b) then
-        return
-    end
-
+function ui_status.set_lines(lines)
+    local b = ui_status._buf
     local normalized_lines = normalize_lines(lines)
 
-    vim.api.nvim_buf_set_lines(
-        b,
-        0,
-        -1,
-        false,
-        vim.tbl_map(function(line)
-            return line.text
-        end, normalized_lines)
-    )
-
-    ui_status._lines = normalized_lines
-
+    ui.set_lines(normalized_lines, b)
     highlight.apply(ui_status._buf, normalized_lines)
+    ui_status._lines = normalized_lines
 end
 
 return ui_status
