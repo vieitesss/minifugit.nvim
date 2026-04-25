@@ -1,14 +1,25 @@
-local M = {}
+---@class Minifugit
+---@field gsw GitStatusWindow?
+local M = {
+    gsw = nil,
+}
 
 local log = require('minifugit.log')
 local GitStatusWindow = require('minifugit.ui.status')
 
-M.status = function()
+function M.status()
     log.info('status command called')
 
-    local gsw = GitStatusWindow.new()
+    if M.gsw then
+        M.gsw:show()
+    else
+        local gsw = GitStatusWindow.new()
+        M.gsw = gsw
+    end
 
-    log.info(string.format("Window opened win=%d buf=%d", gsw.win, gsw.buf.id))
+    log.info(
+        string.format('Window opened win=%d buf=%d', M.gsw.win, M.gsw.buf.id)
+    )
 end
 
 return M

@@ -1,3 +1,14 @@
+local ui_utils = {}
+
+---@param text string
+---@return string[]
+function ui_utils.string_to_lines(text)
+    return vim.split(text, '\n', { plain = true })
+end
+
+return ui_utils
+
+
 -- ---@class UI
 -- ---@field close_win function Closes the window and deletes the buffer
 -- ---@field ensure_buf function Returns whether a buffer is valid or not

@@ -1,6 +1,7 @@
 local Buffer = require('minifugit.ui.buffer')
 local Highlight = require('minifugit.ui.highlight')
 local log = require('minifugit.log')
+local git = require('minifugit.git')
 
 ---@class GitStatusWindow
 ---@field buf Buffer
@@ -98,6 +99,20 @@ function GitStatusWindow:ensure_keymaps()
     )
 end
 
+function GitStatusWindow:show()
+    if not self.buf or not self.buf:is_valid() then
+        log.error("Cannot show invalid GitStatus buffer")
+        return
+    end
+
+    if self.win and vim.api.nvim_win_is_valid(self.win) then
+        vim.api.nvim_set_current_win(self.win)
+        return
+    end
+
+    create_win(self.buf)
+end
+
 ---@return GitStatusWindow
 function GitStatusWindow.new()
     local self = setmetatable({}, GitStatusWindow)
@@ -110,8 +125,11 @@ function GitStatusWindow.new()
 
     self:ensure_keymaps()
 
-    -- local content = {}
-    --
+    local content = {}
+    vim.list_extend(content, git.branch())
+
+    self.buf:set_lines(content)
+
     -- local head_line = gsf.head_line(git.branch())
     -- local status_lines = gsf.lines(git.status())
     --
@@ -122,7 +140,7 @@ function GitStatusWindow.new()
     -- end
     --
     -- uis.set_lines(content)
-    --
+
     self.win = create_win(self.buf)
 
     return self
