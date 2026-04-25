@@ -20,6 +20,10 @@ local log = require("minifugit.log")
 ---@return Buffer
 function Buffer.new(opts)
     local self = setmetatable({}, Buffer)
+
+    assert(opts.listed, "`listed` is required")
+    assert(opts.scratch, "`scratch` is required")
+
     self.listed = opts.listed
     self.scratch = opts.scratch
 

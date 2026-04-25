@@ -52,6 +52,11 @@ end
 function Highlight.new(opts)
     local self = setmetatable({}, Highlight)
 
+    assert(opts.name, "`name` is required")
+    assert(opts.namespace, "`namespace` is required")
+    assert(opts.sources, "`sources` is required")
+    assert(opts.fallback_fg, "`fallback_fg` is required")
+
     self.name = opts.name
     self.namespace_id = vim.api.nvim_create_namespace(opts.namespace)
     self.sources = opts.sources

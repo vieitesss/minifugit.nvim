@@ -1,5 +1,5 @@
-local Buffer = require('minifugit.buffer')
-local Highlight = require('minifugit.highlight')
+local Buffer = require('minifugit.ui.buffer')
+local Highlight = require('minifugit.ui.highlight')
 local log = require('minifugit.log')
 
 ---@class GitStatusWindow
@@ -77,6 +77,27 @@ function GitStatusWindow:highlights_ensure()
     end
 end
 
+function GitStatusWindow:ensure_keymaps()
+    assert(self.buf ~= nil)
+    assert(self.buf:is_valid())
+
+    vim.api.nvim_buf_set_keymap(
+        self.buf.id,
+        'n',
+        '<CR>',
+        "<CMD>lua require('minifugit.git_status.actions').go_to_file()<CR>",
+        {}
+    )
+
+    vim.api.nvim_buf_set_keymap(
+        self.buf.id,
+        'n',
+        '=',
+        "<CMD>lua require('minifugit.git_status.actions').diff_file()<CR>",
+        {}
+    )
+end
+
 ---@return GitStatusWindow
 function GitStatusWindow.new()
     local self = setmetatable({}, GitStatusWindow)
@@ -87,7 +108,7 @@ function GitStatusWindow.new()
     local opts = { listed = true, scratch = true, name = 'Minifugit' }
     self.buf = Buffer.new(opts)
 
-    -- gsk.apply()
+    self:ensure_keymaps()
 
     -- local content = {}
     --
