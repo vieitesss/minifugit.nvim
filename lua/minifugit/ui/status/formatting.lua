@@ -14,6 +14,22 @@ local conflict_statuses = {
 
 ---@alias GitStatusSection {title:string, entries:GitStatusEntry[]}
 
+---@class GitStatusRenderOpts
+---@field show_help boolean?
+
+local mapping_lines = {
+    '? hide mappings',
+    '<CR> open file',
+    '= show diff',
+    's stage entry',
+    'u unstage entry',
+    'S stage all',
+    'U unstage all',
+    'c commit staged changes',
+    'visual s stage selection',
+    'visual u unstage selection',
+}
+
 ---@param entry GitStatusEntry
 ---@return string
 local function entry_text(entry)
@@ -95,6 +111,23 @@ local function message_line(text, group)
     render.add_highlight(line, group, 0, #text)
 
     return line
+end
+
+---@param lines MiniFugitRenderLine[]
+---@param show_help boolean?
+local function append_help(lines, show_help)
+    table.insert(lines, render.line(''))
+
+    if not show_help then
+        table.insert(lines, message_line('? mappings', 'Comment'))
+        return
+    end
+
+    table.insert(lines, message_line('Mappings', 'Title'))
+
+    for _, text in ipairs(mapping_lines) do
+        table.insert(lines, message_line('  ' .. text, 'Comment'))
+    end
 end
 
 ---@param entry GitStatusEntry
@@ -207,25 +240,32 @@ end
 
 ---@param snapshot GitStatusSnapshot
 ---@param groups table<string, string>
+---@param opts? GitStatusRenderOpts
 ---@return MiniFugitRenderLine[]
-function M.render(snapshot, groups)
+function M.render(snapshot, groups, opts)
+    opts = opts or {}
+
     local lines = { M.head_line(snapshot.branch, groups) }
 
     if snapshot.error ~= nil then
         table.insert(lines, render.line(''))
         table.insert(lines, message_line(snapshot.error, 'WarningMsg'))
+        append_help(lines, opts.show_help)
         return lines
     end
 
     if #snapshot.entries == 0 then
         table.insert(lines, render.line(''))
         table.insert(lines, message_line('Working tree clean', 'Comment'))
+        append_help(lines, opts.show_help)
         return lines
     end
 
     for _, section in ipairs(sections(snapshot.entries)) do
         append_section(lines, section, groups)
     end
+
+    append_help(lines, opts.show_help)
 
     return lines
 end

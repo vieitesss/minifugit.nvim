@@ -13,6 +13,7 @@ local git = require('minifugit.git')
 ---@field groups table<string, string>
 ---@field highlights table<string, Highlight>
 ---@field lines MiniFugitRenderLine[]
+---@field show_help boolean
 local GitStatusWindow = {}
 GitStatusWindow.__index = GitStatusWindow
 
@@ -346,6 +347,14 @@ local function ensure_keymaps(self)
         silent = true,
     })
 
+    vim.keymap.set('n', '?', function()
+        self:toggle_help()
+    end, {
+        buffer = self.buf.id,
+        desc = 'Toggle git status mappings',
+        silent = true,
+    })
+
     vim.keymap.set('x', 's', function()
         self:stage_selected_entries()
     end, {
@@ -605,12 +614,19 @@ function GitStatusWindow:enter_entry()
     return open_entry(self, entry)
 end
 
+function GitStatusWindow:toggle_help()
+    self.show_help = not self.show_help
+    self:render()
+end
+
 function GitStatusWindow:render()
     assert(self.buf ~= nil)
     assert(self.buf:is_valid())
     assert(self.groups ~= nil)
 
-    self.lines = formatting.render(git.status_snapshot(), self.groups)
+    self.lines = formatting.render(git.status_snapshot(), self.groups, {
+        show_help = self.show_help,
+    })
 
     vim.bo[self.buf.id].modifiable = true
     self.buf:set_lines(render.text_lines(self.lines))
@@ -625,6 +641,7 @@ function GitStatusWindow.new()
     self.groups = create_highlight_groups()
     self.highlights = create_highlights()
     self.lines = {}
+    self.show_help = false
     self.target_win = vim.api.nvim_get_current_win()
 
     ensure_highlights(self)
