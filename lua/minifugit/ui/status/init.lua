@@ -73,6 +73,27 @@ local function status_win_height()
     return math.max(math.floor(vim.o.lines * 0.3), 5)
 end
 
+---@param message string
+---@param level integer
+local function notify(message, level)
+    vim.notify('[minifugit] ' .. message, level)
+end
+
+---@param message string?
+---@param fallback string
+local function notify_error(message, fallback)
+    if message == nil or message == '' then
+        message = fallback
+    end
+
+    notify(message, vim.log.levels.ERROR)
+end
+
+---@param message string
+local function notify_warn(message)
+    notify(message, vim.log.levels.WARN)
+end
+
 ---@param buf Buffer
 ---@return number
 local function create_win(buf)
@@ -491,8 +512,13 @@ end
 ---@param entry GitStatusEntry
 ---@return boolean
 local function open_diff(self, entry)
-    local lines = git.diff(entry)
+    local lines, err = git.diff(entry)
     local diff_lines
+
+    if err ~= nil then
+        notify_error(err, 'Cannot show diff')
+        return false
+    end
 
     if #lines == 0 then
         diff_lines = { render.line('No diff for ' .. entry.path) }
@@ -532,25 +558,35 @@ function GitStatusWindow:diff_entry()
     local entry = current_entry(self)
 
     if entry == nil then
+        notify_warn('No git status entry under cursor')
         return false
     end
 
     return open_diff(self, entry)
 end
 
----@param action fun(entries: GitStatusEntry[]): boolean
+---@param action fun(entries: GitStatusEntry[]): boolean, string?
 ---@param entries GitStatusEntry[]
 ---@return boolean
 local function update_entries(self, action, entries)
     local win = self.win
 
-    if #entries == 0 or not win or not is_valid_win(win) then
+    if #entries == 0 then
+        notify_warn('No git status entries selected')
+        return false
+    end
+
+    if not win or not is_valid_win(win) then
+        notify_error(nil, 'Status window is not open')
         return false
     end
 
     local row = vim.api.nvim_win_get_cursor(win)[1]
 
-    if not action(entries) then
+    local ok, err = action(entries)
+
+    if not ok then
+        notify_error(err, 'Git action failed')
         return false
     end
 
@@ -604,6 +640,7 @@ end
 
 function GitStatusWindow:commit()
     if self.win == nil or not is_valid_win(self.win) then
+        notify_error(nil, 'Status window is not open')
         return false
     end
 
@@ -650,6 +687,7 @@ function GitStatusWindow:enter_entry()
     local entry = current_entry(self)
 
     if entry == nil then
+        notify_warn('No git status entry under cursor')
         return false
     end
 

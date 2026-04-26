@@ -293,12 +293,14 @@ end
 
 ---@param entry GitStatusEntry
 ---@return boolean
+---@return string?
 function git.stage(entry)
     return git.stage_entries({ entry })
 end
 
 ---@param entries GitStatusEntry[]
 ---@return boolean
+---@return string?
 function git.stage_entries(entries)
     ensure_git()
 
@@ -313,17 +315,19 @@ function git.stage_entries(entries)
 
     local out = git.run(args, root_opts())
 
-    return out.exit_code == 0
+    return out.exit_code == 0, return_result(out)
 end
 
 ---@param entry GitStatusEntry
 ---@return boolean
+---@return string?
 function git.unstage(entry)
     return git.unstage_entries({ entry })
 end
 
 ---@param entries GitStatusEntry[]
 ---@return boolean
+---@return string?
 function git.unstage_entries(entries)
     ensure_git()
 
@@ -341,7 +345,7 @@ function git.unstage_entries(entries)
 
     local out = git.run(args, root_opts())
 
-    return out.exit_code == 0
+    return out.exit_code == 0, return_result(out)
 end
 
 ---@param file string
@@ -391,6 +395,7 @@ end
 
 ---@param entry GitStatusEntry
 ---@return string[]
+---@return string?
 function git.diff(entry)
     ensure_git()
 
@@ -405,7 +410,13 @@ function git.diff(entry)
         return {}
     end
 
+    opts.ignore_error = true
+
     local out = git.run(args, opts)
+
+    if out.exit_code > 1 or (out.exit_code ~= 0 and out.output == '') then
+        return {}, return_result(out)
+    end
 
     return parse_diff(out.output)
 end
