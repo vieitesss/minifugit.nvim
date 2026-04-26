@@ -67,13 +67,30 @@ local function is_valid_win(win)
     return type(win) == 'number' and win > 0 and vim.api.nvim_win_is_valid(win)
 end
 
+---@return integer
+local function status_win_width()
+    return math.max(math.floor(vim.o.columns * 0.3), 20)
+end
+
+---@param win number
+local function set_status_win_width(win)
+    local current_win = vim.api.nvim_get_current_win()
+    local winfixwidth = vim.wo[win].winfixwidth
+
+    vim.api.nvim_set_current_win(win)
+    vim.wo[win].winfixwidth = false
+    vim.cmd('vertical resize ' .. status_win_width())
+    vim.wo[win].winfixwidth = winfixwidth
+
+    if is_valid_win(current_win) then
+        vim.api.nvim_set_current_win(current_win)
+    end
+end
+
 ---@param buf Buffer
 ---@return number
 local function create_win(buf)
-    local parent_win = vim.api.nvim_get_current_win()
-    local parent_width = vim.api.nvim_win_get_width(parent_win)
-
-    local width = math.max(math.floor(parent_width * 0.3), 20)
+    local width = status_win_width()
 
     vim.cmd('botright ' .. width .. 'vsplit')
 
@@ -559,12 +576,17 @@ function GitStatusWindow:commit()
         vim.cmd('leftabove vsplit')
         target_win = vim.api.nvim_get_current_win()
         self.target_win = target_win
+        created_target_win = true
     else
         vim.api.nvim_set_current_win(target_win)
     end
 
     vim.cmd('edit ' .. vim.fn.fnameescape(path))
     vim.bo.filetype = 'gitcommit'
+
+    if created_target_win and self.win ~= nil and is_valid_win(self.win) then
+        set_status_win_width(self.win)
+    end
 
     vim.api.nvim_create_autocmd('BufWritePost', {
         buffer = vim.api.nvim_get_current_buf(),
