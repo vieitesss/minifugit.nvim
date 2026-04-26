@@ -12,7 +12,16 @@ local conflict_statuses = {
     UU = true,
 }
 
----@alias GitStatusSection {title:string, entries:GitStatusEntry[]}
+---@alias GitStatusSectionName 'conflicts'|'staged'|'unstaged'|'untracked'
+
+---@class GitStatusSection
+---@field name GitStatusSectionName
+---@field title string
+---@field entries GitStatusEntry[]
+
+---@class GitStatusLineData
+---@field entry GitStatusEntry
+---@field section GitStatusSectionName
 
 ---@class GitStatusRenderOpts
 ---@field show_help boolean?
@@ -132,9 +141,13 @@ end
 
 ---@param entry GitStatusEntry
 ---@param groups table<string, string>
+---@param section GitStatusSectionName
 ---@return MiniFugitRenderLine
-function M.entry_line(entry, groups)
-    local line = render.line(entry_text(entry), entry)
+function M.entry_line(entry, groups, section)
+    local line = render.line(entry_text(entry), {
+        entry = entry,
+        section = section,
+    })
 
     render.add_highlight(
         line,
@@ -152,12 +165,13 @@ end
 
 ---@param entries GitStatusEntry[]
 ---@param groups table<string, string>
+---@param section GitStatusSectionName
 ---@return MiniFugitRenderLine[]
-function M.entry_lines(entries, groups)
+function M.entry_lines(entries, groups, section)
     local lines = {}
 
     for _, entry in ipairs(entries) do
-        table.insert(lines, M.entry_line(entry, groups))
+        table.insert(lines, M.entry_line(entry, groups, section))
     end
 
     return lines
@@ -218,10 +232,10 @@ local function sections(entries)
     end
 
     return {
-        { title = 'Conflicts', entries = groups.conflicts },
-        { title = 'Staged', entries = groups.staged },
-        { title = 'Unstaged', entries = groups.unstaged },
-        { title = 'Untracked', entries = groups.untracked },
+        { name = 'conflicts', title = 'Conflicts', entries = groups.conflicts },
+        { name = 'staged', title = 'Staged', entries = groups.staged },
+        { name = 'unstaged', title = 'Unstaged', entries = groups.unstaged },
+        { name = 'untracked', title = 'Untracked', entries = groups.untracked },
     }
 end
 
@@ -235,7 +249,7 @@ local function append_section(lines, section, groups)
 
     table.insert(lines, render.line(''))
     table.insert(lines, section_line(section.title, #section.entries))
-    vim.list_extend(lines, M.entry_lines(section.entries, groups))
+    vim.list_extend(lines, M.entry_lines(section.entries, groups, section.name))
 end
 
 ---@param snapshot GitStatusSnapshot

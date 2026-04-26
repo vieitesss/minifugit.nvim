@@ -20,6 +20,10 @@ local git = require('minifugit.git')
 local GitStatusWindow = {}
 GitStatusWindow.__index = GitStatusWindow
 
+---@class GitStatusEntryItem
+---@field entry GitStatusEntry
+---@field section GitStatusSectionName?
+
 local HIGHLIGHT_NAMESPACE = 'GitStatusWindow'
 
 local HIGHLIGHT_SPECS = {
@@ -242,16 +246,85 @@ local function current_line(self)
     return self.lines[row]
 end
 
----@param self GitStatusWindow
+---@param data any
 ---@return GitStatusEntry?
-local function current_entry(self)
-    local line = current_line(self)
-
-    if line == nil or type(line.data) ~= 'table' then
+local function entry_from_data(data)
+    if type(data) ~= 'table' then
         return nil
     end
 
-    return line.data
+    if type(data.entry) == 'table' then
+        return data.entry
+    end
+
+    if type(data.path) == 'string' then
+        return data
+    end
+
+    return nil
+end
+
+---@param data any
+---@return GitStatusEntryItem?
+local function entry_item_from_data(data)
+    local entry = entry_from_data(data)
+
+    if entry == nil then
+        return nil
+    end
+
+    return {
+        entry = entry,
+        section = data.section,
+    }
+end
+
+---@param self GitStatusWindow
+---@return GitStatusEntryItem?
+local function current_entry_item(self)
+    local line = current_line(self)
+
+    if line == nil then
+        return nil
+    end
+
+    return entry_item_from_data(line.data)
+end
+
+---@param self GitStatusWindow
+---@return GitStatusEntry?
+local function current_entry(self)
+    local item = current_entry_item(self)
+
+    if item == nil then
+        return nil
+    end
+
+    return item.entry
+end
+
+---@param self GitStatusWindow
+---@param start_row integer
+---@param end_row integer
+---@return GitStatusEntryItem[]
+local function entry_items_in_range(self, start_row, end_row)
+    local items = {}
+    local first = math.min(start_row, end_row)
+    local last = math.max(start_row, end_row)
+
+    for row = first, last do
+        local line = self.lines[row]
+
+        if line ~= nil then
+            local item = entry_item_from_data(line.data)
+
+            if item ~= nil then
+                table.insert(items, item)
+            end
+        end
+    end
+
+    return items
 end
 
 ---@param self GitStatusWindow
@@ -260,15 +333,9 @@ end
 ---@return GitStatusEntry[]
 local function entries_in_range(self, start_row, end_row)
     local entries = {}
-    local first = math.min(start_row, end_row)
-    local last = math.max(start_row, end_row)
 
-    for row = first, last do
-        local line = self.lines[row]
-
-        if line ~= nil and type(line.data) == 'table' then
-            table.insert(entries, line.data)
-        end
+    for _, item in ipairs(entry_items_in_range(self, start_row, end_row)) do
+        table.insert(entries, item.entry)
     end
 
     return entries
@@ -284,7 +351,7 @@ end
 ---@return integer?
 local function first_entry_row(self)
     for row, line in ipairs(self.lines) do
-        if type(line.data) == 'table' then
+        if entry_from_data(line.data) ~= nil then
             return row
         end
     end
@@ -293,8 +360,8 @@ local function first_entry_row(self)
 end
 
 ---@param self GitStatusWindow
----@return GitStatusEntry[]
-local function selected_entries(self)
+---@return GitStatusEntryItem[]
+local function selected_entry_items(self)
     local mode = vim.fn.mode()
     local start_row
     local end_row
@@ -307,7 +374,7 @@ local function selected_entries(self)
         end_row = vim.fn.getpos("'>")[2]
     end
 
-    return entries_in_range(self, start_row, end_row)
+    return entry_items_in_range(self, start_row, end_row)
 end
 
 ---@param self GitStatusWindow
@@ -477,7 +544,9 @@ local function close_diff(self)
 
     if self.diff_created_win and #vim.api.nvim_tabpage_list_wins(0) > 1 then
         vim.api.nvim_win_close(diff_win, true)
-    elseif self.diff_prev_buf and vim.api.nvim_buf_is_valid(self.diff_prev_buf) then
+    elseif
+        self.diff_prev_buf and vim.api.nvim_buf_is_valid(self.diff_prev_buf)
+    then
         vim.api.nvim_win_set_buf(diff_win, self.diff_prev_buf)
     elseif #vim.api.nvim_tabpage_list_wins(0) > 1 then
         vim.api.nvim_win_close(diff_win, true)
@@ -569,7 +638,8 @@ local function open_diff(self, entry)
     end
 
     local previous_buf = vim.api.nvim_win_get_buf(target_win)
-    local was_diff_preview = previous_buf == buf.id and self.diff_win == target_win
+    local was_diff_preview = previous_buf == buf.id
+        and self.diff_win == target_win
 
     if not was_diff_preview then
         self.diff_prev_buf = previous_buf
@@ -630,26 +700,77 @@ local function update_entries(self, action, entries)
     return true
 end
 
----@param action fun(entries: GitStatusEntry[]): boolean
+---@param item GitStatusEntryItem
+---@param kind 'stage'|'unstage'
 ---@return boolean
-local function update_entry(self, action)
-    local entry = current_entry(self)
+local function should_apply_action(item, kind)
+    if kind == 'stage' then
+        return item.section ~= 'staged'
+    end
 
-    if entry == nil then
+    return item.section ~= 'unstaged' and item.section ~= 'untracked'
+end
+
+---@param items GitStatusEntryItem[]
+---@param kind 'stage'|'unstage'
+---@return GitStatusEntry[]
+local function entries_for_action(items, kind)
+    local entries = {}
+
+    for _, item in ipairs(items) do
+        if should_apply_action(item, kind) then
+            table.insert(entries, item.entry)
+        end
+    end
+
+    return entries
+end
+
+---@param action fun(entries: GitStatusEntry[]): boolean, string?
+---@param items GitStatusEntryItem[]
+---@param kind 'stage'|'unstage'
+---@return boolean
+local function update_entry_items(self, action, items, kind)
+    if #items == 0 then
+        notify_warn('No git status entries selected')
         return false
     end
 
-    return update_entries(self, action, { entry })
+    local entries = entries_for_action(items, kind)
+
+    if #entries == 0 then
+        local message = kind == 'stage' and 'Nothing to stage'
+            or 'Nothing to unstage'
+
+        notify_warn(message)
+        return false
+    end
+
+    return update_entries(self, action, entries)
+end
+
+---@param action fun(entries: GitStatusEntry[]): boolean, string?
+---@param kind 'stage'|'unstage'
+---@return boolean
+local function update_entry(self, action, kind)
+    local item = current_entry_item(self)
+
+    if item == nil then
+        notify_warn('No git status entry under cursor')
+        return false
+    end
+
+    return update_entry_items(self, action, { item }, kind)
 end
 
 ---@return boolean
 function GitStatusWindow:stage_entry()
-    return update_entry(self, git.stage_entries)
+    return update_entry(self, git.stage_entries, 'stage')
 end
 
 ---@return boolean
 function GitStatusWindow:unstage_entry()
-    return update_entry(self, git.unstage_entries)
+    return update_entry(self, git.unstage_entries, 'unstage')
 end
 
 ---@return boolean
@@ -664,12 +785,22 @@ end
 
 ---@return boolean
 function GitStatusWindow:stage_selected_entries()
-    return update_entries(self, git.stage_entries, selected_entries(self))
+    return update_entry_items(
+        self,
+        git.stage_entries,
+        selected_entry_items(self),
+        'stage'
+    )
 end
 
 ---@return boolean
 function GitStatusWindow:unstage_selected_entries()
-    return update_entries(self, git.unstage_entries, selected_entries(self))
+    return update_entry_items(
+        self,
+        git.unstage_entries,
+        selected_entry_items(self),
+        'unstage'
+    )
 end
 
 function GitStatusWindow:commit()
