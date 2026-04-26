@@ -126,7 +126,7 @@ local function diff_render_lines(lines, groups)
 end
 
 ---@return table<string, string>
-function GitStatusWindow:create_highlight_groups()
+local function create_highlight_groups()
     local groups = {}
 
     for key, spec in pairs(HIGHLIGHT_SPECS) do
@@ -137,7 +137,7 @@ function GitStatusWindow:create_highlight_groups()
 end
 
 ---@return table<string, Highlight>
-function GitStatusWindow:create_highlights()
+local function create_highlights()
     local highlights = {}
 
     for key, spec in pairs(HIGHLIGHT_SPECS) do
@@ -152,7 +152,8 @@ function GitStatusWindow:create_highlights()
     return highlights
 end
 
-function GitStatusWindow:highlights_ensure()
+---@param self GitStatusWindow
+local function ensure_highlights(self)
     assert(self.highlights ~= nil)
 
     for _, h in pairs(self.highlights) do
@@ -160,15 +161,17 @@ function GitStatusWindow:highlights_ensure()
     end
 end
 
+---@param self GitStatusWindow
 ---@param win number?
-function GitStatusWindow:set_target_win(win)
+local function set_target_win(self, win)
     if is_valid_win(win) and win ~= self.win then
         self.target_win = win
     end
 end
 
+---@param self GitStatusWindow
 ---@return number?
-function GitStatusWindow:find_target_win()
+local function find_target_win(self)
     if
         is_valid_win(self.target_win)
         and self.target_win ~= self.win
@@ -188,8 +191,9 @@ function GitStatusWindow:find_target_win()
     return nil
 end
 
+---@param self GitStatusWindow
 ---@return MiniFugitRenderLine?
-function GitStatusWindow:current_line()
+local function current_line(self)
     if not self.buf or not self.buf:is_valid() then
         return nil
     end
@@ -211,9 +215,10 @@ function GitStatusWindow:current_line()
     return self.lines[row]
 end
 
+---@param self GitStatusWindow
 ---@return GitStatusEntry?
-function GitStatusWindow:current_entry()
-    local line = self:current_line()
+local function current_entry(self)
+    local line = current_line(self)
 
     if line == nil or type(line.data) ~= 'table' then
         return nil
@@ -222,10 +227,11 @@ function GitStatusWindow:current_entry()
     return line.data
 end
 
+---@param self GitStatusWindow
 ---@param start_row integer
 ---@param end_row integer
 ---@return GitStatusEntry[]
-function GitStatusWindow:entries_in_range(start_row, end_row)
+local function entries_in_range(self, start_row, end_row)
     local entries = {}
     local first = math.min(start_row, end_row)
     local last = math.max(start_row, end_row)
@@ -241,13 +247,15 @@ function GitStatusWindow:entries_in_range(start_row, end_row)
     return entries
 end
 
+---@param self GitStatusWindow
 ---@return GitStatusEntry[]
-function GitStatusWindow:all_entries()
-    return self:entries_in_range(1, #self.lines)
+local function all_entries(self)
+    return entries_in_range(self, 1, #self.lines)
 end
 
+---@param self GitStatusWindow
 ---@return integer?
-function GitStatusWindow:first_entry_row()
+local function first_entry_row(self)
     for row, line in ipairs(self.lines) do
         if type(line.data) == 'table' then
             return row
@@ -257,8 +265,9 @@ function GitStatusWindow:first_entry_row()
     return nil
 end
 
+---@param self GitStatusWindow
 ---@return GitStatusEntry[]
-function GitStatusWindow:selected_entries()
+local function selected_entries(self)
     local mode = vim.fn.mode()
     local start_row
     local end_row
@@ -271,10 +280,11 @@ function GitStatusWindow:selected_entries()
         end_row = vim.fn.getpos('\'>')[2]
     end
 
-    return self:entries_in_range(start_row, end_row)
+    return entries_in_range(self, start_row, end_row)
 end
 
-function GitStatusWindow:ensure_keymaps()
+---@param self GitStatusWindow
+local function ensure_keymaps(self)
     assert(self.buf ~= nil)
     assert(self.buf:is_valid())
 
@@ -351,26 +361,29 @@ function GitStatusWindow:ensure_keymaps()
     })
 end
 
+local move_to_first_entry
+
 function GitStatusWindow:show()
     if not self.buf or not self.buf:is_valid() then
         log.error('Cannot show invalid GitStatus buffer')
         return
     end
 
-    self:set_target_win(vim.api.nvim_get_current_win())
+    set_target_win(self, vim.api.nvim_get_current_win())
 
     if self.win and vim.api.nvim_win_is_valid(self.win) then
         vim.api.nvim_set_current_win(self.win)
-        self:move_to_first_entry()
+        move_to_first_entry(self)
         return
     end
 
     self.win = create_win(self.buf)
-    self:move_to_first_entry()
+    move_to_first_entry(self)
 end
 
-function GitStatusWindow:move_to_first_entry()
-    local row = self:first_entry_row()
+---@param self GitStatusWindow
+move_to_first_entry = function(self)
+    local row = first_entry_row(self)
 
     if row ~= nil and self.win ~= nil and is_valid_win(self.win) then
         vim.api.nvim_win_set_cursor(self.win, { row, 0 })
@@ -379,7 +392,7 @@ end
 
 ---@param entry GitStatusEntry
 ---@return boolean
-function GitStatusWindow:open_entry(entry)
+local function open_entry(self, entry)
     local path = entry_path(entry)
 
     if vim.uv.fs_stat(path) == nil then
@@ -391,7 +404,7 @@ function GitStatusWindow:open_entry(entry)
         return false
     end
 
-    local target_win = self:find_target_win()
+    local target_win = find_target_win(self)
 
     if target_win == nil then
         vim.cmd('leftabove vsplit')
@@ -406,8 +419,9 @@ function GitStatusWindow:open_entry(entry)
     return true
 end
 
+---@param self GitStatusWindow
 ---@return Buffer
-function GitStatusWindow:ensure_diff_buf()
+local function ensure_diff_buf(self)
     if self.diff_buf and self.diff_buf:is_valid() then
         return self.diff_buf
     end
@@ -425,9 +439,10 @@ function GitStatusWindow:ensure_diff_buf()
     return self.diff_buf
 end
 
+---@param self GitStatusWindow
 ---@param entry GitStatusEntry
 ---@return boolean
-function GitStatusWindow:open_diff(entry)
+local function open_diff(self, entry)
     local lines = git.diff(entry)
     local diff_lines
 
@@ -437,14 +452,14 @@ function GitStatusWindow:open_diff(entry)
         diff_lines = diff_render_lines(lines, self.groups)
     end
 
-    local buf = self:ensure_diff_buf()
+    local buf = ensure_diff_buf(self)
 
     vim.bo[buf.id].modifiable = true
     buf:set_lines(render.text_lines(diff_lines))
     vim.bo[buf.id].modifiable = false
     render.apply(buf.id, diff_lines)
 
-    local target_win = self:find_target_win()
+    local target_win = find_target_win(self)
 
     if target_win == nil then
         vim.cmd('leftabove vsplit')
@@ -461,19 +476,19 @@ end
 
 ---@return boolean
 function GitStatusWindow:diff_entry()
-    local entry = self:current_entry()
+    local entry = current_entry(self)
 
     if entry == nil then
         return false
     end
 
-    return self:open_diff(entry)
+    return open_diff(self, entry)
 end
 
 ---@param action fun(entries: GitStatusEntry[]): boolean
 ---@param entries GitStatusEntry[]
 ---@return boolean
-function GitStatusWindow:update_entries(action, entries)
+local function update_entries(self, action, entries)
     local win = self.win
 
     if #entries == 0 or not win or not is_valid_win(win) then
@@ -494,51 +509,51 @@ end
 
 ---@param action fun(entries: GitStatusEntry[]): boolean
 ---@return boolean
-function GitStatusWindow:update_entry(action)
-    local entry = self:current_entry()
+local function update_entry(self, action)
+    local entry = current_entry(self)
 
     if entry == nil then
         return false
     end
 
-    return self:update_entries(action, { entry })
+    return update_entries(self, action, { entry })
 end
 
 ---@return boolean
 function GitStatusWindow:stage_entry()
-    return self:update_entry(git.stage_entries)
+    return update_entry(self, git.stage_entries)
 end
 
 ---@return boolean
 function GitStatusWindow:unstage_entry()
-    return self:update_entry(git.unstage_entries)
+    return update_entry(self, git.unstage_entries)
 end
 
 ---@return boolean
 function GitStatusWindow:stage_all_entries()
-    return self:update_entries(git.stage_entries, self:all_entries())
+    return update_entries(self, git.stage_entries, all_entries(self))
 end
 
 ---@return boolean
 function GitStatusWindow:unstage_all_entries()
-    return self:update_entries(git.unstage_entries, self:all_entries())
+    return update_entries(self, git.unstage_entries, all_entries(self))
 end
 
 ---@return boolean
 function GitStatusWindow:stage_selected_entries()
-    return self:update_entries(git.stage_entries, self:selected_entries())
+    return update_entries(self, git.stage_entries, selected_entries(self))
 end
 
 ---@return boolean
 function GitStatusWindow:unstage_selected_entries()
-    return self:update_entries(git.unstage_entries, self:selected_entries())
+    return update_entries(self, git.unstage_entries, selected_entries(self))
 end
 
 function GitStatusWindow:commit()
     local path = vim.fn.tempname() .. '.gitcommit'
     vim.fn.writefile({ '' }, path)
 
-    local target_win = self:find_target_win()
+    local target_win = find_target_win(self)
 
     if target_win == nil then
         vim.cmd('leftabove split')
@@ -578,13 +593,13 @@ end
 
 ---@return boolean
 function GitStatusWindow:enter_entry()
-    local entry = self:current_entry()
+    local entry = current_entry(self)
 
     if entry == nil then
         return false
     end
 
-    return self:open_entry(entry)
+    return open_entry(self, entry)
 end
 
 function GitStatusWindow:render()
@@ -604,12 +619,12 @@ end
 function GitStatusWindow.new()
     local self = setmetatable({}, GitStatusWindow)
 
-    self.groups = self:create_highlight_groups()
-    self.highlights = self:create_highlights()
+    self.groups = create_highlight_groups()
+    self.highlights = create_highlights()
     self.lines = {}
     self.target_win = vim.api.nvim_get_current_win()
 
-    self:highlights_ensure()
+    ensure_highlights(self)
 
     ---@type BufferOpts
     local opts = { listed = false, scratch = true, name = 'Minifugit' }
@@ -619,7 +634,7 @@ function GitStatusWindow.new()
     vim.bo[self.buf.id].swapfile = false
     vim.bo[self.buf.id].filetype = 'minifugit'
 
-    self:ensure_keymaps()
+    ensure_keymaps(self)
     self:render()
 
     self.win = create_win(self.buf)
