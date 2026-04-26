@@ -72,21 +72,6 @@ local function status_win_height()
     return math.max(math.floor(vim.o.lines * 0.3), 5)
 end
 
----@param win number
-local function set_status_win_height(win)
-    local current_win = vim.api.nvim_get_current_win()
-    local winfixheight = vim.wo[win].winfixheight
-
-    vim.api.nvim_set_current_win(win)
-    vim.wo[win].winfixheight = false
-    vim.cmd('resize ' .. status_win_height())
-    vim.wo[win].winfixheight = winfixheight
-
-    if is_valid_win(current_win) then
-        vim.api.nvim_set_current_win(current_win)
-    end
-end
-
 ---@param buf Buffer
 ---@return number
 local function create_win(buf)
@@ -567,26 +552,16 @@ function GitStatusWindow:unstage_selected_entries()
 end
 
 function GitStatusWindow:commit()
+    if self.win == nil or not is_valid_win(self.win) then
+        return false
+    end
+
     local path = vim.fn.tempname() .. '.gitcommit'
     vim.fn.writefile(git.commit_template(), path)
 
-    local target_win = find_target_win(self)
-
-    if target_win == nil then
-        vim.cmd('leftabove vsplit')
-        target_win = vim.api.nvim_get_current_win()
-        self.target_win = target_win
-        created_target_win = true
-    else
-        vim.api.nvim_set_current_win(target_win)
-    end
-
+    vim.api.nvim_set_current_win(self.win)
     vim.cmd('edit ' .. vim.fn.fnameescape(path))
     vim.bo.filetype = 'gitcommit'
-
-    if created_target_win and self.win ~= nil and is_valid_win(self.win) then
-        set_status_win_height(self.win)
-    end
 
     vim.api.nvim_create_autocmd('BufWritePost', {
         buffer = vim.api.nvim_get_current_buf(),
@@ -602,6 +577,10 @@ function GitStatusWindow:commit()
 
             self:render()
 
+            if self.win ~= nil and is_valid_win(self.win) then
+                vim.api.nvim_win_set_buf(self.win, self.buf.id)
+            end
+
             if vim.api.nvim_buf_is_valid(args.buf) then
                 vim.api.nvim_buf_delete(args.buf, { force = true })
             end
@@ -611,6 +590,8 @@ function GitStatusWindow:commit()
             return true
         end,
     })
+
+    return true
 end
 
 ---@return boolean
