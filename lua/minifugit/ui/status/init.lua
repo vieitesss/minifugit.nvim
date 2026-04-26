@@ -49,14 +49,22 @@ local HIGHLIGHT_SPECS = {
         sources = { 'Identifier', 'Keyword' },
         fallback_fg = 0x61AFEF,
     },
+    diff_added = {
+        name = 'MiniFugitDiffAdded',
+        sources = { 'Added', 'String' },
+        fallback_fg = 0x98C379,
+    },
+    diff_removed = {
+        name = 'MiniFugitDiffRemoved',
+        sources = { 'Removed', 'Error' },
+        fallback_fg = 0xE06C75,
+    },
 }
 
 ---@param win number?
 ---@return boolean
 local function is_valid_win(win)
-    return type(win) == 'number'
-        and win > 0
-        and vim.api.nvim_win_is_valid(win)
+    return type(win) == 'number' and win > 0 and vim.api.nvim_win_is_valid(win)
 end
 
 ---@param buf Buffer
@@ -89,6 +97,25 @@ local function entry_path(entry)
     end
 
     return vim.fs.normalize(vim.fs.joinpath(root, entry.path))
+end
+
+---@param lines string[]
+---@param groups table<string, string>
+---@return MiniFugitRenderLine[]
+local function diff_render_lines(lines, groups)
+    return vim.tbl_map(function(text)
+        local line = render.line(text)
+
+        if vim.startswith(text, '+') and not vim.startswith(text, '+++') then
+            render.add_highlight(line, groups.diff_added, 0, #text)
+        elseif
+            vim.startswith(text, '-') and not vim.startswith(text, '---')
+        then
+            render.add_highlight(line, groups.diff_removed, 0, #text)
+        end
+
+        return line
+    end, lines)
 end
 
 ---@return table<string, string>
@@ -135,7 +162,8 @@ end
 
 ---@return number?
 function GitStatusWindow:find_target_win()
-    if is_valid_win(self.target_win)
+    if
+        is_valid_win(self.target_win)
         and self.target_win ~= self.win
         and vim.api.nvim_win_get_tabpage(self.target_win)
             == vim.api.nvim_get_current_tabpage()
@@ -276,16 +304,20 @@ end
 ---@return boolean
 function GitStatusWindow:open_diff(entry)
     local lines = git.diff(entry)
+    local diff_lines
 
     if #lines == 0 then
-        lines = { 'No diff for ' .. entry.path }
+        diff_lines = { render.line('No diff for ' .. entry.path) }
+    else
+        diff_lines = diff_render_lines(lines, self.groups)
     end
 
     local buf = self:ensure_diff_buf()
 
     vim.bo[buf.id].modifiable = true
-    buf:set_lines(lines)
+    buf:set_lines(render.text_lines(diff_lines))
     vim.bo[buf.id].modifiable = false
+    render.apply(buf.id, diff_lines)
 
     local target_win = self:find_target_win()
 
