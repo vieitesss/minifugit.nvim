@@ -268,17 +268,6 @@ function git.unstage_entries(entries)
     return out.exit_code == 0
 end
 
----@param message string
----@return boolean
----@return string
-function git.commit(message)
-    ensure_git()
-
-    local out = git.run({ 'commit', '-m', message }, root_opts())
-
-    return out.exit_code == 0, return_result(out)
-end
-
 ---@param file string
 ---@return boolean
 ---@return string

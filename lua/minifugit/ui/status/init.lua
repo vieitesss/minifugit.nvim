@@ -514,26 +514,45 @@ function GitStatusWindow:unstage_selected_entries()
 end
 
 function GitStatusWindow:commit()
-    vim.ui.input({ prompt = 'Commit message: ' }, function(message)
-        if message == nil then
-            return
-        end
+    local path = vim.fn.tempname() .. '.gitcommit'
+    vim.fn.writefile({ '' }, path)
 
-        message = vim.trim(message)
+    local target_win = self:find_target_win()
 
-        if message == '' then
-            return
-        end
+    if target_win == nil then
+        vim.cmd('leftabove split')
+        target_win = vim.api.nvim_get_current_win()
+        self.target_win = target_win
+    else
+        vim.api.nvim_set_current_win(target_win)
+    end
 
-        local ok, output = git.commit(message)
-        local level = ok and vim.log.levels.INFO or vim.log.levels.ERROR
+    vim.cmd('edit ' .. vim.fn.fnameescape(path))
+    vim.bo.filetype = 'gitcommit'
 
-        vim.notify('[minifugit] ' .. output, level)
+    vim.api.nvim_create_autocmd('BufWritePost', {
+        buffer = vim.api.nvim_get_current_buf(),
+        callback = function(args)
+            local ok, output = git.commit_file(path)
+            local level = ok and vim.log.levels.INFO or vim.log.levels.ERROR
 
-        if ok then
+            vim.notify('[minifugit] ' .. output, level)
+
+            if not ok then
+                return false
+            end
+
             self:render()
+
+            if vim.api.nvim_buf_is_valid(args.buf) then
+                vim.api.nvim_buf_delete(args.buf, { force = true })
+            end
+
+            vim.fn.delete(path)
+
+            return true
         end
-    end)
+    })
 end
 
 ---@return boolean
