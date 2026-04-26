@@ -143,7 +143,7 @@ function GitStatusWindow:render()
     assert(self.buf:is_valid())
     assert(self.groups ~= nil)
 
-    local lines = formatting.render(git.branch(), self.groups)
+    local lines = formatting.render(git.branch(), git.status(), self.groups)
 
     self.buf:set_lines(render.text_lines(lines))
     render.apply(self.buf.id, lines)
