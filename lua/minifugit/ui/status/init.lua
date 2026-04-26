@@ -81,6 +81,13 @@ local function create_win(buf)
 
     vim.api.nvim_win_set_buf(win, buf.id)
     vim.api.nvim_set_current_win(win)
+    vim.wo[win].number = false
+    vim.wo[win].relativenumber = false
+    vim.wo[win].signcolumn = 'no'
+    vim.wo[win].foldcolumn = '0'
+    vim.wo[win].wrap = false
+    vim.wo[win].cursorline = true
+    vim.wo[win].winfixwidth = true
 
     log.info(string.format('created status window win=%d buf=%d', win, buf.id))
 
@@ -416,7 +423,9 @@ function GitStatusWindow:render()
 
     self.lines = formatting.render(git.branch(), git.status(), self.groups)
 
+    vim.bo[self.buf.id].modifiable = true
     self.buf:set_lines(render.text_lines(self.lines))
+    vim.bo[self.buf.id].modifiable = false
     render.apply(self.buf.id, self.lines)
 end
 
@@ -432,8 +441,12 @@ function GitStatusWindow.new()
     self:highlights_ensure()
 
     ---@type BufferOpts
-    local opts = { listed = true, scratch = true, name = 'Minifugit' }
+    local opts = { listed = false, scratch = true, name = 'Minifugit' }
     self.buf = Buffer.new(opts)
+    vim.bo[self.buf.id].buftype = 'nofile'
+    vim.bo[self.buf.id].bufhidden = 'hide'
+    vim.bo[self.buf.id].swapfile = false
+    vim.bo[self.buf.id].filetype = 'minifugit'
 
     self:ensure_keymaps()
     self:render()
