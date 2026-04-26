@@ -551,7 +551,7 @@ end
 
 function GitStatusWindow:commit()
     local path = vim.fn.tempname() .. '.gitcommit'
-    vim.fn.writefile({ '' }, path)
+    vim.fn.writefile(git.commit_template(), path)
 
     local target_win = find_target_win(self)
 

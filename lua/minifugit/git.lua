@@ -274,9 +274,32 @@ end
 function git.commit_file(file)
     ensure_git()
 
-    local out = git.run({ 'commit', '-F', file }, root_opts())
+    local out = git.run({ 'commit', '--cleanup=strip', '-F', file }, root_opts())
 
     return out.exit_code == 0, return_result(out)
+end
+
+---@return string[]
+function git.commit_template()
+    ensure_git()
+
+    local out = git.run({ 'commit', '--dry-run', '--status' }, root_opts())
+    local lines = {
+        '',
+        '# Please enter the commit message for your changes. Lines starting',
+        '# with `#` will be ignored, and an empty message aborts the commit.',
+        '#',
+    }
+
+    if out.output ~= '' then
+        for _, line in ipairs(vim.split(out.output, '\n', { plain = true })) do
+            if line ~= '' then
+                table.insert(lines, '# ' .. line)
+            end
+        end
+    end
+
+    return lines
 end
 
 ---@param diff string?
