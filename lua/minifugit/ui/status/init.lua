@@ -248,8 +248,17 @@ end
 
 ---@return GitStatusEntry[]
 function GitStatusWindow:selected_entries()
-    local start_row = vim.fn.getpos('\'<')[2]
-    local end_row = vim.fn.getpos('\'>')[2]
+    local mode = vim.fn.mode()
+    local start_row
+    local end_row
+
+    if mode == 'v' or mode == 'V' or mode == '\22' then
+        start_row = vim.fn.line('v')
+        end_row = vim.fn.line('.')
+    else
+        start_row = vim.fn.getpos('\'<')[2]
+        end_row = vim.fn.getpos('\'>')[2]
+    end
 
     return self:entries_in_range(start_row, end_row)
 end
