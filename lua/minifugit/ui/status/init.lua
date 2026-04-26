@@ -8,6 +8,9 @@ local git = require('minifugit.git')
 ---@class GitStatusWindow
 ---@field buf Buffer
 ---@field diff_buf Buffer?
+---@field diff_win number?
+---@field diff_prev_buf number?
+---@field diff_created_win boolean
 ---@field win number?
 ---@field target_win number?
 ---@field groups table<string, string>
@@ -454,15 +457,35 @@ end
 ---@param self GitStatusWindow
 local function close_diff(self)
     local current_win = vim.api.nvim_get_current_win()
+    local diff_win = current_win
 
     if
-        self.diff_buf
-        and self.diff_buf:is_valid()
-        and vim.api.nvim_win_get_buf(current_win) == self.diff_buf.id
-        and #vim.api.nvim_tabpage_list_wins(0) > 1
+        not self.diff_buf
+        or not self.diff_buf:is_valid()
+        or vim.api.nvim_win_get_buf(diff_win) ~= self.diff_buf.id
     then
-        vim.api.nvim_win_close(current_win, true)
+        if not is_valid_win(self.diff_win) then
+            return
+        end
+
+        diff_win = self.diff_win
+
+        if vim.api.nvim_win_get_buf(diff_win) ~= self.diff_buf.id then
+            return
+        end
     end
+
+    if self.diff_created_win and #vim.api.nvim_tabpage_list_wins(0) > 1 then
+        vim.api.nvim_win_close(diff_win, true)
+    elseif self.diff_prev_buf and vim.api.nvim_buf_is_valid(self.diff_prev_buf) then
+        vim.api.nvim_win_set_buf(diff_win, self.diff_prev_buf)
+    elseif #vim.api.nvim_tabpage_list_wins(0) > 1 then
+        vim.api.nvim_win_close(diff_win, true)
+    end
+
+    self.diff_win = nil
+    self.diff_prev_buf = nil
+    self.diff_created_win = false
 
     if self.win ~= nil and is_valid_win(self.win) then
         vim.api.nvim_set_current_win(self.win)
@@ -534,17 +557,28 @@ local function open_diff(self, entry)
     render.apply(buf.id, diff_lines)
 
     local target_win = find_target_win(self)
+    local created_win = false
 
     if target_win == nil then
         vim.cmd('leftabove vsplit')
         target_win = vim.api.nvim_get_current_win()
         self.target_win = target_win
+        created_win = true
     else
         vim.api.nvim_set_current_win(target_win)
     end
 
+    local previous_buf = vim.api.nvim_win_get_buf(target_win)
+    local was_diff_preview = previous_buf == buf.id and self.diff_win == target_win
+
+    if not was_diff_preview then
+        self.diff_prev_buf = previous_buf
+        self.diff_created_win = created_win
+    end
+
     vim.api.nvim_win_set_buf(target_win, buf.id)
     configure_diff_win(target_win)
+    self.diff_win = target_win
 
     if self.win ~= nil and is_valid_win(self.win) then
         vim.api.nvim_set_current_win(self.win)
@@ -721,6 +755,7 @@ function GitStatusWindow.new()
     self.groups = create_highlight_groups()
     self.highlights = create_highlights()
     self.lines = {}
+    self.diff_created_win = false
     self.show_help = false
     self.target_win = vim.api.nvim_get_current_win()
 
