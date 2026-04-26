@@ -175,6 +175,58 @@ function git.status()
     return parse_status(out.output)
 end
 
+---@return table
+local function root_opts()
+    local root = git.root()
+    local opts = { ignore_error = true }
+
+    if root ~= '' then
+        opts.cwd = root
+    end
+
+    return opts
+end
+
+---@param entry GitStatusEntry
+---@return string[]
+local function entry_pathspecs(entry)
+    if entry.orig_path == nil then
+        return { entry.path }
+    end
+
+    return { entry.orig_path, entry.path }
+end
+
+---@param entry GitStatusEntry
+---@return boolean
+function git.stage(entry)
+    ensure_git()
+
+    local args = { 'add', '--' }
+    vim.list_extend(args, entry_pathspecs(entry))
+
+    local out = git.run(args, root_opts())
+
+    return out.exit_code == 0
+end
+
+---@param entry GitStatusEntry
+---@return boolean
+function git.unstage(entry)
+    ensure_git()
+
+    if entry.staged == ' ' or entry.staged == '?' then
+        return true
+    end
+
+    local args = { 'restore', '--staged', '--' }
+    vim.list_extend(args, entry_pathspecs(entry))
+
+    local out = git.run(args, root_opts())
+
+    return out.exit_code == 0
+end
+
 ---@param diff string?
 ---@return string[]
 local function parse_diff(diff)
@@ -191,12 +243,7 @@ function git.diff(entry)
     ensure_git()
 
     local args
-    local root = git.root()
-    local opts = { ignore_error = true }
-
-    if root ~= '' then
-        opts.cwd = root
-    end
+    local opts = root_opts()
 
     if entry.unstaged == '?' then
         args = { 'diff', '--no-index', '--', '/dev/null', entry.path }

@@ -234,6 +234,22 @@ function GitStatusWindow:ensure_keymaps()
         desc = 'Show git status entry diff',
         silent = true,
     })
+
+    vim.keymap.set('n', 's', function()
+        self:stage_entry()
+    end, {
+        buffer = self.buf.id,
+        desc = 'Stage git status entry',
+        silent = true,
+    })
+
+    vim.keymap.set('n', 'u', function()
+        self:unstage_entry()
+    end, {
+        buffer = self.buf.id,
+        desc = 'Unstage git status entry',
+        silent = true,
+    })
 end
 
 function GitStatusWindow:show()
@@ -343,6 +359,43 @@ function GitStatusWindow:diff_entry()
     end
 
     return self:open_diff(entry)
+end
+
+---@param action fun(entry: GitStatusEntry): boolean
+---@return boolean
+function GitStatusWindow:update_entry(action)
+    local entry = self:current_entry()
+
+    if entry == nil then
+        return false
+    end
+
+    local win = self.win
+
+    if not win or not is_valid_win(win) then
+        return false
+    end
+
+    local row = vim.api.nvim_win_get_cursor(win)[1]
+
+    if not action(entry) then
+        return false
+    end
+
+    self:render()
+    vim.api.nvim_win_set_cursor(win, { math.min(row, #self.lines), 0 })
+
+    return true
+end
+
+---@return boolean
+function GitStatusWindow:stage_entry()
+    return self:update_entry(git.stage)
+end
+
+---@return boolean
+function GitStatusWindow:unstage_entry()
+    return self:update_entry(git.unstage)
 end
 
 ---@return boolean
