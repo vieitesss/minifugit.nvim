@@ -7,6 +7,7 @@ local git = require('minifugit.git')
 
 ---@class GitStatusWindow
 ---@field buf Buffer
+---@field diff_buf Buffer?
 ---@field win number?
 ---@field target_win number?
 ---@field groups table<string, string>
@@ -197,6 +198,14 @@ function GitStatusWindow:ensure_keymaps()
         desc = 'Open git status entry',
         silent = true,
     })
+
+    vim.keymap.set('n', '=', function()
+        self:diff_entry()
+    end, {
+        buffer = self.buf.id,
+        desc = 'Show git status entry diff',
+        silent = true,
+    })
 end
 
 function GitStatusWindow:show()
@@ -242,6 +251,66 @@ function GitStatusWindow:open_entry(entry)
     vim.cmd('edit ' .. vim.fn.fnameescape(path))
 
     return true
+end
+
+---@return Buffer
+function GitStatusWindow:ensure_diff_buf()
+    if self.diff_buf and self.diff_buf:is_valid() then
+        return self.diff_buf
+    end
+
+    self.diff_buf = Buffer.new({
+        listed = false,
+        scratch = true,
+        name = 'Minifugit diff',
+    })
+
+    vim.bo[self.diff_buf.id].buftype = 'nofile'
+    vim.bo[self.diff_buf.id].bufhidden = 'hide'
+    vim.bo[self.diff_buf.id].swapfile = false
+
+    return self.diff_buf
+end
+
+---@param entry GitStatusEntry
+---@return boolean
+function GitStatusWindow:open_diff(entry)
+    local lines = git.diff(entry)
+
+    if #lines == 0 then
+        lines = { 'No diff for ' .. entry.path }
+    end
+
+    local buf = self:ensure_diff_buf()
+
+    vim.bo[buf.id].modifiable = true
+    buf:set_lines(lines)
+    vim.bo[buf.id].modifiable = false
+
+    local target_win = self:find_target_win()
+
+    if target_win == nil then
+        vim.cmd('leftabove vsplit')
+        target_win = vim.api.nvim_get_current_win()
+        self.target_win = target_win
+    else
+        vim.api.nvim_set_current_win(target_win)
+    end
+
+    vim.api.nvim_win_set_buf(target_win, buf.id)
+
+    return true
+end
+
+---@return boolean
+function GitStatusWindow:diff_entry()
+    local entry = self:current_entry()
+
+    if entry == nil then
+        return false
+    end
+
+    return self:open_diff(entry)
 end
 
 ---@return boolean

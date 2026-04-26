@@ -175,14 +175,40 @@ function git.status()
     return parse_status(out.output)
 end
 
--- ---@param diff string?
--- ---@return string[]
--- local function parse_diff(diff)
---     if diff == '' or diff == nil then
---         return {}
---     end
---
---     return vim.split(diff, "\n", {plain=true})
--- end
+---@param diff string?
+---@return string[]
+local function parse_diff(diff)
+    if diff == '' or diff == nil then
+        return {}
+    end
+
+    return vim.split(diff, '\n', { plain = true })
+end
+
+---@param entry GitStatusEntry
+---@return string[]
+function git.diff(entry)
+    ensure_git()
+
+    local args
+    local root = git.root()
+    local opts = { ignore_error = true }
+
+    if root ~= '' then
+        opts.cwd = root
+    end
+
+    if entry.unstaged == '?' then
+        args = { 'diff', '--no-index', '--', '/dev/null', entry.path }
+    elseif entry.staged ~= ' ' or entry.unstaged ~= ' ' then
+        args = { 'diff', 'HEAD', '--', entry.path }
+    else
+        return {}
+    end
+
+    local out = git.run(args, opts)
+
+    return parse_diff(out.output)
+end
 
 return git
