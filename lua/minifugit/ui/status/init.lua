@@ -134,7 +134,7 @@ function GitStatusWindow:refresh(state)
 
     self:render()
     selection.restore_cursor_state(self, state)
-    preview.refresh_current_entry(self)
+    preview.refresh_current_entry(self, state)
 
     return true
 end

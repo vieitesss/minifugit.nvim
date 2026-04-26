@@ -4,6 +4,18 @@ local selection = require('minifugit.ui.status.selection')
 
 local M = {}
 
+local function stop_visual_mode()
+    local mode = vim.fn.mode()
+
+    if mode == 'v' or mode == 'V' or mode == '\22' then
+        vim.api.nvim_feedkeys(
+            vim.api.nvim_replace_termcodes('<Esc>', true, false, true),
+            'nx',
+            false
+        )
+    end
+end
+
 ---@param item GitStatusEntryItem
 ---@param kind 'stage'|'unstage'
 ---@return boolean
@@ -28,6 +40,18 @@ local function entries_for_action(items, kind)
     end
 
     return entries
+end
+
+---@param items GitStatusEntryItem[]
+---@return boolean
+local function all_items_in_section(items, section)
+    for _, item in ipairs(items) do
+        if item.section ~= section then
+            return false
+        end
+    end
+
+    return #items > 0
 end
 
 ---@param item GitStatusEntryItem
@@ -79,6 +103,7 @@ function M.update_entries(self, action, entries)
     end
 
     local cursor_state = selection.capture_cursor_state(self)
+    cursor_state.follow_entry = false
     local ok, err = action(entries)
 
     if not ok then
@@ -101,6 +126,8 @@ function M.update_entry_items(self, action, items, kind)
         common.notify_warn('No git status entries selected')
         return false
     end
+
+    stop_visual_mode()
 
     local entries = entries_for_action(items, kind)
 
@@ -168,12 +195,13 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.stage_selected_entries(self)
-    return M.update_entry_items(
-        self,
-        git.stage_entries,
-        selection.selected_entry_items(self),
-        'stage'
-    )
+    local items = selection.selected_entry_items(self)
+
+    if all_items_in_section(items, 'staged') then
+        return M.update_entry_items(self, git.unstage_entries, items, 'unstage')
+    end
+
+    return M.update_entry_items(self, git.stage_entries, items, 'stage')
 end
 
 ---@param self GitStatusWindow
@@ -247,7 +275,7 @@ function M.commit(self)
                 return false
             end
 
-            self:render()
+            self:refresh()
 
             if self.win ~= nil and common.is_valid_win(self.win) then
                 vim.api.nvim_win_set_buf(self.win, self.buf.id)

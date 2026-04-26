@@ -7,6 +7,52 @@ local selection = require('minifugit.ui.status.selection')
 
 local M = {}
 
+---@param self GitStatusWindow
+---@param row integer?
+---@return GitStatusEntryItem?
+local function entry_item_at_row(self, row)
+    if row == nil then
+        return nil
+    end
+
+    local line = self.lines[row]
+
+    if line == nil then
+        return nil
+    end
+
+    return selection.entry_item_from_data(line.data)
+end
+
+---@param self GitStatusWindow
+---@param state GitStatusCursorState?
+---@return GitStatusEntryItem?
+local function refresh_entry_item(self, state)
+    local item = selection.current_entry_item(self)
+
+    if item ~= nil then
+        return item
+    end
+
+    if state == nil then
+        return nil
+    end
+
+    if state.item_key ~= nil then
+        item = entry_item_at_row(self, selection.row_for_item_key(self, state.item_key))
+
+        if item ~= nil then
+            return item
+        end
+    end
+
+    if state.entry_key ~= nil then
+        return entry_item_at_row(self, selection.row_for_entry_key(self, state.entry_key))
+    end
+
+    return nil
+end
+
 ---@class MiniFugitDiffLine
 ---@field kind 'header'|'hunk'|'context'|'added'|'removed'
 ---@field old_number integer?
@@ -330,11 +376,17 @@ function M.preview_current_entry(self, opts)
 end
 
 ---@param self GitStatusWindow
-function M.refresh_current_entry(self)
+---@param state GitStatusCursorState?
+function M.refresh_current_entry(self, state)
     if M.has_open_diff(self) then
-        M.preview_current_entry(self, {
+        local item = refresh_entry_item(self, state)
+
+        if item == nil then
+            return false
+        end
+
+        return M.open_diff(self, item.entry, item.section, {
             force = true,
-            notify = false,
         })
     end
 end

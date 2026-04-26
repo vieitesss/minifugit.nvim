@@ -10,6 +10,7 @@ local M = {}
 ---@field row integer?
 ---@field item_key string?
 ---@field entry_key string?
+---@field follow_entry boolean?
 
 ---@param data any
 ---@return GitStatusEntry?
@@ -202,6 +203,7 @@ function M.capture_cursor_state(self)
         row = nil,
         item_key = nil,
         entry_key = nil,
+        follow_entry = true,
     }
     local item = M.current_entry_item(self)
 
@@ -252,7 +254,7 @@ end
 
 ---@param self GitStatusWindow
 ---@param row integer
-function M.restore_cursor(self, row)
+function M.set_cursor_row(self, row)
     if self.win == nil or not common.is_valid_win(self.win) then
         return
     end
@@ -261,6 +263,12 @@ function M.restore_cursor(self, row)
         self.win,
         { math.max(1, math.min(row, #self.lines)), 0 }
     )
+end
+
+---@param self GitStatusWindow
+---@param row integer
+function M.restore_cursor(self, row)
+    M.set_cursor_row(self, row)
 
     if M.current_entry_item(self) == nil then
         M.move_to_first_entry(self)
@@ -268,13 +276,50 @@ function M.restore_cursor(self, row)
 end
 
 ---@param self GitStatusWindow
+---@param row integer
+function M.restore_nearest_entry(self, row)
+    local clamped = math.max(1, math.min(row, #self.lines))
+
+    for current = clamped, 1, -1 do
+        local line = self.lines[current]
+
+        if M.entry_item_from_data(line and line.data) ~= nil then
+            M.restore_cursor(self, current)
+            return
+        end
+    end
+
+    for current = clamped + 1, #self.lines do
+        local line = self.lines[current]
+
+        if M.entry_item_from_data(line and line.data) ~= nil then
+            M.restore_cursor(self, current)
+            return
+        end
+    end
+
+    M.move_to_first_entry(self)
+end
+
+---@param self GitStatusWindow
 ---@param state? GitStatusCursorState
 function M.restore_cursor_state(self, state)
     state = state or M.capture_cursor_state(self)
 
+    if state.follow_entry == false and state.row ~= nil then
+        M.set_cursor_row(self, state.row)
+        return
+    end
+
     local target_row = state.item_key ~= nil
             and M.row_for_item_key(self, state.item_key)
         or nil
+
+    if target_row == nil and state.entry_key ~= nil then
+        if state.follow_entry == false then
+            state.entry_key = nil
+        end
+    end
 
     if target_row == nil and state.entry_key ~= nil then
         target_row = M.row_for_entry_key(self, state.entry_key)
