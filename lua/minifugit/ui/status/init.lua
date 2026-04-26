@@ -738,6 +738,7 @@ function GitStatusWindow.new()
     self:render()
 
     self.win = create_win(self.buf)
+    move_to_first_entry(self)
 
     return self
 end
