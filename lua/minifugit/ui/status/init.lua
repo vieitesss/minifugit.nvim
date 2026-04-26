@@ -68,19 +68,19 @@ local function is_valid_win(win)
 end
 
 ---@return integer
-local function status_win_width()
-    return math.max(math.floor(vim.o.columns * 0.3), 20)
+local function status_win_height()
+    return math.max(math.floor(vim.o.lines * 0.3), 5)
 end
 
 ---@param win number
-local function set_status_win_width(win)
+local function set_status_win_height(win)
     local current_win = vim.api.nvim_get_current_win()
-    local winfixwidth = vim.wo[win].winfixwidth
+    local winfixheight = vim.wo[win].winfixheight
 
     vim.api.nvim_set_current_win(win)
-    vim.wo[win].winfixwidth = false
-    vim.cmd('vertical resize ' .. status_win_width())
-    vim.wo[win].winfixwidth = winfixwidth
+    vim.wo[win].winfixheight = false
+    vim.cmd('resize ' .. status_win_height())
+    vim.wo[win].winfixheight = winfixheight
 
     if is_valid_win(current_win) then
         vim.api.nvim_set_current_win(current_win)
@@ -90,9 +90,9 @@ end
 ---@param buf Buffer
 ---@return number
 local function create_win(buf)
-    local width = status_win_width()
+    local height = status_win_height()
 
-    vim.cmd('botright ' .. width .. 'vsplit')
+    vim.cmd('botright ' .. height .. 'split')
 
     local win = vim.api.nvim_get_current_win()
 
@@ -104,7 +104,7 @@ local function create_win(buf)
     vim.wo[win].foldcolumn = '0'
     vim.wo[win].wrap = false
     vim.wo[win].cursorline = true
-    vim.wo[win].winfixwidth = true
+    vim.wo[win].winfixheight = true
 
     log.info(string.format('created status window win=%d buf=%d', win, buf.id))
 
@@ -585,7 +585,7 @@ function GitStatusWindow:commit()
     vim.bo.filetype = 'gitcommit'
 
     if created_target_win and self.win ~= nil and is_valid_win(self.win) then
-        set_status_win_width(self.win)
+        set_status_win_height(self.win)
     end
 
     vim.api.nvim_create_autocmd('BufWritePost', {
