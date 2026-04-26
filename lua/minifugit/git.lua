@@ -274,7 +274,8 @@ end
 function git.commit_file(file)
     ensure_git()
 
-    local out = git.run({ 'commit', '--cleanup=strip', '-F', file }, root_opts())
+    local out =
+        git.run({ 'commit', '--cleanup=strip', '-F', file }, root_opts())
 
     return out.exit_code == 0, return_result(out)
 end
