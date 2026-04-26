@@ -246,6 +246,17 @@ function GitStatusWindow:all_entries()
     return self:entries_in_range(1, #self.lines)
 end
 
+---@return integer?
+function GitStatusWindow:first_entry_row()
+    for row, line in ipairs(self.lines) do
+        if type(line.data) == 'table' then
+            return row
+        end
+    end
+
+    return nil
+end
+
 ---@return GitStatusEntry[]
 function GitStatusWindow:selected_entries()
     local mode = vim.fn.mode()
@@ -350,10 +361,20 @@ function GitStatusWindow:show()
 
     if self.win and vim.api.nvim_win_is_valid(self.win) then
         vim.api.nvim_set_current_win(self.win)
+        self:move_to_first_entry()
         return
     end
 
     self.win = create_win(self.buf)
+    self:move_to_first_entry()
+end
+
+function GitStatusWindow:move_to_first_entry()
+    local row = self:first_entry_row()
+
+    if row ~= nil and self.win ~= nil and is_valid_win(self.win) then
+        vim.api.nvim_win_set_cursor(self.win, { row, 0 })
+    end
 end
 
 ---@param entry GitStatusEntry
