@@ -279,6 +279,17 @@ function git.commit(message)
     return out.exit_code == 0, return_result(out)
 end
 
+---@param file string
+---@return boolean
+---@return string
+function git.commit_file(file)
+    ensure_git()
+
+    local out = git.run({ 'commit', '-F', file }, root_opts())
+
+    return out.exit_code == 0, return_result(out)
+end
+
 ---@param diff string?
 ---@return string[]
 local function parse_diff(diff)
