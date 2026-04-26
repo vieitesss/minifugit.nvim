@@ -1,0 +1,98 @@
+name: Nightly
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-release
+  cancel-in-progress: true
+
+jobs:
+  publish-nightly:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          ref: refs/heads/main
+          fetch-depth: 0
+
+      - name: Check if nightly needs update
+        id: nightly_state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest_main="$(git rev-parse HEAD)"
+          latest_stable="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          nightly_sha="$(git ls-remote --tags origin 'refs/tags/nightly^{}' | cut -f1)"
+          nightly_body="$(gh release view nightly --json body --jq '.body' 2>/dev/null || true)"
+          nightly_stable="$(printf '%s\n' "$nightly_body" | sed -n 's/^- Base stable release: `\([^`]*\)`/\1/p' | sed -n '1p')"
+
+          echo "target_sha=${latest_main}" >> "$GITHUB_OUTPUT"
+          echo "latest_stable=${latest_stable}" >> "$GITHUB_OUTPUT"
+
+          if [ "$nightly_sha" = "$latest_main" ] && [ "$nightly_stable" = "$latest_stable" ]; then
+            echo "needs_update=false" >> "$GITHUB_OUTPUT"
+            echo "Nightly already points at ${latest_main} with stable base ${latest_stable:-none}; skipping."
+          else
+            echo "needs_update=true" >> "$GITHUB_OUTPUT"
+            echo "Nightly update required."
+          fi
+
+      - name: Update nightly tag
+        if: steps.nightly_state.outputs.needs_update == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -fa nightly "${{ steps.nightly_state.outputs.target_sha }}" -m "nightly release for ${{ steps.nightly_state.outputs.target_sha }}"
+          git push origin refs/tags/nightly --force
+
+      - name: Build nightly notes
+        if: steps.nightly_state.outputs.needs_update == 'true'
+        run: |
+          latest_stable="${{ steps.nightly_state.outputs.latest_stable }}"
+          target_sha="${{ steps.nightly_state.outputs.target_sha }}"
+          {
+            echo "This is an unstable rolling build from \`main\`."
+            echo
+            echo "- Commit: \`${target_sha}\`"
+            echo "- Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+            if [ -n "$latest_stable" ]; then
+              echo "- Base stable release: \`${latest_stable}\`"
+            else
+              echo "- Base stable release: none yet"
+            fi
+            echo
+            echo "## Recent changes"
+            if [ -n "$latest_stable" ]; then
+              git log --oneline --no-merges "${latest_stable}..HEAD" | sed 's/^/- /'
+            else
+              git log --oneline --no-merges -20 | sed 's/^/- /'
+            fi
+          } > "$RUNNER_TEMP/nightly-notes.md"
+
+      - name: Create or update nightly release
+        if: steps.nightly_state.outputs.needs_update == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view nightly >/dev/null 2>&1; then
+            gh release edit nightly \
+              --title "nightly" \
+              --notes-file "$RUNNER_TEMP/nightly-notes.md" \
+              --prerelease
+          else
+            gh release create nightly \
+              --title "nightly" \
+              --notes-file "$RUNNER_TEMP/nightly-notes.md" \
+              --prerelease
+          fi
