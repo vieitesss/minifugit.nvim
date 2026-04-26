@@ -610,7 +610,7 @@ function GitStatusWindow:render()
     assert(self.buf:is_valid())
     assert(self.groups ~= nil)
 
-    self.lines = formatting.render(git.branch(), git.status(), self.groups)
+    self.lines = formatting.render(git.status_snapshot(), self.groups)
 
     vim.bo[self.buf.id].modifiable = true
     self.buf:set_lines(render.text_lines(self.lines))

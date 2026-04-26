@@ -12,6 +12,8 @@ local conflict_statuses = {
     UU = true,
 }
 
+---@alias GitStatusSection {title:string, entries:GitStatusEntry[]}
+
 ---@param entry GitStatusEntry
 ---@return string
 local function entry_text(entry)
@@ -63,11 +65,34 @@ end
 ---@return MiniFugitRenderLine
 function M.head_line(branch, groups)
     local prefix = 'HEAD: '
-    local text = prefix .. branch
+    local text = prefix .. (branch ~= '' and branch or '(none)')
     local line = render.line(text)
 
     render.add_highlight(line, groups.head, 0, #prefix)
     render.add_highlight(line, 'Title', #prefix, #text)
+
+    return line
+end
+
+---@param title string
+---@param count integer
+---@return MiniFugitRenderLine
+local function section_line(title, count)
+    local text = string.format('%s (%d)', title, count)
+    local line = render.line(text)
+
+    render.add_highlight(line, 'Title', 0, #text)
+
+    return line
+end
+
+---@param text string
+---@param group string
+---@return MiniFugitRenderLine
+local function message_line(text, group)
+    local line = render.line(text)
+
+    render.add_highlight(line, group, 0, #text)
 
     return line
 end
@@ -105,17 +130,101 @@ function M.entry_lines(entries, groups)
     return lines
 end
 
----@param branch string
+---@param entry GitStatusEntry
+---@return boolean
+local function is_conflict(entry)
+    return conflict_statuses[entry.staged .. entry.unstaged]
+        or entry.staged == 'U'
+        or entry.unstaged == 'U'
+end
+
+---@param entry GitStatusEntry
+---@return boolean
+local function is_untracked(entry)
+    return entry.staged == '?' or entry.unstaged == '?'
+end
+
+---@param entry GitStatusEntry
+---@return boolean
+local function is_staged(entry)
+    return entry.staged ~= ' ' and entry.staged ~= '?' and entry.staged ~= '!'
+end
+
+---@param entry GitStatusEntry
+---@return boolean
+local function is_unstaged(entry)
+    return entry.unstaged ~= ' '
+        and entry.unstaged ~= '?'
+        and entry.unstaged ~= '!'
+end
+
 ---@param entries GitStatusEntry[]
+---@return GitStatusSection[]
+local function sections(entries)
+    local groups = {
+        conflicts = {},
+        staged = {},
+        unstaged = {},
+        untracked = {},
+    }
+
+    for _, entry in ipairs(entries) do
+        if is_conflict(entry) then
+            table.insert(groups.conflicts, entry)
+        elseif is_untracked(entry) then
+            table.insert(groups.untracked, entry)
+        else
+            if is_staged(entry) then
+                table.insert(groups.staged, entry)
+            end
+
+            if is_unstaged(entry) then
+                table.insert(groups.unstaged, entry)
+            end
+        end
+    end
+
+    return {
+        { title = 'Conflicts', entries = groups.conflicts },
+        { title = 'Staged', entries = groups.staged },
+        { title = 'Unstaged', entries = groups.unstaged },
+        { title = 'Untracked', entries = groups.untracked },
+    }
+end
+
+---@param lines MiniFugitRenderLine[]
+---@param section GitStatusSection
+---@param groups table<string, string>
+local function append_section(lines, section, groups)
+    if #section.entries == 0 then
+        return
+    end
+
+    table.insert(lines, render.line(''))
+    table.insert(lines, section_line(section.title, #section.entries))
+    vim.list_extend(lines, M.entry_lines(section.entries, groups))
+end
+
+---@param snapshot GitStatusSnapshot
 ---@param groups table<string, string>
 ---@return MiniFugitRenderLine[]
-function M.render(branch, entries, groups)
-    local lines = { M.head_line(branch, groups) }
-    local status_lines = M.entry_lines(entries, groups)
+function M.render(snapshot, groups)
+    local lines = { M.head_line(snapshot.branch, groups) }
 
-    if #status_lines > 0 then
+    if snapshot.error ~= nil then
         table.insert(lines, render.line(''))
-        vim.list_extend(lines, status_lines)
+        table.insert(lines, message_line(snapshot.error, 'WarningMsg'))
+        return lines
+    end
+
+    if #snapshot.entries == 0 then
+        table.insert(lines, render.line(''))
+        table.insert(lines, message_line('Working tree clean', 'Comment'))
+        return lines
+    end
+
+    for _, section in ipairs(sections(snapshot.entries)) do
+        append_section(lines, section, groups)
     end
 
     return lines

@@ -4,6 +4,12 @@
 ---@field path string
 ---@field orig_path string?
 
+---@class GitStatusSnapshot
+---@field branch string
+---@field entries GitStatusEntry[]
+---@field root string
+---@field error string?
+
 local git = {}
 
 local log = require('minifugit.log')
@@ -65,13 +71,17 @@ local function parse_status(output)
     return entries
 end
 
+---@return boolean
 local function ensure_git()
     local ok = vim.fn.executable('git')
 
     if ok == 0 then
         log.error('`git` is not executable')
         vim.print('[minifugit] `git` is not executable')
+        return false
     end
+
+    return true
 end
 
 ---@alias GitResult {
@@ -86,7 +96,14 @@ end
 ---@return GitResult
 function git.run(args, opts)
     opts = opts or {}
-    ensure_git()
+
+    if not ensure_git() then
+        return {
+            output = '',
+            exit_code = 127,
+            stderr = '`git` is not executable',
+        }
+    end
 
     local cmd = { 'git' }
     vim.list_extend(cmd, args)
@@ -173,6 +190,65 @@ function git.status()
     end
 
     return parse_status(out.output)
+end
+
+---@return GitStatusSnapshot
+function git.status_snapshot()
+    if not ensure_git() then
+        return {
+            branch = '',
+            entries = {},
+            root = '',
+            error = '`git` is not executable',
+        }
+    end
+
+    local root = git.root()
+
+    if root == '' then
+        return {
+            branch = '',
+            entries = {},
+            root = '',
+            error = 'Not inside a git repository',
+        }
+    end
+
+    local branch_out = git.run(
+        { 'branch', '--show-current' },
+        { cwd = root, ignore_error = true }
+    )
+    local branch = return_result(branch_out)
+
+    if branch == '' then
+        local head_out = git.run(
+            { 'rev-parse', '--short', 'HEAD' },
+            { cwd = root, ignore_error = true }
+        )
+
+        branch = head_out.exit_code == 0 and return_result(head_out)
+            or '(unknown)'
+    end
+
+    local status_out = git.run(
+        { 'status', '--porcelain=v1', '-z' },
+        { cwd = root }
+    )
+
+    if status_out.exit_code ~= 0 then
+        return {
+            branch = branch,
+            entries = {},
+            root = root,
+            error = return_result(status_out),
+        }
+    end
+
+    return {
+        branch = branch,
+        entries = parse_status(status_out.output),
+        root = root,
+    }
 end
 
 ---@return table
