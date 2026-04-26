@@ -246,6 +246,20 @@ function GitStatusWindow.new()
     self.win = window.create_status_win(self.buf)
     selection.move_to_first_entry(self)
 
+    vim.api.nvim_create_autocmd('ColorScheme', {
+        callback = function()
+            ensure_highlights(self)
+
+            if self.buf ~= nil and self.buf:is_valid() then
+                render.apply(self.buf.id, self.lines)
+            end
+
+            if self.diff_buf ~= nil and self.diff_buf:is_valid() and preview.has_open_diff(self) then
+                preview.refresh_current_entry(self)
+            end
+        end,
+    })
+
     return self
 end
 

@@ -1,7 +1,3 @@
----@class Highlight
----@field name string
----@field namespace_id number
----@field sources string[]
 ---@field fallback_fg number?
 ---@field fallback_bg number?
 ---@field ensure function
@@ -34,26 +30,45 @@ local function get_highlight(names)
     return {}
 end
 
+---@param names string[]
+---@param key 'fg'|'bg'
+---@return integer?
+local function get_highlight_attr(names, key)
+    for _, name in ipairs(names) do
+        local ok, source = pcall(vim.api.nvim_get_hl, 0, {
+            name = name,
+            link = false,
+        })
+
+        if ok and source[key] ~= nil then
+            return source[key]
+        end
+    end
+
+    return nil
+end
+
 ---@param name string
 ---@param sources string[]
 ---@param fallback_fg integer?
 ---@param fallback_bg integer?
 local function set_highlight(name, sources, fallback_fg, fallback_bg)
     local source = get_highlight(sources)
+    local resolved_fg = get_highlight_attr(sources, 'fg')
+    local resolved_bg = get_highlight_attr(sources, 'bg')
 
     local opts = {
-        default = true,
         bold = source.bold,
         italic = source.italic,
         underline = source.underline,
     }
 
     if fallback_fg ~= nil then
-        opts.fg = source.fg or fallback_fg
+        opts.fg = resolved_fg or fallback_fg
     end
 
     if fallback_bg ~= nil then
-        opts.bg = source.bg or fallback_bg
+        opts.bg = resolved_bg or fallback_bg
     end
 
     vim.api.nvim_set_hl(0, name, opts)
