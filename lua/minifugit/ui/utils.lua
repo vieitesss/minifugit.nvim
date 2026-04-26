@@ -2,7 +2,6 @@ local ui_utils = {}
 
 return ui_utils
 
-
 -- ---@class UI
 -- ---@field close_win function Closes the window and deletes the buffer
 -- ---@field ensure_buf function Returns whether a buffer is valid or not

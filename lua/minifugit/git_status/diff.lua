@@ -5,11 +5,9 @@
 ---@type UIDiff
 local diff = {
     _buf = -1,
-    update_window = function() end
+    update_window = function() end,
 }
 
-function diff.update_window()
-
-end
+function diff.update_window() end
 
 return diff

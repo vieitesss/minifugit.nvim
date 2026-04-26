@@ -22,12 +22,8 @@ local write = function(level, msg)
 
     local text = tostring(msg)
 
-    local line = string.format(
-        '[%s] [%s] %s',
-        os.date('%Y-%m-%d %H:%M:%S'),
-        level,
-        text
-    )
+    local line =
+        string.format('[%s] [%s] %s', os.date('%Y-%m-%d %H:%M:%S'), level, text)
 
     local file = io.open(log_file, 'a')
 

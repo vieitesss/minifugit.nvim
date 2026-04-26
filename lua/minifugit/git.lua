@@ -75,10 +75,10 @@ local function ensure_git()
 end
 
 ---@alias GitResult {
-    ---output: string,
-    ---exit_code: string,
-    ---stderr: string,
-    ---}
+---output: string,
+---exit_code: string,
+---stderr: string,
+---}
 
 ---Executes a git command and returns the result
 ---@param args string[] List of git arguments (e.g., {"status", "--porcelain"})
