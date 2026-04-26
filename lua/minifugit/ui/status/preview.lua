@@ -192,12 +192,14 @@ function M.close_diff(self)
         vim.api.nvim_win_close(diff_win, true)
     elseif self.diff_prev_buf and vim.api.nvim_buf_is_valid(self.diff_prev_buf) then
         vim.api.nvim_win_set_buf(diff_win, self.diff_prev_buf)
+        window.restore_winopts(diff_win, self.diff_prev_winopts)
     elseif #vim.api.nvim_tabpage_list_wins(0) > 1 then
         vim.api.nvim_win_close(diff_win, true)
     end
 
     self.diff_win = nil
     self.diff_prev_buf = nil
+    self.diff_prev_winopts = nil
     self.diff_created_win = false
     self.diff_preview_key = nil
 
@@ -290,6 +292,7 @@ function M.open_diff(self, entry, section, opts)
 
     if not was_diff_preview then
         self.diff_prev_buf = previous_buf
+        self.diff_prev_winopts = window.capture_winopts(target_win)
         self.diff_created_win = created_win
     end
 

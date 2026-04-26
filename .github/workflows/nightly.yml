@@ -26,6 +26,7 @@ jobs:
           ref: refs/heads/main
           fetch-depth: 0
 
+
       - name: Check if nightly needs update
         id: nightly_state
         env:

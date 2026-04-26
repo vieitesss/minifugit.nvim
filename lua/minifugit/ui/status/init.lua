@@ -18,6 +18,7 @@ local git = require('minifugit.git')
 ---@field diff_prev_buf number?
 ---@field diff_created_win boolean
 ---@field diff_preview_key string?
+---@field diff_prev_winopts GitStatusWindowOptions?
 ---@field win number?
 ---@field target_win number?
 ---@field groups table<string, string>
@@ -194,6 +195,10 @@ function GitStatusWindow:enter_entry()
     if entry == nil then
         common.notify_warn('No git status entry under cursor')
         return false
+    end
+
+    if preview.has_open_diff(self) then
+        preview.close_diff(self)
     end
 
     return window.open_entry(self, entry)

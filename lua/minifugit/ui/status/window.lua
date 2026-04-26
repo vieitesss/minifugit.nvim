@@ -4,6 +4,14 @@ local common = require('minifugit.ui.status.common')
 
 local M = {}
 
+---@class GitStatusWindowOptions
+---@field number boolean
+---@field relativenumber boolean
+---@field signcolumn string
+---@field foldcolumn string
+---@field wrap boolean
+---@field cursorline boolean
+
 ---@return integer
 local function status_win_width()
     return math.max(math.floor(vim.o.columns * 0.4), 20)
@@ -92,7 +100,7 @@ function M.open_entry(self, entry)
     local target_win = M.find_target_win(self)
 
     if target_win == nil then
-        vim.cmd('leftabove vsplit')
+        vim.cmd('rightbelow vsplit')
         target_win = vim.api.nvim_get_current_win()
         self.target_win = target_win
     else
@@ -112,6 +120,34 @@ function M.configure_diff_win(win)
     vim.wo[win].foldcolumn = '0'
     vim.wo[win].wrap = false
     vim.wo[win].cursorline = false
+end
+
+---@param win number
+---@return GitStatusWindowOptions
+function M.capture_winopts(win)
+    return {
+        number = vim.wo[win].number,
+        relativenumber = vim.wo[win].relativenumber,
+        signcolumn = vim.wo[win].signcolumn,
+        foldcolumn = vim.wo[win].foldcolumn,
+        wrap = vim.wo[win].wrap,
+        cursorline = vim.wo[win].cursorline,
+    }
+end
+
+---@param win number
+---@param opts GitStatusWindowOptions?
+function M.restore_winopts(win, opts)
+    if opts == nil or not common.is_valid_win(win) then
+        return
+    end
+
+    vim.wo[win].number = opts.number
+    vim.wo[win].relativenumber = opts.relativenumber
+    vim.wo[win].signcolumn = opts.signcolumn
+    vim.wo[win].foldcolumn = opts.foldcolumn
+    vim.wo[win].wrap = opts.wrap
+    vim.wo[win].cursorline = opts.cursorline
 end
 
 return M
