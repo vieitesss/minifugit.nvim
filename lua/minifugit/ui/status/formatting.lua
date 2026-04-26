@@ -1,101 +1,26 @@
--- ---@class GitStatusFormatting
--- ---@field head_line function Returns highlighted branch line
--- ---@field lines function Formats parsed git status entries into highlighted lines
---
--- local highlight = require('minifugit.highlight')
---
--- ---@type GitStatusFormatting
--- local gsf = {
---     head_line = function() end,
---     lines = function() end,
--- }
---
--- local conflict_statuses = {
---     AA = true,
---     AU = true,
---     DD = true,
---     DU = true,
---     UA = true,
---     UD = true,
---     UU = true,
--- }
---
--- ---@param entry GitStatusEntry
--- ---@return string
--- local function entry_text(entry)
---     if entry.orig_path ~= nil then
---         return entry.staged .. entry.unstaged .. ' ' .. entry.orig_path .. ' -> ' .. entry.path
---     end
---
---     return entry.staged .. entry.unstaged .. ' ' .. entry.path
--- end
---
--- ---@param stage string
--- ---@param unstage string
--- ---@param is_staged boolean
--- ---@return string?
--- local status_group_for = function(stage, unstage, is_staged)
---     if conflict_statuses[stage .. unstage] then
---         return highlight.groups.conflict
---     end
---
---     local code = is_staged and stage or unstage
---
---     if code == ' ' then
---         return nil
---     end
---
---     if code == '?' then
---         return highlight.groups.untracked
---     end
---
---     if code == '!' then
---         return highlight.groups.ignored
---     end
---
---     if code == 'U' then
---         return highlight.groups.conflict
---     end
---
---     return is_staged and highlight.groups.staged or highlight.groups.unstaged
--- end
---
--- ---@param branch string
--- ---@return MiniFugitLine
--- function gsf.head_line(branch)
---     local prefix = 'HEAD: '
---     local text = prefix .. branch
---     local line = highlight.plain_line(text)
---
---     highlight.add(line, highlight.groups.head, 0, 4)
---     highlight.add(line, 'Title', #prefix, #text)
---
---     return line
--- end
---
--- ---@param entries GitStatusEntry[]
--- ---@return MiniFugitLine[]
--- function gsf.lines(entries)
---     local formatted_lines = {}
---
---     for _, entry in ipairs(entries) do
---         local formatted_line = highlight.line(entry_text(entry), nil, entry)
---
---         highlight.add(
---             formatted_line,
---             status_group_for(entry.staged, entry.unstaged, true),
---             0
---         )
---         highlight.add(
---             formatted_line,
---             status_group_for(entry.staged, entry.unstaged, false),
---             1
---         )
---
---         table.insert(formatted_lines, formatted_line)
---     end
---
---     return formatted_lines
--- end
---
--- return gsf
+local render = require('minifugit.ui.render')
+
+local M = {}
+
+---@param branch string
+---@param groups table<string, string>
+---@return MiniFugitRenderLine
+function M.head_line(branch, groups)
+    local prefix = 'HEAD: '
+    local text = prefix .. branch
+    local line = render.line(text)
+
+    render.add_highlight(line, groups.head, 0, #prefix)
+    render.add_highlight(line, 'Title', #prefix, #text)
+
+    return line
+end
+
+---@param branch string
+---@param groups table<string, string>
+---@return MiniFugitRenderLine[]
+function M.render(branch, groups)
+    return { M.head_line(branch, groups) }
+end
+
+return M

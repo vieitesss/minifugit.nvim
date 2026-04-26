@@ -1,13 +1,52 @@
 local Buffer = require('minifugit.ui.buffer')
 local Highlight = require('minifugit.ui.highlight')
+local render = require('minifugit.ui.render')
+local formatting = require('minifugit.ui.status.formatting')
 local log = require('minifugit.log')
 local git = require('minifugit.git')
 
 ---@class GitStatusWindow
 ---@field buf Buffer
 ---@field win number
+---@field groups table<string, string>
+---@field highlights table<string, Highlight>
 local GitStatusWindow = {}
 GitStatusWindow.__index = GitStatusWindow
+
+local HIGHLIGHT_NAMESPACE = 'GitStatusWindow'
+
+local HIGHLIGHT_SPECS = {
+    staged = {
+        name = 'MiniFugitStage',
+        sources = { 'Added', 'String' },
+        fallback_fg = 0x98C379,
+    },
+    unstaged = {
+        name = 'MiniFugitUnstage',
+        sources = { 'Removed', 'Error' },
+        fallback_fg = 0xE06C75,
+    },
+    untracked = {
+        name = 'MiniFugitUntracked',
+        sources = { 'DiagnosticInfo', 'Directory', 'Identifier' },
+        fallback_fg = 0x61AFEF,
+    },
+    ignored = {
+        name = 'MiniFugitIgnored',
+        sources = { 'Comment' },
+        fallback_fg = 0x5C6370,
+    },
+    conflict = {
+        name = 'MiniFugitConflict',
+        sources = { 'DiagnosticError', 'ErrorMsg', 'Error' },
+        fallback_fg = 0xE06C75,
+    },
+    head = {
+        name = 'MiniFugitHead',
+        sources = { 'Identifier', 'Keyword' },
+        fallback_fg = 0x61AFEF,
+    },
+}
 
 ---@param buf Buffer
 ---@return number
@@ -29,51 +68,37 @@ local function create_win(buf)
     return win
 end
 
+---@return table<string, string>
+function GitStatusWindow:create_highlight_groups()
+    local groups = {}
+
+    for key, spec in pairs(HIGHLIGHT_SPECS) do
+        groups[key] = spec.name
+    end
+
+    return groups
+end
+
 ---@return table<string, Highlight>
-function GitStatusWindow:highlights()
-    local ns = 'GitStatusWindow'
-    return {
-        staged = Highlight.new({
-            namespace = ns,
-            name = 'MiniFugitStage',
-            sources = { 'Added', 'String' },
-            fallback_fg = 0x98C379,
-        }),
-        unstaged = Highlight.new({
-            namespace = ns,
-            name = 'MiniFugitUnstage',
-            sources = { 'Removed', 'Error' },
-            fallback_fg = 0xE06C75,
-        }),
-        untracked = Highlight.new({
-            namespace = ns,
-            name = 'MiniFugitUntracked',
-            sources = { 'DiagnosticInfo', 'Directory', 'Identifier' },
-            fallback_fg = 0x61AFEF,
-        }),
-        ignored = Highlight.new({
-            namespace = ns,
-            name = 'MiniFugitIgnored',
-            sources = { 'Comment' },
-            fallback_fg = 0x5C6370,
-        }),
-        conflict = Highlight.new({
-            namespace = ns,
-            name = 'MiniFugitConflict',
-            sources = { 'DiagnosticError', 'ErrorMsg', 'Error' },
-            fallback_fg = 0xE06C75,
-        }),
-        head = Highlight.new({
-            namespace = ns,
-            name = 'MiniFugitHead',
-            sources = { 'Identifier', 'Keyword' },
-            fallback_fg = 0x61AFEF,
-        }),
-    }
+function GitStatusWindow:create_highlights()
+    local highlights = {}
+
+    for key, spec in pairs(HIGHLIGHT_SPECS) do
+        highlights[key] = Highlight.new({
+            namespace = HIGHLIGHT_NAMESPACE,
+            name = spec.name,
+            sources = spec.sources,
+            fallback_fg = spec.fallback_fg,
+        })
+    end
+
+    return highlights
 end
 
 function GitStatusWindow:highlights_ensure()
-    for _, h in pairs(self:highlights()) do
+    assert(self.highlights ~= nil)
+
+    for _, h in pairs(self.highlights) do
         h:ensure()
     end
 end
@@ -113,10 +138,23 @@ function GitStatusWindow:show()
     create_win(self.buf)
 end
 
+function GitStatusWindow:render()
+    assert(self.buf ~= nil)
+    assert(self.buf:is_valid())
+    assert(self.groups ~= nil)
+
+    local lines = formatting.render(git.branch(), self.groups)
+
+    self.buf:set_lines(render.text_lines(lines))
+    render.apply(self.buf.id, lines)
+end
+
 ---@return GitStatusWindow
 function GitStatusWindow.new()
     local self = setmetatable({}, GitStatusWindow)
 
+    self.groups = self:create_highlight_groups()
+    self.highlights = self:create_highlights()
     self:highlights_ensure()
 
     ---@type BufferOpts
@@ -124,11 +162,7 @@ function GitStatusWindow.new()
     self.buf = Buffer.new(opts)
 
     self:ensure_keymaps()
-
-    local content = {}
-    vim.list_extend(content, git.branch())
-
-    self.buf:set_lines(content)
+    self:render()
 
     -- local head_line = gsf.head_line(git.branch())
     -- local status_lines = gsf.lines(git.status())

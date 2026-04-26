@@ -6,23 +6,25 @@
 local Buffer = {}
 Buffer.__index = Buffer
 
-local log = require("minifugit.log")
+local log = require('minifugit.log')
 
 ---@alias BufferOpts {
-    ---listed: boolean,
-    ---scratch: boolean,
-    ---name?: string,
-    ---}
+---listed: boolean,
+---scratch: boolean,
+---name?: string,
+---}
 
 -- local function create_buf()
 
 ---@param opts BufferOpts
 ---@return Buffer
 function Buffer.new(opts)
-    local self = setmetatable({}, Buffer)
+    vim.validate('opts', opts, 'table', '`opts` table is required')
+    vim.validate('name', opts.name, 'string', true, '`name` should be a string')
+    vim.validate('listed', opts.listed, 'boolean', '`listed` is required')
+    vim.validate('scratch', opts.scratch, 'boolean', '`scratch` is required')
 
-    assert(opts.listed, "`listed` is required")
-    assert(opts.scratch, "`scratch` is required")
+    local self = setmetatable({}, Buffer)
 
     self.listed = opts.listed
     self.scratch = opts.scratch
@@ -45,7 +47,7 @@ end
 
 function Buffer:delete()
     if not self:is_valid() then
-        log.error("Cannot delete buf=" .. self.id)
+        log.error('Cannot delete buf=' .. self.id)
         return
     end
     vim.api.nvim_buf_delete(self.id, { force = true })

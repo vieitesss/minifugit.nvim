@@ -7,64 +7,63 @@
 local git = {}
 
 local log = require('minifugit.log')
-local utils = require('minifugit.ui.utils')
---
--- ---@param output string
--- ---@param start integer
--- ---@return string?, integer?
--- local function read_nul_field(output, start)
---     local stop = output:find('\0', start, true)
---
---     if stop == nil then
---         return nil, nil
---     end
---
---     return output:sub(start, stop - 1), stop + 1
--- end
---
--- ---@param staged string
--- ---@param unstaged string
--- ---@return boolean
--- local function is_rename_or_copy(staged, unstaged)
---     return staged == 'R' or staged == 'C' or unstaged == 'R' or unstaged == 'C'
--- end
 
--- ---@param output string
--- ---@return GitStatusEntry[]
--- local function parse_status(output)
---     local entries = {}
---     local index
---     index = 1
---
---     while index <= #output do
---         local record
---         record, index = read_nul_field(output, index)
---
---         if record == nil or index == nil then
---             break
---         end
---
---         if record ~= '' then
---             local staged = record:sub(1, 1)
---             local unstaged = record:sub(2, 2)
---
---             ---@type GitStatusEntry
---             local entry = {
---                 staged = staged,
---                 unstaged = unstaged,
---                 path = record:sub(4),
---             }
---
---             if is_rename_or_copy(staged, unstaged) then
---                 entry.orig_path, index = read_nul_field(output, index)
---             end
---
---             table.insert(entries, entry)
---         end
---     end
---
---     return entries
--- end
+---@param output string
+---@param start integer
+---@return string?, integer?
+local function read_nul_field(output, start)
+    local stop = output:find('\0', start, true)
+
+    if stop == nil then
+        return nil, nil
+    end
+
+    return output:sub(start, stop - 1), stop + 1
+end
+
+---@param staged string
+---@param unstaged string
+---@return boolean
+local function is_rename_or_copy(staged, unstaged)
+    return staged == 'R' or staged == 'C' or unstaged == 'R' or unstaged == 'C'
+end
+
+---@param output string
+---@return GitStatusEntry[]
+local function parse_status(output)
+    local entries = {}
+    local index
+    index = 1
+
+    while index <= #output do
+        local record
+        record, index = read_nul_field(output, index)
+
+        if record == nil or index == nil then
+            break
+        end
+
+        if record ~= '' then
+            local staged = record:sub(1, 1)
+            local unstaged = record:sub(2, 2)
+
+            ---@type GitStatusEntry
+            local entry = {
+                staged = staged,
+                unstaged = unstaged,
+                path = record:sub(4),
+            }
+
+            if is_rename_or_copy(staged, unstaged) then
+                entry.orig_path, index = read_nul_field(output, index)
+            end
+
+            table.insert(entries, entry)
+        end
+    end
+
+    return entries
+end
 
 local ensure_git = function()
     local ok = vim.fn.executable('git')
@@ -129,30 +128,35 @@ function git.run(args, opts)
 end
 
 ---@param res GitResult
----@return string[]
+---@return string
 local function return_result(res)
     local value = res.exit_code == 0 and res.output or res.stderr
 
     -- Preserve meaningful leading spaces in outputs like `git status --short`.
     local v, _ = value:gsub('[\r\n]+$', '')
-    return utils.string_to_lines(v)
+    return v
 end
 
----@return string[]
+---@return string
 function git.branch()
     ensure_git()
 
     local out = git.run({ 'branch', '--show-current' })
+
     return return_result(out)
 end
 
----@return string[]
+---@return GitStatusEntry[]
 function git.status()
     ensure_git()
 
     local out = git.run({ 'status', '--porcelain=v1', '-z' })
 
-    return return_result(out)
+    if out.exit_code ~= 0 then
+        return {}
+    end
+
+    return parse_status(out.output)
 end
 
 -- ---@param diff string?
@@ -164,16 +168,5 @@ end
 --
 --     return vim.split(diff, "\n", {plain=true})
 -- end
-
----@param file string
----@return string[]
-function git.diff(file)
-    ensure_git()
-
-    ---@type GitResult
-    local res = git.run({ 'diff', 'HEAD', file })
-
-    return return_result(res)
-end
 
 return git

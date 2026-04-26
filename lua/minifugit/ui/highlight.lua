@@ -47,15 +47,30 @@ local function set_foreground_highlight(name, sources, fallback)
     })
 end
 
+---name: string,
+---namespace: string,
+---sources: string[],
+---fallback_fg: number,
 ---@param opts HighlightOptions
 ---@return Highlight
 function Highlight.new(opts)
-    local self = setmetatable({}, Highlight)
+    vim.validate('opts', opts, 'table', '`opts` table is required')
+    vim.validate('name', opts.name, 'string', '`name` is required')
+    vim.validate(
+        'namespace',
+        opts.namespace,
+        'string',
+        '`namespace` is required'
+    )
+    vim.validate('sources', opts.sources, 'table', '`sources` is required')
+    vim.validate(
+        'fallback_fg',
+        opts.fallback_fg,
+        'number',
+        '`fallback_fg` is required'
+    )
 
-    assert(opts.name, "`name` is required")
-    assert(opts.namespace, "`namespace` is required")
-    assert(opts.sources, "`sources` is required")
-    assert(opts.fallback_fg, "`fallback_fg` is required")
+    local self = setmetatable({}, Highlight)
 
     self.name = opts.name
     self.namespace_id = vim.api.nvim_create_namespace(opts.namespace)

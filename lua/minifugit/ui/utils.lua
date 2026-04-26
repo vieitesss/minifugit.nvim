@@ -1,11 +1,5 @@
 local ui_utils = {}
 
----@param text string
----@return string[]
-function ui_utils.string_to_lines(text)
-    return vim.split(text, '\n', { plain = true })
-end
-
 return ui_utils
 
 
