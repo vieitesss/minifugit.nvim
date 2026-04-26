@@ -315,6 +315,14 @@ function GitStatusWindow:ensure_keymaps()
         silent = true,
     })
 
+    vim.keymap.set('n', 'c', function()
+        self:commit()
+    end, {
+        buffer = self.buf.id,
+        desc = 'Commit staged changes',
+        silent = true,
+    })
+
     vim.keymap.set('x', 's', function()
         self:stage_selected_entries()
     end, {
@@ -503,6 +511,29 @@ end
 ---@return boolean
 function GitStatusWindow:unstage_selected_entries()
     return self:update_entries(git.unstage_entries, self:selected_entries())
+end
+
+function GitStatusWindow:commit()
+    vim.ui.input({ prompt = 'Commit message: ' }, function(message)
+        if message == nil then
+            return
+        end
+
+        message = vim.trim(message)
+
+        if message == '' then
+            return
+        end
+
+        local ok, output = git.commit(message)
+        local level = ok and vim.log.levels.INFO or vim.log.levels.ERROR
+
+        vim.notify('[minifugit] ' .. output, level)
+
+        if ok then
+            self:render()
+        end
+    end)
 end
 
 ---@return boolean
