@@ -431,6 +431,34 @@ local function open_entry(self, entry)
 end
 
 ---@param self GitStatusWindow
+local function close_diff(self)
+    local current_win = vim.api.nvim_get_current_win()
+
+    if
+        self.diff_buf
+        and self.diff_buf:is_valid()
+        and vim.api.nvim_win_get_buf(current_win) == self.diff_buf.id
+        and #vim.api.nvim_tabpage_list_wins(0) > 1
+    then
+        vim.api.nvim_win_close(current_win, true)
+    end
+
+    if self.win ~= nil and is_valid_win(self.win) then
+        vim.api.nvim_set_current_win(self.win)
+    end
+end
+
+---@param win number
+local function configure_diff_win(win)
+    vim.wo[win].number = false
+    vim.wo[win].relativenumber = false
+    vim.wo[win].signcolumn = 'no'
+    vim.wo[win].foldcolumn = '0'
+    vim.wo[win].wrap = false
+    vim.wo[win].cursorline = false
+end
+
+---@param self GitStatusWindow
 ---@return Buffer
 local function ensure_diff_buf(self)
     if self.diff_buf and self.diff_buf:is_valid() then
@@ -446,6 +474,15 @@ local function ensure_diff_buf(self)
     vim.bo[self.diff_buf.id].buftype = 'nofile'
     vim.bo[self.diff_buf.id].bufhidden = 'hide'
     vim.bo[self.diff_buf.id].swapfile = false
+    vim.bo[self.diff_buf.id].filetype = 'diff'
+
+    vim.keymap.set('n', 'q', function()
+        close_diff(self)
+    end, {
+        buffer = self.diff_buf.id,
+        desc = 'Close git diff preview',
+        silent = true,
+    })
 
     return self.diff_buf
 end
@@ -481,6 +518,11 @@ local function open_diff(self, entry)
     end
 
     vim.api.nvim_win_set_buf(target_win, buf.id)
+    configure_diff_win(target_win)
+
+    if self.win ~= nil and is_valid_win(self.win) then
+        vim.api.nvim_set_current_win(self.win)
+    end
 
     return true
 end
