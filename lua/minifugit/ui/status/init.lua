@@ -11,6 +11,7 @@ local git = require('minifugit.git')
 ---@field diff_win number?
 ---@field diff_prev_buf number?
 ---@field diff_created_win boolean
+---@field diff_preview_key string?
 ---@field win number?
 ---@field target_win number?
 ---@field groups table<string, string>
@@ -390,11 +391,27 @@ local function ensure_keymaps(self)
         silent = true,
     })
 
+    vim.keymap.set('n', 'o', function()
+        self:enter_entry()
+    end, {
+        buffer = self.buf.id,
+        desc = 'Open git status entry',
+        silent = true,
+    })
+
     vim.keymap.set('n', '=', function()
         self:diff_entry()
     end, {
         buffer = self.buf.id,
         desc = 'Show git status entry diff',
+        silent = true,
+    })
+
+    vim.keymap.set('n', 'r', function()
+        self:refresh()
+    end, {
+        buffer = self.buf.id,
+        desc = 'Refresh git status',
         silent = true,
     })
 
@@ -427,6 +444,22 @@ local function ensure_keymaps(self)
     end, {
         buffer = self.buf.id,
         desc = 'Unstage all git status entries',
+        silent = true,
+    })
+
+    vim.keymap.set('n', 'd', function()
+        self:discard_entry(false)
+    end, {
+        buffer = self.buf.id,
+        desc = 'Discard git status entry',
+        silent = true,
+    })
+
+    vim.keymap.set('n', 'D', function()
+        self:discard_entry(true)
+    end, {
+        buffer = self.buf.id,
+        desc = 'Discard git status entry without confirmation',
         silent = true,
     })
 
@@ -464,6 +497,13 @@ local function ensure_keymaps(self)
 end
 
 local move_to_first_entry
+local has_open_diff
+local preview_current_entry
+
+---@class GitStatusCursorState
+---@field row integer?
+---@field item_key string?
+---@field entry_key string?
 
 function GitStatusWindow:show()
     if not self.buf or not self.buf:is_valid() then
@@ -489,6 +529,130 @@ move_to_first_entry = function(self)
     if row ~= nil and self.win ~= nil and is_valid_win(self.win) then
         vim.api.nvim_win_set_cursor(self.win, { row, 0 })
     end
+end
+
+---@param self GitStatusWindow
+---@param row integer
+local function restore_cursor(self, row)
+    if self.win == nil or not is_valid_win(self.win) then
+        return
+    end
+
+    vim.api.nvim_win_set_cursor(self.win, { math.max(1, math.min(row, #self.lines)), 0 })
+
+    if current_entry_item(self) == nil then
+        move_to_first_entry(self)
+    end
+end
+
+---@param item GitStatusEntryItem?
+---@return string?
+local function entry_item_key(item)
+    if item == nil then
+        return nil
+    end
+
+    local entry_key = table.concat({
+        item.entry.orig_path or '',
+        item.entry.path,
+    }, '\0')
+
+    return table.concat({
+        item.section or '',
+        entry_key,
+    }, '\0')
+end
+
+---@param item GitStatusEntryItem?
+---@return string?
+local function entry_identity_key(item)
+    if item == nil then
+        return nil
+    end
+
+    return table.concat({
+        item.entry.orig_path or '',
+        item.entry.path,
+    }, '\0')
+end
+
+---@param self GitStatusWindow
+---@return GitStatusCursorState
+local function capture_cursor_state(self)
+    local state = {
+        row = nil,
+        item_key = nil,
+        entry_key = nil,
+    }
+
+    local item = current_entry_item(self)
+
+    if self.win ~= nil and is_valid_win(self.win) then
+        state.row = vim.api.nvim_win_get_cursor(self.win)[1]
+    end
+
+    state.item_key = entry_item_key(item)
+    state.entry_key = entry_identity_key(item)
+
+    return state
+end
+
+---@param self GitStatusWindow
+---@param item_key string
+---@return integer?
+local function row_for_item_key(self, item_key)
+    for row, line in ipairs(self.lines) do
+        if entry_item_key(entry_item_from_data(line.data)) == item_key then
+            return row
+        end
+    end
+
+    return nil
+end
+
+---@param self GitStatusWindow
+---@param entry_key string
+---@return integer?
+local function row_for_entry_key(self, entry_key)
+    for row, line in ipairs(self.lines) do
+        if entry_identity_key(entry_item_from_data(line.data)) == entry_key then
+            return row
+        end
+    end
+
+    return nil
+end
+
+---@param self GitStatusWindow
+---@param state? GitStatusCursorState
+function GitStatusWindow:refresh(state)
+    state = state or capture_cursor_state(self)
+
+    self:render()
+
+    local target_row = state.item_key ~= nil and row_for_item_key(self, state.item_key)
+        or nil
+
+    if target_row == nil and state.entry_key ~= nil then
+        target_row = row_for_entry_key(self, state.entry_key)
+    end
+
+    if target_row ~= nil then
+        restore_cursor(self, target_row)
+    elseif state.row ~= nil then
+        restore_cursor(self, state.row)
+    else
+        move_to_first_entry(self)
+    end
+
+    if has_open_diff(self) then
+        preview_current_entry(self, {
+            force = true,
+            notify = false,
+        })
+    end
+
+    return true
 end
 
 ---@param entry GitStatusEntry
@@ -554,10 +718,51 @@ local function close_diff(self)
     self.diff_win = nil
     self.diff_prev_buf = nil
     self.diff_created_win = false
+    self.diff_preview_key = nil
 
     if self.win ~= nil and is_valid_win(self.win) then
         vim.api.nvim_set_current_win(self.win)
     end
+end
+
+---@param self GitStatusWindow
+---@return boolean
+has_open_diff = function(self)
+    return self.diff_buf ~= nil
+        and self.diff_buf:is_valid()
+        and is_valid_win(self.diff_win)
+        and vim.api.nvim_win_get_buf(self.diff_win) == self.diff_buf.id
+end
+
+---@param item GitStatusEntryItem
+---@return boolean
+local function can_discard_item(item)
+    return item.section == 'unstaged' or item.section == 'untracked'
+end
+
+---@param item GitStatusEntryItem
+---@return string
+local function discard_message(item)
+    if item.section == 'untracked' then
+        return 'Delete untracked path ' .. item.entry.path .. '?'
+    end
+
+    return 'Discard changes in ' .. item.entry.path .. '?'
+end
+
+---@param item GitStatusEntryItem
+---@return boolean
+---@return string?
+local function discard_item(item)
+    if item.section == 'unstaged' then
+        return git.discard_unstaged_entries({ item.entry })
+    end
+
+    if item.section == 'untracked' then
+        return git.discard_untracked_entries({ item.entry })
+    end
+
+    return false, 'Nothing to discard'
 end
 
 ---@param win number
@@ -601,9 +806,19 @@ end
 
 ---@param self GitStatusWindow
 ---@param entry GitStatusEntry
+---@param section GitStatusSectionName?
+---@param opts? { force: boolean? }
 ---@return boolean
-local function open_diff(self, entry)
-    local lines, err = git.diff(entry)
+local function open_diff(self, entry, section, opts)
+    opts = opts or {}
+
+    local preview_key = table.concat({ section or '', entry.orig_path or '', entry.path }, '\0')
+
+    if not opts.force and has_open_diff(self) and self.diff_preview_key == preview_key then
+        return true
+    end
+
+    local lines, err = git.diff(entry, section)
     local diff_lines
 
     if err ~= nil then
@@ -648,6 +863,7 @@ local function open_diff(self, entry)
     vim.api.nvim_win_set_buf(target_win, buf.id)
     configure_diff_win(target_win)
     self.diff_win = target_win
+    self.diff_preview_key = preview_key
 
     if self.win ~= nil and is_valid_win(self.win) then
         vim.api.nvim_set_current_win(self.win)
@@ -656,16 +872,33 @@ local function open_diff(self, entry)
     return true
 end
 
+---@param self GitStatusWindow
+---@param opts? { force: boolean?, notify: boolean? }
 ---@return boolean
-function GitStatusWindow:diff_entry()
-    local entry = current_entry(self)
+preview_current_entry = function(self, opts)
+    opts = opts or {}
 
-    if entry == nil then
-        notify_warn('No git status entry under cursor')
+    local item = current_entry_item(self)
+
+    if item == nil then
+        if opts.notify ~= false then
+            notify_warn('No git status entry under cursor')
+        end
+
         return false
     end
 
-    return open_diff(self, entry)
+    return open_diff(self, item.entry, item.section, {
+        force = opts.force,
+    })
+end
+
+---@return boolean
+function GitStatusWindow:diff_entry()
+    return preview_current_entry(self, {
+        force = true,
+        notify = true,
+    })
 end
 
 ---@param action fun(entries: GitStatusEntry[]): boolean, string?
@@ -684,7 +917,7 @@ local function update_entries(self, action, entries)
         return false
     end
 
-    local row = vim.api.nvim_win_get_cursor(win)[1]
+    local cursor_state = capture_cursor_state(self)
 
     local ok, err = action(entries)
 
@@ -693,8 +926,7 @@ local function update_entries(self, action, entries)
         return false
     end
 
-    self:render()
-    vim.api.nvim_win_set_cursor(win, { math.min(row, #self.lines), 0 })
+    self:refresh(cursor_state)
 
     return true
 end
@@ -764,7 +996,18 @@ end
 
 ---@return boolean
 function GitStatusWindow:stage_entry()
-    return update_entry(self, git.stage_entries, 'stage')
+    local item = current_entry_item(self)
+
+    if item == nil then
+        notify_warn('No git status entry under cursor')
+        return false
+    end
+
+    if item.section == 'staged' then
+        return update_entry_items(self, git.unstage_entries, { item }, 'unstage')
+    end
+
+    return update_entry_items(self, git.stage_entries, { item }, 'stage')
 end
 
 ---@return boolean
@@ -800,6 +1043,38 @@ function GitStatusWindow:unstage_selected_entries()
         selected_entry_items(self),
         'unstage'
     )
+end
+
+---@param force boolean
+---@return boolean
+function GitStatusWindow:discard_entry(force)
+    local item = current_entry_item(self)
+
+    if item == nil then
+        notify_warn('No git status entry under cursor')
+        return false
+    end
+
+    if not can_discard_item(item) then
+        notify_warn('Nothing to discard')
+        return false
+    end
+
+    if not force and vim.fn.confirm(discard_message(item), '&Discard\n&Cancel', 2) ~= 1 then
+        return false
+    end
+
+    local cursor_state = capture_cursor_state(self)
+    local ok, err = discard_item(item)
+
+    if not ok then
+        notify_error(err, 'Cannot discard changes')
+        return false
+    end
+
+    self:refresh(cursor_state)
+
+    return true
 end
 
 function GitStatusWindow:commit()
@@ -860,7 +1135,7 @@ end
 
 function GitStatusWindow:toggle_help()
     self.show_help = not self.show_help
-    self:render()
+    self:refresh()
 end
 
 function GitStatusWindow:render()
@@ -904,6 +1179,18 @@ function GitStatusWindow.new()
 
     self.win = create_win(self.buf)
     move_to_first_entry(self)
+
+    vim.api.nvim_create_autocmd('CursorMoved', {
+        buffer = self.buf.id,
+        callback = function()
+            if has_open_diff(self) then
+                preview_current_entry(self, {
+                    force = false,
+                    notify = false,
+                })
+            end
+        end,
+    })
 
     return self
 end

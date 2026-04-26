@@ -28,12 +28,15 @@ local conflict_statuses = {
 
 local mapping_lines = {
     '? hide mappings',
-    '<CR> open file',
-    '= show diff',
-    's stage entry',
+    '<CR> or o open file',
+    '= show diff preview',
+    'r refresh status',
+    's stage or unstage entry',
     'u unstage entry',
     'S stage all',
     'U unstage all',
+    'd discard unstaged or untracked',
+    'D force discard unstaged or untracked',
     'c commit staged changes',
     'visual s stage selection',
     'visual u unstage selection',
@@ -233,8 +236,8 @@ local function sections(entries)
 
     return {
         { name = 'conflicts', title = 'Conflicts', entries = groups.conflicts },
-        { name = 'staged', title = 'Staged', entries = groups.staged },
         { name = 'unstaged', title = 'Unstaged', entries = groups.unstaged },
+        { name = 'staged', title = 'Staged', entries = groups.staged },
         { name = 'untracked', title = 'Untracked', entries = groups.untracked },
     }
 end

@@ -273,6 +273,30 @@ local function entry_pathspecs(entry)
     return { entry.orig_path, entry.path }
 end
 
+---@param entry GitStatusEntry
+---@return string
+local function entry_worktree_path(entry)
+    return entry.path
+end
+
+---@param entries GitStatusEntry[]
+---@return string[]
+local function entries_worktree_paths(entries)
+    local pathspecs = {}
+    local seen = {}
+
+    for _, entry in ipairs(entries) do
+        local path = entry_worktree_path(entry)
+
+        if not seen[path] then
+            table.insert(pathspecs, path)
+            seen[path] = true
+        end
+    end
+
+    return pathspecs
+end
+
 ---@param entries GitStatusEntry[]
 ---@return string[]
 local function entries_pathspecs(entries)
@@ -348,6 +372,46 @@ function git.unstage_entries(entries)
     return out.exit_code == 0, return_result(out)
 end
 
+---@param entries GitStatusEntry[]
+---@return boolean
+---@return string?
+function git.discard_unstaged_entries(entries)
+    ensure_git()
+
+    local pathspecs = entries_worktree_paths(entries)
+
+    if #pathspecs == 0 then
+        return true
+    end
+
+    local args = { 'restore', '--worktree', '--' }
+    vim.list_extend(args, pathspecs)
+
+    local out = git.run(args, root_opts())
+
+    return out.exit_code == 0, return_result(out)
+end
+
+---@param entries GitStatusEntry[]
+---@return boolean
+---@return string?
+function git.discard_untracked_entries(entries)
+    ensure_git()
+
+    local pathspecs = entries_pathspecs(entries)
+
+    if #pathspecs == 0 then
+        return true
+    end
+
+    local args = { 'clean', '-fd', '--' }
+    vim.list_extend(args, pathspecs)
+
+    local out = git.run(args, root_opts())
+
+    return out.exit_code == 0, return_result(out)
+end
+
 ---@param file string
 ---@return boolean
 ---@return string
@@ -394,18 +458,34 @@ local function parse_diff(diff)
 end
 
 ---@param entry GitStatusEntry
+---@param section string?
 ---@return string[]
 ---@return string?
-function git.diff(entry)
+function git.diff(entry, section)
     ensure_git()
 
     local args
     local opts = root_opts()
+    local pathspecs = entry_pathspecs(entry)
+    local full_path = opts.cwd ~= nil and vim.fs.joinpath(opts.cwd, entry.path)
+        or entry.path
+    local stat = vim.uv.fs_stat(full_path)
 
-    if entry.unstaged == '?' then
+    if section == 'untracked' or entry.unstaged == '?' then
+        if stat ~= nil and stat.type == 'directory' then
+            return {}, 'Diff preview is not available for untracked directories'
+        end
+
         args = { 'diff', '--no-index', '--', '/dev/null', entry.path }
+    elseif section == 'staged' then
+        args = { 'diff', '--cached', '--' }
+        vim.list_extend(args, pathspecs)
+    elseif section == 'unstaged' or section == 'conflicts' then
+        args = { 'diff', '--' }
+        vim.list_extend(args, pathspecs)
     elseif entry.staged ~= ' ' or entry.unstaged ~= ' ' then
-        args = { 'diff', 'HEAD', '--', entry.path }
+        args = { 'diff', 'HEAD', '--' }
+        vim.list_extend(args, pathspecs)
     else
         return {}
     end
