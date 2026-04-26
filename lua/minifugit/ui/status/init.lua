@@ -222,6 +222,38 @@ function GitStatusWindow:current_entry()
     return line.data
 end
 
+---@param start_row integer
+---@param end_row integer
+---@return GitStatusEntry[]
+function GitStatusWindow:entries_in_range(start_row, end_row)
+    local entries = {}
+    local first = math.min(start_row, end_row)
+    local last = math.max(start_row, end_row)
+
+    for row = first, last do
+        local line = self.lines[row]
+
+        if line ~= nil and type(line.data) == 'table' then
+            table.insert(entries, line.data)
+        end
+    end
+
+    return entries
+end
+
+---@return GitStatusEntry[]
+function GitStatusWindow:all_entries()
+    return self:entries_in_range(1, #self.lines)
+end
+
+---@return GitStatusEntry[]
+function GitStatusWindow:selected_entries()
+    local start_row = vim.fn.getpos('\'<')[2]
+    local end_row = vim.fn.getpos('\'>')[2]
+
+    return self:entries_in_range(start_row, end_row)
+end
+
 function GitStatusWindow:ensure_keymaps()
     assert(self.buf ~= nil)
     assert(self.buf:is_valid())
@@ -255,6 +287,38 @@ function GitStatusWindow:ensure_keymaps()
     end, {
         buffer = self.buf.id,
         desc = 'Unstage git status entry',
+        silent = true,
+    })
+
+    vim.keymap.set('n', 'S', function()
+        self:stage_all_entries()
+    end, {
+        buffer = self.buf.id,
+        desc = 'Stage all git status entries',
+        silent = true,
+    })
+
+    vim.keymap.set('n', 'U', function()
+        self:unstage_all_entries()
+    end, {
+        buffer = self.buf.id,
+        desc = 'Unstage all git status entries',
+        silent = true,
+    })
+
+    vim.keymap.set('x', 's', function()
+        self:stage_selected_entries()
+    end, {
+        buffer = self.buf.id,
+        desc = 'Stage selected git status entries',
+        silent = true,
+    })
+
+    vim.keymap.set('x', 'u', function()
+        self:unstage_selected_entries()
+    end, {
+        buffer = self.buf.id,
+        desc = 'Unstage selected git status entries',
         silent = true,
     })
 end
@@ -368,24 +432,19 @@ function GitStatusWindow:diff_entry()
     return self:open_diff(entry)
 end
 
----@param action fun(entry: GitStatusEntry): boolean
+---@param action fun(entries: GitStatusEntry[]): boolean
+---@param entries GitStatusEntry[]
 ---@return boolean
-function GitStatusWindow:update_entry(action)
-    local entry = self:current_entry()
-
-    if entry == nil then
-        return false
-    end
-
+function GitStatusWindow:update_entries(action, entries)
     local win = self.win
 
-    if not win or not is_valid_win(win) then
+    if #entries == 0 or not win or not is_valid_win(win) then
         return false
     end
 
     local row = vim.api.nvim_win_get_cursor(win)[1]
 
-    if not action(entry) then
+    if not action(entries) then
         return false
     end
 
@@ -395,14 +454,46 @@ function GitStatusWindow:update_entry(action)
     return true
 end
 
+---@param action fun(entries: GitStatusEntry[]): boolean
+---@return boolean
+function GitStatusWindow:update_entry(action)
+    local entry = self:current_entry()
+
+    if entry == nil then
+        return false
+    end
+
+    return self:update_entries(action, { entry })
+end
+
 ---@return boolean
 function GitStatusWindow:stage_entry()
-    return self:update_entry(git.stage)
+    return self:update_entry(git.stage_entries)
 end
 
 ---@return boolean
 function GitStatusWindow:unstage_entry()
-    return self:update_entry(git.unstage)
+    return self:update_entry(git.unstage_entries)
+end
+
+---@return boolean
+function GitStatusWindow:stage_all_entries()
+    return self:update_entries(git.stage_entries, self:all_entries())
+end
+
+---@return boolean
+function GitStatusWindow:unstage_all_entries()
+    return self:update_entries(git.unstage_entries, self:all_entries())
+end
+
+---@return boolean
+function GitStatusWindow:stage_selected_entries()
+    return self:update_entries(git.stage_entries, self:selected_entries())
+end
+
+---@return boolean
+function GitStatusWindow:unstage_selected_entries()
+    return self:update_entries(git.unstage_entries, self:selected_entries())
 end
 
 ---@return boolean

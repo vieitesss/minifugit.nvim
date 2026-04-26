@@ -197,13 +197,43 @@ local function entry_pathspecs(entry)
     return { entry.orig_path, entry.path }
 end
 
+---@param entries GitStatusEntry[]
+---@return string[]
+local function entries_pathspecs(entries)
+    local pathspecs = {}
+    local seen = {}
+
+    for _, entry in ipairs(entries) do
+        for _, path in ipairs(entry_pathspecs(entry)) do
+            if not seen[path] then
+                table.insert(pathspecs, path)
+                seen[path] = true
+            end
+        end
+    end
+
+    return pathspecs
+end
+
 ---@param entry GitStatusEntry
 ---@return boolean
 function git.stage(entry)
+    return git.stage_entries({ entry })
+end
+
+---@param entries GitStatusEntry[]
+---@return boolean
+function git.stage_entries(entries)
     ensure_git()
 
+    local pathspecs = entries_pathspecs(entries)
+
+    if #pathspecs == 0 then
+        return true
+    end
+
     local args = { 'add', '--' }
-    vim.list_extend(args, entry_pathspecs(entry))
+    vim.list_extend(args, pathspecs)
 
     local out = git.run(args, root_opts())
 
@@ -213,14 +243,25 @@ end
 ---@param entry GitStatusEntry
 ---@return boolean
 function git.unstage(entry)
+    return git.unstage_entries({ entry })
+end
+
+---@param entries GitStatusEntry[]
+---@return boolean
+function git.unstage_entries(entries)
     ensure_git()
 
-    if entry.staged == ' ' or entry.staged == '?' then
+    local staged_entries = vim.tbl_filter(function(entry)
+        return entry.staged ~= ' ' and entry.staged ~= '?'
+    end, entries)
+    local pathspecs = entries_pathspecs(staged_entries)
+
+    if #pathspecs == 0 then
         return true
     end
 
     local args = { 'restore', '--staged', '--' }
-    vim.list_extend(args, entry_pathspecs(entry))
+    vim.list_extend(args, pathspecs)
 
     local out = git.run(args, root_opts())
 
