@@ -7,21 +7,156 @@ local selection = require('minifugit.ui.status.selection')
 
 local M = {}
 
+---@class MiniFugitDiffLine
+---@field kind 'header'|'hunk'|'context'|'added'|'removed'
+---@field old_number integer?
+---@field new_number integer?
+---@field text string
+
+---@param number integer?
+---@param width integer
+---@return string
+local function format_number(number, width)
+    if number == nil then
+        return string.rep(' ', width)
+    end
+
+    return string.format('%' .. width .. 'd', number)
+end
+
+---@param line MiniFugitDiffLine
+---@param width integer
+---@return string
+local function format_diff_line(line, width)
+    if line.kind == 'header' or line.kind == 'hunk' then
+        return line.text
+    end
+
+    return string.format(
+        '%s %s %s',
+        format_number(line.old_number, width),
+        format_number(line.new_number, width),
+        line.text
+    )
+end
+
+---@param lines MiniFugitDiffLine[]
+---@return integer
+local function diff_number_width(lines)
+    local max_number = 0
+
+    for _, line in ipairs(lines) do
+        if line.old_number ~= nil then
+            max_number = math.max(max_number, line.old_number)
+        end
+
+        if line.new_number ~= nil then
+            max_number = math.max(max_number, line.new_number)
+        end
+    end
+
+    return math.max(#tostring(max_number), 1)
+end
+
+---@param hunk_header string
+---@return integer?, integer?
+local function parse_hunk_header(hunk_header)
+    local old_start, new_start = hunk_header:match('^@@ %-(%d+)[^ ]* %+(%d+)[^ ]* @@')
+
+    if old_start == nil or new_start == nil then
+        return nil, nil
+    end
+
+    return tonumber(old_start), tonumber(new_start)
+end
+
+---@param lines string[]
+---@return MiniFugitDiffLine[]
+local function parse_diff_lines(lines)
+    local parsed = {}
+    local old_number
+    local new_number
+
+    for _, text in ipairs(lines) do
+        if text == '' then
+            goto continue
+        end
+
+        if vim.startswith(text, '@@') then
+            old_number, new_number = parse_hunk_header(text)
+            table.insert(parsed, { kind = 'hunk', text = text })
+        elseif vim.startswith(text, 'diff ') or vim.startswith(text, 'index ') then
+            table.insert(parsed, { kind = 'header', text = text })
+        elseif vim.startswith(text, '--- ') or vim.startswith(text, '+++ ') then
+            table.insert(parsed, { kind = 'header', text = text })
+        elseif vim.startswith(text, '+') then
+            table.insert(parsed, {
+                kind = 'added',
+                old_number = nil,
+                new_number = new_number,
+                text = text,
+            })
+
+            if new_number ~= nil then
+                new_number = new_number + 1
+            end
+        elseif vim.startswith(text, '-') then
+            table.insert(parsed, {
+                kind = 'removed',
+                old_number = old_number,
+                new_number = nil,
+                text = text,
+            })
+
+            if old_number ~= nil then
+                old_number = old_number + 1
+            end
+        else
+            table.insert(parsed, {
+                kind = 'context',
+                old_number = old_number,
+                new_number = new_number,
+                text = text,
+            })
+
+            if old_number ~= nil then
+                old_number = old_number + 1
+            end
+
+            if new_number ~= nil then
+                new_number = new_number + 1
+            end
+        end
+
+        ::continue::
+    end
+
+    return parsed
+end
+
 ---@param lines string[]
 ---@param groups table<string, string>
 ---@return MiniFugitRenderLine[]
 local function diff_render_lines(lines, groups)
-    return vim.tbl_map(function(text)
+    local parsed = parse_diff_lines(lines)
+    local width = diff_number_width(parsed)
+
+    return vim.tbl_map(function(diff_line)
+        local text = format_diff_line(diff_line, width)
         local line = render.line(text)
 
-        if vim.startswith(text, '+') and not vim.startswith(text, '+++') then
+        if diff_line.kind == 'added' then
             render.add_highlight(line, groups.diff_added, 0, #text)
-        elseif vim.startswith(text, '-') and not vim.startswith(text, '---') then
+        elseif diff_line.kind == 'removed' then
             render.add_highlight(line, groups.diff_removed, 0, #text)
+        elseif diff_line.kind == 'header' then
+            render.add_highlight(line, 'Comment', 0, #text)
+        elseif diff_line.kind == 'hunk' then
+            render.add_highlight(line, 'Title', 0, #text)
         end
 
         return line
-    end, lines)
+    end, parsed)
 end
 
 ---@param self GitStatusWindow

@@ -62,13 +62,13 @@ local HIGHLIGHT_SPECS = {
     },
     diff_added = {
         name = 'MiniFugitDiffAdded',
-        sources = { 'Added', 'String' },
-        fallback_fg = 0x98C379,
+        sources = { 'DiffAdd', 'Added', 'String' },
+        fallback_bg = 0x2E4D33,
     },
     diff_removed = {
         name = 'MiniFugitDiffRemoved',
-        sources = { 'Removed', 'Error' },
-        fallback_fg = 0xE06C75,
+        sources = { 'DiffDelete', 'Removed', 'Error' },
+        fallback_bg = 0x5A2D34,
     },
 }
 
@@ -93,6 +93,7 @@ local function create_highlights()
             name = spec.name,
             sources = spec.sources,
             fallback_fg = spec.fallback_fg,
+            fallback_bg = spec.fallback_bg,
         })
     end
 

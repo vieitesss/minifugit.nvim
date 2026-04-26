@@ -66,6 +66,7 @@ function M.apply(buf, lines)
                 {
                     end_col = range.end_col,
                     hl_group = range.group,
+                    hl_mode = 'replace',
                 }
             )
         end

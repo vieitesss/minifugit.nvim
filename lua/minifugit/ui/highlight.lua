@@ -2,7 +2,8 @@
 ---@field name string
 ---@field namespace_id number
 ---@field sources string[]
----@field fallback_fg number
+---@field fallback_fg number?
+---@field fallback_bg number?
 ---@field ensure function
 
 local Highlight = {}
@@ -12,7 +13,8 @@ Highlight.__index = Highlight
 ---name: string,
 ---namespace: string,
 ---sources: string[],
----fallback_fg: number,
+---fallback_fg: number?,
+---fallback_bg: number?,
 ---}
 
 ---@param names string[]
@@ -34,23 +36,34 @@ end
 
 ---@param name string
 ---@param sources string[]
----@param fallback integer
-local function set_foreground_highlight(name, sources, fallback)
+---@param fallback_fg integer?
+---@param fallback_bg integer?
+local function set_highlight(name, sources, fallback_fg, fallback_bg)
     local source = get_highlight(sources)
 
-    vim.api.nvim_set_hl(0, name, {
+    local opts = {
         default = true,
-        fg = source.fg or fallback,
         bold = source.bold,
         italic = source.italic,
         underline = source.underline,
-    })
+    }
+
+    if fallback_fg ~= nil then
+        opts.fg = source.fg or fallback_fg
+    end
+
+    if fallback_bg ~= nil then
+        opts.bg = source.bg or fallback_bg
+    end
+
+    vim.api.nvim_set_hl(0, name, opts)
 end
 
 ---name: string,
 ---namespace: string,
 ---sources: string[],
----fallback_fg: number,
+---fallback_fg: number?,
+---fallback_bg: number?,
 ---@param opts HighlightOptions
 ---@return Highlight
 function Highlight.new(opts)
@@ -67,8 +80,20 @@ function Highlight.new(opts)
         'fallback_fg',
         opts.fallback_fg,
         'number',
-        '`fallback_fg` is required'
+        true,
+        '`fallback_fg` should be a number'
     )
+    vim.validate(
+        'fallback_bg',
+        opts.fallback_bg,
+        'number',
+        true,
+        '`fallback_bg` should be a number'
+    )
+
+    if opts.fallback_fg == nil and opts.fallback_bg == nil then
+        error('Highlight requires fallback_fg or fallback_bg')
+    end
 
     local self = setmetatable({}, Highlight)
 
@@ -76,12 +101,13 @@ function Highlight.new(opts)
     self.namespace_id = vim.api.nvim_create_namespace(opts.namespace)
     self.sources = opts.sources
     self.fallback_fg = opts.fallback_fg
+    self.fallback_bg = opts.fallback_bg
 
     return self
 end
 
 function Highlight:ensure()
-    set_foreground_highlight(self.name, self.sources, self.fallback_fg)
+    set_highlight(self.name, self.sources, self.fallback_fg, self.fallback_bg)
 end
 
 return Highlight
