@@ -276,8 +276,8 @@ local function selected_entries(self)
         start_row = vim.fn.line('v')
         end_row = vim.fn.line('.')
     else
-        start_row = vim.fn.getpos('\'<')[2]
-        end_row = vim.fn.getpos('\'>')[2]
+        start_row = vim.fn.getpos("'<")[2]
+        end_row = vim.fn.getpos("'>")[2]
     end
 
     return entries_in_range(self, start_row, end_row)
@@ -587,7 +587,7 @@ function GitStatusWindow:commit()
             vim.fn.delete(path)
 
             return true
-        end
+        end,
     })
 end
 
