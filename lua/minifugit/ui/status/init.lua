@@ -556,7 +556,7 @@ function GitStatusWindow:commit()
     local target_win = find_target_win(self)
 
     if target_win == nil then
-        vim.cmd('leftabove split')
+        vim.cmd('leftabove vsplit')
         target_win = vim.api.nvim_get_current_win()
         self.target_win = target_win
     else
