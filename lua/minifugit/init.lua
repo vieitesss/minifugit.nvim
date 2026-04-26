@@ -11,6 +11,7 @@ function M.status()
     log.info('status command called')
 
     if M.gsw then
+        M.gsw:render()
         M.gsw:show()
     else
         local gsw = GitStatusWindow.new()

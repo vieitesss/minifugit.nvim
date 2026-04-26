@@ -65,7 +65,7 @@ local function parse_status(output)
     return entries
 end
 
-local ensure_git = function()
+local function ensure_git()
     local ok = vim.fn.executable('git')
 
     if ok == 0 then
@@ -142,6 +142,22 @@ function git.branch()
     ensure_git()
 
     local out = git.run({ 'branch', '--show-current' })
+
+    return return_result(out)
+end
+
+---@return string
+function git.root()
+    ensure_git()
+
+    local out = git.run(
+        { 'rev-parse', '--show-toplevel' },
+        { ignore_error = true }
+    )
+
+    if out.exit_code ~= 0 then
+        return ''
+    end
 
     return return_result(out)
 end

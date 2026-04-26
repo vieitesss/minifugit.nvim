@@ -7,9 +7,11 @@ local git = require('minifugit.git')
 
 ---@class GitStatusWindow
 ---@field buf Buffer
----@field win number
+---@field win number?
+---@field target_win number?
 ---@field groups table<string, string>
 ---@field highlights table<string, Highlight>
+---@field lines MiniFugitRenderLine[]
 local GitStatusWindow = {}
 GitStatusWindow.__index = GitStatusWindow
 
@@ -48,6 +50,14 @@ local HIGHLIGHT_SPECS = {
     },
 }
 
+---@param win number?
+---@return boolean
+local function is_valid_win(win)
+    return type(win) == 'number'
+        and win > 0
+        and vim.api.nvim_win_is_valid(win)
+end
+
 ---@param buf Buffer
 ---@return number
 local function create_win(buf)
@@ -66,6 +76,18 @@ local function create_win(buf)
     log.info(string.format('created status window win=%d buf=%d', win, buf.id))
 
     return win
+end
+
+---@param entry GitStatusEntry
+---@return string
+local function entry_path(entry)
+    local root = git.root()
+
+    if root == '' then
+        return vim.fn.fnamemodify(entry.path, ':p')
+    end
+
+    return vim.fs.normalize(vim.fs.joinpath(root, entry.path))
 end
 
 ---@return table<string, string>
@@ -103,39 +125,134 @@ function GitStatusWindow:highlights_ensure()
     end
 end
 
+---@param win number?
+function GitStatusWindow:set_target_win(win)
+    if is_valid_win(win) and win ~= self.win then
+        self.target_win = win
+    end
+end
+
+---@return number?
+function GitStatusWindow:find_target_win()
+    if is_valid_win(self.target_win)
+        and self.target_win ~= self.win
+        and vim.api.nvim_win_get_tabpage(self.target_win)
+            == vim.api.nvim_get_current_tabpage()
+    then
+        return self.target_win
+    end
+
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if win ~= self.win and vim.api.nvim_win_is_valid(win) then
+            self.target_win = win
+            return win
+        end
+    end
+
+    return nil
+end
+
+---@return MiniFugitRenderLine?
+function GitStatusWindow:current_line()
+    if not self.buf or not self.buf:is_valid() then
+        return nil
+    end
+
+    local win = vim.api.nvim_get_current_win()
+
+    if vim.api.nvim_win_get_buf(win) ~= self.buf.id then
+        if not is_valid_win(self.win) then
+            return nil
+        end
+
+        win = self.win
+    end
+
+    assert(win ~= nil, 'Cannot get current line from nil window')
+
+    local row = vim.api.nvim_win_get_cursor(win)[1]
+
+    return self.lines[row]
+end
+
+---@return GitStatusEntry?
+function GitStatusWindow:current_entry()
+    local line = self:current_line()
+
+    if line == nil or type(line.data) ~= 'table' then
+        return nil
+    end
+
+    return line.data
+end
+
 function GitStatusWindow:ensure_keymaps()
     assert(self.buf ~= nil)
     assert(self.buf:is_valid())
 
-    vim.api.nvim_buf_set_keymap(
-        self.buf.id,
-        'n',
-        '<CR>',
-        "<CMD>lua require('minifugit.git_status.actions').go_to_file()<CR>",
-        {}
-    )
-
-    vim.api.nvim_buf_set_keymap(
-        self.buf.id,
-        'n',
-        '=',
-        "<CMD>lua require('minifugit.git_status.actions').diff_file()<CR>",
-        {}
-    )
+    vim.keymap.set('n', '<CR>', function()
+        self:enter_entry()
+    end, {
+        buffer = self.buf.id,
+        desc = 'Open git status entry',
+        silent = true,
+    })
 end
 
 function GitStatusWindow:show()
     if not self.buf or not self.buf:is_valid() then
-        log.error("Cannot show invalid GitStatus buffer")
+        log.error('Cannot show invalid GitStatus buffer')
         return
     end
+
+    self:set_target_win(vim.api.nvim_get_current_win())
 
     if self.win and vim.api.nvim_win_is_valid(self.win) then
         vim.api.nvim_set_current_win(self.win)
         return
     end
 
-    create_win(self.buf)
+    self.win = create_win(self.buf)
+end
+
+---@param entry GitStatusEntry
+---@return boolean
+function GitStatusWindow:open_entry(entry)
+    local path = entry_path(entry)
+
+    if vim.uv.fs_stat(path) == nil then
+        log.error('Cannot open missing worktree path: ' .. path)
+        vim.notify(
+            '[minifugit] Cannot open missing worktree path: ' .. entry.path,
+            vim.log.levels.WARN
+        )
+        return false
+    end
+
+    local target_win = self:find_target_win()
+
+    if target_win == nil then
+        vim.cmd('leftabove vsplit')
+        target_win = vim.api.nvim_get_current_win()
+        self.target_win = target_win
+    else
+        vim.api.nvim_set_current_win(target_win)
+    end
+
+    vim.cmd('edit ' .. vim.fn.fnameescape(path))
+
+    return true
+end
+
+---@return boolean
+function GitStatusWindow:enter_entry()
+    local entry = self:current_entry()
+
+    if entry == nil then
+        return false
+    end
+
+    return self:open_entry(entry)
 end
 
 function GitStatusWindow:render()
@@ -143,10 +260,10 @@ function GitStatusWindow:render()
     assert(self.buf:is_valid())
     assert(self.groups ~= nil)
 
-    local lines = formatting.render(git.branch(), git.status(), self.groups)
+    self.lines = formatting.render(git.branch(), git.status(), self.groups)
 
-    self.buf:set_lines(render.text_lines(lines))
-    render.apply(self.buf.id, lines)
+    self.buf:set_lines(render.text_lines(self.lines))
+    render.apply(self.buf.id, self.lines)
 end
 
 ---@return GitStatusWindow
@@ -155,6 +272,9 @@ function GitStatusWindow.new()
 
     self.groups = self:create_highlight_groups()
     self.highlights = self:create_highlights()
+    self.lines = {}
+    self.target_win = vim.api.nvim_get_current_win()
+
     self:highlights_ensure()
 
     ---@type BufferOpts
@@ -164,110 +284,9 @@ function GitStatusWindow.new()
     self:ensure_keymaps()
     self:render()
 
-    -- local head_line = gsf.head_line(git.branch())
-    -- local status_lines = gsf.lines(git.status())
-    --
-    -- table.insert(content, head_line)
-    -- if #status_lines > 0 then
-    --     table.insert(content, '')
-    --     vim.list_extend(content, status_lines)
-    -- end
-    --
-    -- uis.set_lines(content)
-
     self.win = create_win(self.buf)
 
     return self
 end
 
 return GitStatusWindow
-
--- ---@param lines (string|MiniFugitLine)[]
--- ---@return MiniFugitLine[]
--- local function normalize_lines(lines)
---     local normalized = {}
---
---     for _, line in ipairs(lines) do
---         if type(line) == 'string' then
---             if line == '' then
---                 table.insert(normalized, highlight.plain_line(line))
---             else
---                 for _, value in ipairs(vim.split(line, '\n', { plain = true })) do
---                     table.insert(normalized, highlight.plain_line(value))
---                 end
---             end
---         else
---             table.insert(
---                 normalized,
---                 highlight.line(line.text, line.highlights, line.data)
---             )
---         end
---     end
---
---     return normalized
--- end
---
--- ---@param row integer
--- ---@return MiniFugitLine?
--- function ui_status.get_line(row)
---     return ui_status._lines[row]
--- end
---
--- ---@return integer
--- function ui_status.get_win()
---     return ui_status._win
--- end
---
--- ---@return integer
--- function ui_status.get_buf()
---     return ui_status._buf
--- end
---
--- ---@return UIBufWin
--- function ui_status.open_win()
---     if
---         not vim.api.nvim_buf_is_valid(ui_status._buf)
---         or not vim.api.nvim_win_is_valid(ui_status._win)
---     then
---         if ui_status._buf ~= -1 then
---             ui.close_win()
---         end
---
---         local bufwin = create_win()
---
---         ui_status._buf = bufwin.buf
---         ui_status._win = bufwin.win
---         ui_status._lines = {}
---
---         return {
---             buf = ui_status._buf,
---             win = ui_status._win,
---         }
---     end
---
---     log.info(
---         string.format(
---             'reusing status window win=%d buf=%d',
---             ui_status._win,
---             ui_status._buf
---         )
---     )
---     vim.api.nvim_set_current_win(ui_status._win)
---
---     return {
---         buf = ui_status._buf,
---         win = ui_status._win,
---     }
--- end
---
--- ---@param lines (string|MiniFugitLine)[] Array of lines to replace in the window
--- function ui_status.set_lines(lines)
---     local b = ui_status._buf
---     local normalized_lines = normalize_lines(lines)
---
---     ui.set_lines(normalized_lines, b)
---     highlight.apply(ui_status._buf, normalized_lines)
---     ui_status._lines = normalized_lines
--- end
---
--- return ui_status
