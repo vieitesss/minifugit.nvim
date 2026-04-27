@@ -20,6 +20,7 @@ local git = require('minifugit.git')
 ---@field diff_preview_key string?
 ---@field diff_prev_winopts GitStatusWindowOptions?
 ---@field win number?
+---@field win_prev_winopts GitStatusWindowOptions?
 ---@field target_win number?
 ---@field groups table<string, string>
 ---@field highlights table<string, Highlight>
@@ -110,10 +111,62 @@ local function ensure_highlights(self)
     end
 end
 
+---@param self GitStatusWindow
+local function release_status_win(self)
+    if self.win == nil then
+        return
+    end
+
+    local win = self.win
+
+    if common.is_valid_win(win) then
+        if vim.api.nvim_win_get_buf(win) == self.buf.id then
+            return
+        end
+
+        window.restore_winopts(win, self.win_prev_winopts)
+    end
+
+    self.win = nil
+    self.win_prev_winopts = nil
+end
+
+---@param self GitStatusWindow
+local function ensure_autocmds(self)
+    vim.api.nvim_create_autocmd({ 'BufLeave', 'BufHidden' }, {
+        buffer = self.buf.id,
+        callback = function()
+            vim.schedule(function()
+                if self.buf ~= nil and self.buf:is_valid() then
+                    release_status_win(self)
+                end
+            end)
+        end,
+    })
+
+    vim.api.nvim_create_autocmd('ColorScheme', {
+        callback = function()
+            ensure_highlights(self)
+
+            if self.buf ~= nil and self.buf:is_valid() then
+                render.apply(self.buf.id, self.lines)
+            end
+
+            if self.diff_buf ~= nil and self.diff_buf:is_valid() and preview.has_open_diff(self) then
+                preview.refresh_current_entry(self)
+            end
+        end,
+    })
+end
+
 function GitStatusWindow:show()
     if not self.buf or not self.buf:is_valid() then
         log.error('Cannot show invalid GitStatus buffer')
         return
+    end
+
+    if self.win and common.is_valid_win(self.win) and vim.api.nvim_win_get_buf(self.win) ~= self.buf.id then
+        release_status_win(self)
     end
 
     window.set_target_win(self, vim.api.nvim_get_current_win())
@@ -123,7 +176,7 @@ function GitStatusWindow:show()
         return
     end
 
-    self.win = window.create_status_win(self.buf)
+    self.win, self.win_prev_winopts = window.create_status_win(self.buf)
     selection.move_to_first_entry(self)
 end
 
@@ -248,22 +301,9 @@ function GitStatusWindow.new()
     keymaps.attach(self)
     self:render()
 
-    self.win = window.create_status_win(self.buf)
+    self.win, self.win_prev_winopts = window.create_status_win(self.buf)
     selection.move_to_first_entry(self)
-
-    vim.api.nvim_create_autocmd('ColorScheme', {
-        callback = function()
-            ensure_highlights(self)
-
-            if self.buf ~= nil and self.buf:is_valid() then
-                render.apply(self.buf.id, self.lines)
-            end
-
-            if self.diff_buf ~= nil and self.diff_buf:is_valid() and preview.has_open_diff(self) then
-                preview.refresh_current_entry(self)
-            end
-        end,
-    })
+    ensure_autocmds(self)
 
     return self
 end

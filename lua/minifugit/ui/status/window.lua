@@ -11,6 +11,7 @@ local M = {}
 ---@field foldcolumn string
 ---@field wrap boolean
 ---@field cursorline boolean
+---@field winfixwidth boolean
 
 ---@return integer
 local function status_win_width()
@@ -30,13 +31,14 @@ local function entry_path(entry)
 end
 
 ---@param buf Buffer
----@return number
+---@return number, GitStatusWindowOptions
 function M.create_status_win(buf)
     local width = status_win_width()
 
     vim.cmd('topleft ' .. width .. 'vsplit')
 
     local win = vim.api.nvim_get_current_win()
+    local prev_winopts = M.capture_winopts(win)
 
     vim.api.nvim_win_set_buf(win, buf.id)
     vim.api.nvim_set_current_win(win)
@@ -50,7 +52,7 @@ function M.create_status_win(buf)
 
     log.info(string.format('created status window win=%d buf=%d', win, buf.id))
 
-    return win
+    return win, prev_winopts
 end
 
 ---@param self GitStatusWindow
@@ -132,6 +134,7 @@ function M.capture_winopts(win)
         foldcolumn = vim.wo[win].foldcolumn,
         wrap = vim.wo[win].wrap,
         cursorline = vim.wo[win].cursorline,
+        winfixwidth = vim.wo[win].winfixwidth,
     }
 end
 
@@ -148,6 +151,7 @@ function M.restore_winopts(win, opts)
     vim.wo[win].foldcolumn = opts.foldcolumn
     vim.wo[win].wrap = opts.wrap
     vim.wo[win].cursorline = opts.cursorline
+    vim.wo[win].winfixwidth = opts.winfixwidth
 end
 
 return M
