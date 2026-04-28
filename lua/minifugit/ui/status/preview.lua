@@ -39,7 +39,10 @@ local function refresh_entry_item(self, state)
     end
 
     if state.item_key ~= nil then
-        item = entry_item_at_row(self, selection.row_for_item_key(self, state.item_key))
+        item = entry_item_at_row(
+            self,
+            selection.row_for_item_key(self, state.item_key)
+        )
 
         if item ~= nil then
             return item
@@ -47,14 +50,17 @@ local function refresh_entry_item(self, state)
     end
 
     if state.entry_key ~= nil then
-        return entry_item_at_row(self, selection.row_for_entry_key(self, state.entry_key))
+        return entry_item_at_row(
+            self,
+            selection.row_for_entry_key(self, state.entry_key)
+        )
     end
 
     return nil
 end
 
 ---@class MiniFugitDiffLine
----@field kind 'header'|'hunk'|'context'|'added'|'removed'
+---@field kind 'title'|'meta'|'hunk'|'context'|'added'|'removed'
 ---@field old_number integer?
 ---@field new_number integer?
 ---@field text string
@@ -107,7 +113,8 @@ end
 ---@param hunk_header string
 ---@return integer?, integer?
 local function parse_hunk_header(hunk_header)
-    local old_start, new_start = hunk_header:match('^@@ %-(%d+)[^ ]* %+(%d+)[^ ]* @@')
+    local old_start, new_start =
+        hunk_header:match('^@@ %-(%d+)[^ ]* %+(%d+)[^ ]* @@')
 
     if old_start == nil or new_start == nil then
         return nil, nil
@@ -131,10 +138,12 @@ local function parse_diff_lines(lines)
         if vim.startswith(text, '@@') then
             old_number, new_number = parse_hunk_header(text)
             table.insert(parsed, { kind = 'hunk', text = text })
-        elseif vim.startswith(text, 'diff ') or vim.startswith(text, 'index ') then
-            table.insert(parsed, { kind = 'header', text = text })
+        elseif vim.startswith(text, 'diff ') then
+            table.insert(parsed, { kind = 'title', text = text })
+        elseif vim.startswith(text, 'index ') then
+            table.insert(parsed, { kind = 'meta', text = text })
         elseif vim.startswith(text, '--- ') or vim.startswith(text, '+++ ') then
-            table.insert(parsed, { kind = 'header', text = text })
+            table.insert(parsed, { kind = 'meta', text = text })
         elseif vim.startswith(text, '+') then
             table.insert(parsed, {
                 kind = 'added',
@@ -195,7 +204,7 @@ local function diff_render_lines(lines, groups)
             render.add_highlight(line, groups.diff_added, 0, #text)
         elseif diff_line.kind == 'removed' then
             render.add_highlight(line, groups.diff_removed, 0, #text)
-        elseif diff_line.kind == 'header' then
+        elseif diff_line.kind == 'title' then
             render.add_highlight(line, 'Comment', 0, #text)
         elseif diff_line.kind == 'hunk' then
             render.add_highlight(line, 'Title', 0, #text)
@@ -219,7 +228,8 @@ function M.close_diff(self)
     local current_win = vim.api.nvim_get_current_win()
     local diff_win = current_win
 
-    if not self.diff_buf
+    if
+        not self.diff_buf
         or not self.diff_buf:is_valid()
         or vim.api.nvim_win_get_buf(diff_win) ~= self.diff_buf.id
     then
@@ -236,7 +246,9 @@ function M.close_diff(self)
 
     if self.diff_created_win and #vim.api.nvim_tabpage_list_wins(0) > 1 then
         vim.api.nvim_win_close(diff_win, true)
-    elseif self.diff_prev_buf and vim.api.nvim_buf_is_valid(self.diff_prev_buf) then
+    elseif
+        self.diff_prev_buf and vim.api.nvim_buf_is_valid(self.diff_prev_buf)
+    then
         vim.api.nvim_win_set_buf(diff_win, self.diff_prev_buf)
         window.restore_winopts(diff_win, self.diff_prev_winopts)
     elseif #vim.api.nvim_tabpage_list_wins(0) > 1 then
@@ -270,7 +282,6 @@ function M.ensure_diff_buf(self)
     vim.bo[self.diff_buf.id].buftype = 'nofile'
     vim.bo[self.diff_buf.id].bufhidden = 'hide'
     vim.bo[self.diff_buf.id].swapfile = false
-    vim.bo[self.diff_buf.id].filetype = 'diff'
 
     vim.keymap.set('n', 'q', function()
         M.close_diff(self)
@@ -291,12 +302,14 @@ end
 function M.open_diff(self, entry, section, opts)
     opts = opts or {}
 
-    local preview_key = table.concat(
-        { section or '', entry.orig_path or '', entry.path },
-        '\0'
-    )
+    local preview_key =
+        table.concat({ section or '', entry.orig_path or '', entry.path }, '\0')
 
-    if not opts.force and M.has_open_diff(self) and self.diff_preview_key == preview_key then
+    if
+        not opts.force
+        and M.has_open_diff(self)
+        and self.diff_preview_key == preview_key
+    then
         return true
     end
 
@@ -334,7 +347,8 @@ function M.open_diff(self, entry, section, opts)
     end
 
     local previous_buf = vim.api.nvim_win_get_buf(target_win)
-    local was_diff_preview = previous_buf == buf.id and self.diff_win == target_win
+    local was_diff_preview = previous_buf == buf.id
+        and self.diff_win == target_win
 
     if not was_diff_preview then
         self.diff_prev_buf = previous_buf
