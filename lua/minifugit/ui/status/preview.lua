@@ -60,10 +60,41 @@ local function refresh_entry_item(self, state)
 end
 
 ---@class MiniFugitDiffLine
----@field kind 'title'|'meta'|'hunk'|'context'|'added'|'removed'
+---@field kind 'header'|'hunk'|'context'|'added'|'removed'
 ---@field old_number integer?
 ---@field new_number integer?
 ---@field text string
+
+local DIFF_HEADER_PREFIXES = {
+    'diff ',
+    'index ',
+    '--- ',
+    '+++ ',
+    'old mode ',
+    'new mode ',
+    'deleted file mode ',
+    'new file mode ',
+    'similarity index ',
+    'dissimilarity index ',
+    'rename from ',
+    'rename to ',
+    'copy from ',
+    'copy to ',
+    'Binary files ',
+    'GIT binary patch',
+}
+
+---@param text string
+---@return boolean
+local function is_diff_header(text)
+    for _, prefix in ipairs(DIFF_HEADER_PREFIXES) do
+        if vim.startswith(text, prefix) then
+            return true
+        end
+    end
+
+    return false
+end
 
 ---@param number integer?
 ---@param width integer
@@ -138,12 +169,8 @@ local function parse_diff_lines(lines)
         if vim.startswith(text, '@@') then
             old_number, new_number = parse_hunk_header(text)
             table.insert(parsed, { kind = 'hunk', text = text })
-        elseif vim.startswith(text, 'diff ') then
-            table.insert(parsed, { kind = 'title', text = text })
-        elseif vim.startswith(text, 'index ') then
-            table.insert(parsed, { kind = 'meta', text = text })
-        elseif vim.startswith(text, '--- ') or vim.startswith(text, '+++ ') then
-            table.insert(parsed, { kind = 'meta', text = text })
+        elseif is_diff_header(text) then
+            table.insert(parsed, { kind = 'header', text = text })
         elseif vim.startswith(text, '+') then
             table.insert(parsed, {
                 kind = 'added',
@@ -204,10 +231,10 @@ local function diff_render_lines(lines, groups)
             render.add_highlight(line, groups.diff_added, 0, #text)
         elseif diff_line.kind == 'removed' then
             render.add_highlight(line, groups.diff_removed, 0, #text)
-        elseif diff_line.kind == 'title' then
-            render.add_highlight(line, 'Comment', 0, #text)
+        elseif diff_line.kind == 'header' then
+            render.add_highlight(line, groups.diff_header, 0, #text)
         elseif diff_line.kind == 'hunk' then
-            render.add_highlight(line, 'Title', 0, #text)
+            render.add_highlight(line, groups.diff_hunk_header, 0, #text)
         end
 
         return line

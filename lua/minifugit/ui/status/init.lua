@@ -23,13 +23,16 @@ local git = require('minifugit.git')
 ---@field win_prev_winopts GitStatusWindowOptions?
 ---@field target_win number?
 ---@field groups table<string, string>
----@field highlights table<string, Highlight>
+---@field highlights table<string, { ensure: fun() }>
 ---@field lines MiniFugitRenderLine[]
 ---@field show_help boolean
 local GitStatusWindow = {}
 GitStatusWindow.__index = GitStatusWindow
 
 local HIGHLIGHT_NAMESPACE = 'GitStatusWindow'
+
+local DIFF_HEADER_GROUP = 'MiniFugitDiffHeader'
+local DIFF_HUNK_HEADER_GROUP = 'MiniFugitDiffHunkHeader'
 
 local HIGHLIGHT_SPECS = {
     staged = {
@@ -74,6 +77,47 @@ local HIGHLIGHT_SPECS = {
     },
 }
 
+---@return vim.api.keyset.highlight
+local function diff_header_style()
+    if vim.o.background == 'light' then
+        return {
+            fg = 0x8A8A8A,
+            ctermfg = 245,
+        }
+    end
+
+    return {
+        fg = 0x6C7086,
+        ctermfg = 243,
+    }
+end
+
+---@return vim.api.keyset.highlight
+local function diff_hunk_header_style()
+    if vim.o.background == 'light' then
+        return {
+            fg = 0x5F6B7A,
+            ctermfg = 60,
+        }
+    end
+
+    return {
+        fg = 0x7A88A1,
+        ctermfg = 67,
+    }
+end
+
+---@param name string
+---@param style fun(): vim.api.keyset.highlight
+---@return { ensure: fun() }
+local function create_fixed_highlight(name, style)
+    return {
+        ensure = function()
+            vim.api.nvim_set_hl(0, name, style())
+        end,
+    }
+end
+
 ---@return table<string, string>
 local function create_highlight_groups()
     local groups = {}
@@ -82,10 +126,13 @@ local function create_highlight_groups()
         groups[key] = spec.name
     end
 
+    groups.diff_header = DIFF_HEADER_GROUP
+    groups.diff_hunk_header = DIFF_HUNK_HEADER_GROUP
+
     return groups
 end
 
----@return table<string, Highlight>
+---@return table<string, { ensure: fun() }>
 local function create_highlights()
     local highlights = {}
 
@@ -98,6 +145,11 @@ local function create_highlights()
             fallback_bg = spec.fallback_bg,
         })
     end
+
+    highlights.diff_header =
+        create_fixed_highlight(DIFF_HEADER_GROUP, diff_header_style)
+    highlights.diff_hunk_header =
+        create_fixed_highlight(DIFF_HUNK_HEADER_GROUP, diff_hunk_header_style)
 
     return highlights
 end
@@ -132,6 +184,23 @@ local function release_status_win(self)
 end
 
 ---@param self GitStatusWindow
+local function refresh_highlights(self)
+    ensure_highlights(self)
+
+    if self.buf ~= nil and self.buf:is_valid() then
+        render.apply(self.buf.id, self.lines)
+    end
+
+    if
+        self.diff_buf ~= nil
+        and self.diff_buf:is_valid()
+        and preview.has_open_diff(self)
+    then
+        preview.refresh_current_entry(self)
+    end
+end
+
+---@param self GitStatusWindow
 local function ensure_autocmds(self)
     vim.api.nvim_create_autocmd({ 'BufLeave', 'BufHidden' }, {
         buffer = self.buf.id,
@@ -146,19 +215,14 @@ local function ensure_autocmds(self)
 
     vim.api.nvim_create_autocmd('ColorScheme', {
         callback = function()
-            ensure_highlights(self)
+            refresh_highlights(self)
+        end,
+    })
 
-            if self.buf ~= nil and self.buf:is_valid() then
-                render.apply(self.buf.id, self.lines)
-            end
-
-            if
-                self.diff_buf ~= nil
-                and self.diff_buf:is_valid()
-                and preview.has_open_diff(self)
-            then
-                preview.refresh_current_entry(self)
-            end
+    vim.api.nvim_create_autocmd('OptionSet', {
+        pattern = 'background',
+        callback = function()
+            refresh_highlights(self)
         end,
     })
 end
