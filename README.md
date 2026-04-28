@@ -49,6 +49,10 @@ Open the status window:
 :MinifugitStatus
 ```
 
+```lua
+require('minifugit').status()
+```
+
 Default status-window mappings:
 
 | Mode | Key | Action |
