@@ -168,7 +168,12 @@ function M.stage_entry(self)
     end
 
     if item.section == 'staged' then
-        return M.update_entry_items(self, git.unstage_entries, { item }, 'unstage')
+        return M.update_entry_items(
+            self,
+            git.unstage_entries,
+            { item },
+            'unstage'
+        )
     end
 
     return M.update_entry_items(self, git.stage_entries, { item }, 'stage')
@@ -183,13 +188,21 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.stage_all_entries(self)
-    return M.update_entries(self, git.stage_entries, selection.all_entries(self))
+    return M.update_entries(
+        self,
+        git.stage_entries,
+        selection.all_entries(self)
+    )
 end
 
 ---@param self GitStatusWindow
 ---@return boolean
 function M.unstage_all_entries(self)
-    return M.update_entries(self, git.unstage_entries, selection.all_entries(self))
+    return M.update_entries(
+        self,
+        git.unstage_entries,
+        selection.all_entries(self)
+    )
 end
 
 ---@param self GitStatusWindow
@@ -231,7 +244,11 @@ function M.discard_entry(self, force)
         return false
     end
 
-    if not force and vim.fn.confirm(discard_message(item), '&Discard\n&Cancel', 2) ~= 1 then
+    if
+        not force
+        and vim.fn.confirm(discard_message(item), '&Discard\n&Cancel', 2)
+            ~= 1
+    then
         return false
     end
 

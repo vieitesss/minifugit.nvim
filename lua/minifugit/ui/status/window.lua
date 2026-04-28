@@ -66,7 +66,8 @@ end
 ---@param self GitStatusWindow
 ---@return number?
 function M.find_target_win(self)
-    if common.is_valid_win(self.target_win)
+    if
+        common.is_valid_win(self.target_win)
         and self.target_win ~= self.win
         and vim.api.nvim_win_get_tabpage(self.target_win)
             == vim.api.nvim_get_current_tabpage()

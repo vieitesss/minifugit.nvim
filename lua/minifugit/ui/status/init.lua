@@ -152,7 +152,11 @@ local function ensure_autocmds(self)
                 render.apply(self.buf.id, self.lines)
             end
 
-            if self.diff_buf ~= nil and self.diff_buf:is_valid() and preview.has_open_diff(self) then
+            if
+                self.diff_buf ~= nil
+                and self.diff_buf:is_valid()
+                and preview.has_open_diff(self)
+            then
                 preview.refresh_current_entry(self)
             end
         end,
@@ -165,7 +169,11 @@ function GitStatusWindow:show()
         return
     end
 
-    if self.win and common.is_valid_win(self.win) and vim.api.nvim_win_get_buf(self.win) ~= self.buf.id then
+    if
+        self.win
+        and common.is_valid_win(self.win)
+        and vim.api.nvim_win_get_buf(self.win) ~= self.buf.id
+    then
         release_status_win(self)
     end
 

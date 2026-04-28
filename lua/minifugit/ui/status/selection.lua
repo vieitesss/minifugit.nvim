@@ -235,7 +235,9 @@ end
 ---@return integer?
 function M.row_for_entry_key(self, entry_key)
     for row, line in ipairs(self.lines) do
-        if M.entry_identity_key(M.entry_item_from_data(line.data)) == entry_key then
+        if
+            M.entry_identity_key(M.entry_item_from_data(line.data)) == entry_key
+        then
             return row
         end
     end
