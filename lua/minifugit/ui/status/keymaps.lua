@@ -95,6 +95,14 @@ function M.attach(self)
         silent = true,
     })
 
+    vim.keymap.set('n', 'p', function()
+        self:push()
+    end, {
+        buffer = self.buf.id,
+        desc = 'Push unpushed commits',
+        silent = true,
+    })
+
     vim.keymap.set('n', '?', function()
         self:toggle_help()
     end, {

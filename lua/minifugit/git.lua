@@ -9,6 +9,10 @@
 ---@field short_hash string
 ---@field message string
 
+---@class GitPushDestination
+---@field remote string
+---@field ref string
+
 ---@class GitStatusSnapshot
 ---@field branch string
 ---@field entries GitStatusEntry[]
@@ -261,28 +265,24 @@ function git.status_snapshot()
     }
 end
 
-function git.unpushed_commits(root)
-    local out = git.run(
-        { 'log', '--format=%H|%s', '-20', 'HEAD', '^origin/main' },
-        { cwd = root, ignore_error = true }
-    )
+local COMMIT_FIELD_SEPARATOR = '\31'
+local NO_UPSTREAM_MESSAGE = 'No upstream configured. Run git push -u origin <branch>'
 
-    if out.exit_code ~= 0 or out.output == '' then
-        return {}
-    end
-
+---@param output string
+---@return GitCommit[]
+local function parse_commits(output)
     local commits = {}
 
-    for _, line in ipairs(vim.split(out.output, '\n', { plain = true })) do
+    for _, line in ipairs(vim.split(output, '\n', { plain = true })) do
         if line ~= '' then
-            local sep = line:find('|', 1, true)
+            local sep = line:find(COMMIT_FIELD_SEPARATOR, 1, true)
 
             if sep ~= nil then
                 local hash = line:sub(1, sep - 1)
                 local short_hash = hash:sub(1, 7)
                 local message = line:sub(sep + 1)
 
-                if message and message ~= '' then
+                if message ~= '' then
                     table.insert(commits, {
                         hash = hash,
                         short_hash = short_hash,
@@ -296,25 +296,92 @@ function git.unpushed_commits(root)
     return commits
 end
 
-function git.remote_branches(root)
+---@param root string
+---@return string?
+---@return string?
+function git.upstream(root)
     local out = git.run(
-        { 'branch', '-r', '--format=%(refname:short)' },
+        { 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}' },
         { cwd = root, ignore_error = true }
     )
 
     if out.exit_code ~= 0 then
+        return nil, NO_UPSTREAM_MESSAGE
+    end
+
+    local upstream = return_result(out)
+
+    if upstream == '' then
+        return nil, NO_UPSTREAM_MESSAGE
+    end
+
+    return upstream, nil
+end
+
+---@param root string
+---@return GitPushDestination?
+---@return string?
+function git.push_destination(root)
+    local branch_out = git.run(
+        { 'symbolic-ref', '--quiet', '--short', 'HEAD' },
+        { cwd = root, ignore_error = true }
+    )
+
+    if branch_out.exit_code ~= 0 then
+        return nil, 'Cannot push from detached HEAD'
+    end
+
+    local branch = return_result(branch_out)
+    local upstream_out = git.run(
+        {
+            'for-each-ref',
+            '--format=%(upstream:remotename)%00%(upstream:remoteref)',
+            'refs/heads/' .. branch,
+        },
+        { cwd = root, ignore_error = true }
+    )
+
+    if upstream_out.exit_code ~= 0 or upstream_out.output == '' then
+        return nil, NO_UPSTREAM_MESSAGE
+    end
+
+    local remote, ref_start = read_nul_field(upstream_out.output, 1)
+
+    if remote == nil or remote == '' or ref_start == nil then
+        return nil, NO_UPSTREAM_MESSAGE
+    end
+
+    local ref = upstream_out.output:sub(ref_start):gsub('[\r\n]+$', '')
+
+    if ref == '' then
+        return nil, NO_UPSTREAM_MESSAGE
+    end
+
+    return {
+        remote = remote,
+        ref = ref,
+    }, nil
+end
+
+---@param root string
+---@return GitCommit[]
+function git.unpushed_commits(root)
+    local upstream = git.upstream(root)
+
+    if upstream == nil then
         return {}
     end
 
-    local branches = {}
+    local out = git.run(
+        { 'log', '--format=%H%x1f%s', '-20', upstream .. '..HEAD' },
+        { cwd = root, ignore_error = true }
+    )
 
-    for _, line in ipairs(vim.split(out.output, '\n', { plain = true })) do
-        if line ~= '' and not line:match('^%s*%-') then
-            table.insert(branches, line)
-        end
+    if out.exit_code ~= 0 or out.output == '' then
+        return {}
     end
 
-    return branches
+    return parse_commits(out.output)
 end
 
 ---@return table
@@ -565,6 +632,35 @@ function git.diff(entry, section)
     end
 
     return parse_diff(out.output)
+end
+
+---@return boolean
+---@return string
+function git.push()
+    ensure_git()
+
+    local root = git.root()
+
+    if root == '' then
+        return false, 'Not inside a git repository'
+    end
+
+    local destination, destination_error = git.push_destination(root)
+
+    if destination == nil then
+        return false, destination_error or 'No upstream configured'
+    end
+
+    if #git.unpushed_commits(root) == 0 then
+        return false, 'No unpushed commits to push'
+    end
+
+    local out = git.run(
+        { 'push', destination.remote, 'HEAD:' .. destination.ref },
+        { cwd = root, ignore_error = true }
+    )
+
+    return out.exit_code == 0, return_result(out)
 end
 
 return git

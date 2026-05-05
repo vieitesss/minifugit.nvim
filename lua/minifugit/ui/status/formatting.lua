@@ -38,6 +38,7 @@ local mapping_lines = {
     'd discard unstaged or untracked',
     'D force discard unstaged or untracked',
     'c commit staged changes',
+    'p push unpushed commits',
     'visual s stage selection',
     'visual u unstage selection',
 }

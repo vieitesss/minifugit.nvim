@@ -311,4 +311,38 @@ function M.commit(self)
     return true
 end
 
+---@param self GitStatusWindow
+---@return boolean
+function M.push(self)
+    if self.win == nil or not common.is_valid_win(self.win) then
+        common.notify_error(nil, 'Status window is not open')
+        return false
+    end
+
+    local ok, output = git.push()
+    output = output or ''
+
+    if not ok then
+        if
+            output == 'No unpushed commits to push'
+            or output:match('^No upstream')
+            or output:match('^Cannot push')
+        then
+            common.notify_warn(output)
+        else
+            common.notify_error(output, 'Push failed')
+        end
+
+        return false
+    end
+
+    common.notify(
+        output ~= '' and output or 'Pushed unpushed commits',
+        vim.log.levels.INFO
+    )
+    self:refresh()
+
+    return true
+end
+
 return M
