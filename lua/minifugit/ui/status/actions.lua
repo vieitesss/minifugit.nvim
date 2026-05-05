@@ -292,17 +292,22 @@ function M.commit(self)
                 return false
             end
 
-            self:refresh()
+            vim.schedule(function()
+                self:refresh()
 
-            if self.win ~= nil and common.is_valid_win(self.win) then
-                vim.api.nvim_win_set_buf(self.win, self.buf.id)
-            end
+                if self.win ~= nil and common.is_valid_win(self.win) then
+                    vim.api.nvim_set_current_win(self.win)
+                    vim.api.nvim_win_set_buf(self.win, self.buf.id)
+                else
+                    self:show()
+                end
 
-            if vim.api.nvim_buf_is_valid(args.buf) then
-                vim.api.nvim_buf_delete(args.buf, { force = true })
-            end
+                if vim.api.nvim_buf_is_valid(args.buf) then
+                    vim.api.nvim_buf_delete(args.buf, { force = true })
+                end
 
-            vim.fn.delete(path)
+                vim.fn.delete(path)
+            end)
 
             return true
         end,
@@ -337,7 +342,7 @@ function M.push(self)
     end
 
     common.notify(
-        output ~= '' and output or 'Pushed unpushed commits',
+        output ~= '' and output or 'Pushed commits',
         vim.log.levels.INFO
     )
     self:refresh()
