@@ -262,21 +262,10 @@ function git.status_snapshot()
 end
 
 function git.unpushed_commits(root)
-    local remote_branches = git.remote_branches(root)
-
-    if #remote_branches == 0 then
-        return {}
-    end
-
-    local args = {
-        'log',
-        '--format=%H|%s',
-        '-20',
-        '--not',
-        '--remotes',
-    }
-
-    local out = git.run(args, { cwd = root, ignore_error = true })
+    local out = git.run(
+        { 'log', '--format=%H|%s', '-20', 'HEAD', '^origin/main' },
+        { cwd = root, ignore_error = true }
+    )
 
     if out.exit_code ~= 0 or out.output == '' then
         return {}
@@ -293,11 +282,13 @@ function git.unpushed_commits(root)
                 local short_hash = hash:sub(1, 7)
                 local message = line:sub(sep + 1)
 
-                table.insert(commits, {
-                    hash = hash,
-                    short_hash = short_hash,
-                    message = message,
-                })
+                if message and message ~= '' then
+                    table.insert(commits, {
+                        hash = hash,
+                        short_hash = short_hash,
+                        message = message,
+                    })
+                end
             end
         end
     end
