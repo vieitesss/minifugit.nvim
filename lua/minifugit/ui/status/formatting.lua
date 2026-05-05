@@ -286,7 +286,7 @@ function M.render(snapshot, groups, opts)
         return lines
     end
 
-    if #snapshot.entries == 0 then
+    if #snapshot.entries == 0 and #snapshot.unpushed_commits == 0 then
         table.insert(lines, render.line(''))
         table.insert(lines, message_line('Working tree clean', 'Comment'))
         append_help(lines, opts.show_help)
