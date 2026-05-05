@@ -12,7 +12,7 @@ local conflict_statuses = {
     UU = true,
 }
 
----@alias GitStatusSectionName 'conflicts'|'staged'|'unstaged'|'untracked'
+---@alias GitStatusSectionName 'conflicts'|'staged'|'unstaged'|'untracked'|'unpushed'
 
 ---@class GitStatusSection
 ---@field name GitStatusSectionName
@@ -41,6 +41,21 @@ local mapping_lines = {
     'visual s stage selection',
     'visual u unstage selection',
 }
+
+---@param commit GitCommit
+---@param groups table<string, string>
+---@return MiniFugitRenderLine
+function M.commit_line(commit, groups)
+    local text = commit.short_hash .. ' ' .. commit.message
+    local line = render.line(text, {
+        commit = commit,
+        section = 'unpushed',
+    })
+
+    render.add_highlight(line, groups.unpushed, 0, #commit.short_hash + 1)
+
+    return line
+end
 
 ---@param entry GitStatusEntry
 ---@return string
@@ -280,6 +295,15 @@ function M.render(snapshot, groups, opts)
 
     for _, section in ipairs(sections(snapshot.entries)) do
         append_section(lines, section, groups)
+    end
+
+    if #snapshot.unpushed_commits > 0 then
+        table.insert(lines, render.line(''))
+        table.insert(lines, section_line('Unpushed', #snapshot.unpushed_commits))
+
+        for _, commit in ipairs(snapshot.unpushed_commits) do
+            table.insert(lines, M.commit_line(commit, groups))
+        end
     end
 
     append_help(lines, opts.show_help)

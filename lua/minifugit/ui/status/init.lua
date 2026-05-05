@@ -75,6 +75,11 @@ local HIGHLIGHT_SPECS = {
         sources = { 'DiffDelete', 'Removed', 'Error' },
         fallback_bg = 0x5A2D34,
     },
+    unpushed = {
+        name = 'MiniFugitUnpushed',
+        sources = { 'Constant', 'Number' },
+        fallback_fg = 0xD19A66,
+    },
 }
 
 ---@return vim.api.keyset.highlight

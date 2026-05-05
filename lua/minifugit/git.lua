@@ -4,9 +4,15 @@
 ---@field path string
 ---@field orig_path string?
 
+---@class GitCommit
+---@field hash string
+---@field short_hash string
+---@field message string
+
 ---@class GitStatusSnapshot
 ---@field branch string
 ---@field entries GitStatusEntry[]
+---@field unpushed_commits GitCommit[]
 ---@field root string
 ---@field error string?
 
@@ -198,6 +204,7 @@ function git.status_snapshot()
         return {
             branch = '',
             entries = {},
+            unpushed_commits = {},
             root = '',
             error = '`git` is not executable',
         }
@@ -209,6 +216,7 @@ function git.status_snapshot()
         return {
             branch = '',
             entries = {},
+            unpushed_commits = {},
             root = '',
             error = 'Not inside a git repository',
         }
@@ -239,6 +247,7 @@ function git.status_snapshot()
         return {
             branch = branch,
             entries = {},
+            unpushed_commits = {},
             root = root,
             error = return_result(status_out),
         }
@@ -247,8 +256,74 @@ function git.status_snapshot()
     return {
         branch = branch,
         entries = parse_status(status_out.output),
+        unpushed_commits = git.unpushed_commits(root),
         root = root,
     }
+end
+
+function git.unpushed_commits(root)
+    local remote_branches = git.remote_branches(root)
+
+    if #remote_branches == 0 then
+        return {}
+    end
+
+    local args = {
+        'log',
+        '--format=%H|%s',
+        '-20',
+        '--not',
+        '--remotes',
+    }
+
+    local out = git.run(args, { cwd = root, ignore_error = true })
+
+    if out.exit_code ~= 0 or out.output == '' then
+        return {}
+    end
+
+    local commits = {}
+
+    for _, line in ipairs(vim.split(out.output, '\n', { plain = true })) do
+        if line ~= '' then
+            local sep = line:find('|', 1, true)
+
+            if sep ~= nil then
+                local hash = line:sub(1, sep - 1)
+                local short_hash = hash:sub(1, 7)
+                local message = line:sub(sep + 1)
+
+                table.insert(commits, {
+                    hash = hash,
+                    short_hash = short_hash,
+                    message = message,
+                })
+            end
+        end
+    end
+
+    return commits
+end
+
+function git.remote_branches(root)
+    local out = git.run(
+        { 'branch', '-r', '--format=%(refname:short)' },
+        { cwd = root, ignore_error = true }
+    )
+
+    if out.exit_code ~= 0 then
+        return {}
+    end
+
+    local branches = {}
+
+    for _, line in ipairs(vim.split(out.output, '\n', { plain = true })) do
+        if line ~= '' and not line:match('^%s*%-') then
+            table.insert(branches, line)
+        end
+    end
+
+    return branches
 end
 
 ---@return table
