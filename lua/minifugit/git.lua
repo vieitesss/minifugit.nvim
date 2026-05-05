@@ -426,15 +426,14 @@ end
 ---@return GitCommit[]
 function git.unpushed_commits(root)
     local upstream = git.upstream(root)
+    local range = upstream ~= nil and upstream .. '..HEAD' or 'HEAD'
+    local args = { 'log', '--format=%H%x1f%s', '-20', range }
 
     if upstream == nil then
-        return {}
+        vim.list_extend(args, { '--not', '--remotes' })
     end
 
-    local out = git.run(
-        { 'log', '--format=%H%x1f%s', '-20', upstream .. '..HEAD' },
-        { cwd = root, ignore_error = true }
-    )
+    local out = git.run(args, { cwd = root, ignore_error = true })
 
     if out.exit_code ~= 0 or out.output == '' then
         return {}
