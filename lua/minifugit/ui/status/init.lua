@@ -25,7 +25,11 @@ local git = require('minifugit.git')
 ---@field groups table<string, string>
 ---@field highlights table<string, { ensure: fun() }>
 ---@field lines MiniFugitRenderLine[]
+---@field snapshot GitStatusSnapshot?
 ---@field show_help boolean
+---@field loading_message string?
+---@field loading_frame integer
+---@field loading_timer uv.uv_timer_t?
 local GitStatusWindow = {}
 GitStatusWindow.__index = GitStatusWindow
 
@@ -33,6 +37,7 @@ local HIGHLIGHT_NAMESPACE = 'GitStatusWindow'
 
 local DIFF_HEADER_GROUP = 'MiniFugitDiffHeader'
 local DIFF_HUNK_HEADER_GROUP = 'MiniFugitDiffHunkHeader'
+local SPINNER_FRAMES = { '-', '\\', '|', '/' }
 
 local HIGHLIGHT_SPECS = {
     staged = {
@@ -79,6 +84,11 @@ local HIGHLIGHT_SPECS = {
         name = 'MiniFugitUnpushed',
         sources = { 'Constant', 'Number' },
         fallback_fg = 0xD19A66,
+    },
+    loading = {
+        name = 'MiniFugitLoading',
+        sources = { 'DiagnosticInfo', 'Identifier' },
+        fallback_fg = 0x61AFEF,
     },
 }
 
@@ -344,19 +354,80 @@ function GitStatusWindow:toggle_help()
     self:refresh()
 end
 
-function GitStatusWindow:render()
+function GitStatusWindow:render_cached()
     assert(self.buf ~= nil)
     assert(self.buf:is_valid())
     assert(self.groups ~= nil)
 
-    self.lines = formatting.render(git.status_snapshot(), self.groups, {
+    self.snapshot = self.snapshot or git.status_snapshot()
+    local loading_frame
+
+    if self.loading_message ~= nil then
+        loading_frame = SPINNER_FRAMES[self.loading_frame]
+    end
+
+    self.lines = formatting.render(self.snapshot, self.groups, {
         show_help = self.show_help,
+        loading_message = self.loading_message,
+        loading_frame = loading_frame,
     })
 
     vim.bo[self.buf.id].modifiable = true
     self.buf:set_lines(render.text_lines(self.lines))
     vim.bo[self.buf.id].modifiable = false
     render.apply(self.buf.id, self.lines)
+end
+
+function GitStatusWindow:render()
+    self.snapshot = git.status_snapshot()
+    self:render_cached()
+end
+
+---@param message string
+function GitStatusWindow:start_loading(message)
+    if self.loading_message ~= nil then
+        return
+    end
+
+    self.loading_message = message
+    self.loading_frame = 1
+    self:render_cached()
+
+    self.loading_timer = vim.uv.new_timer()
+
+    if self.loading_timer == nil then
+        return
+    end
+
+    self.loading_timer:start(
+        120,
+        120,
+        vim.schedule_wrap(function()
+            if self.loading_message == nil then
+                return
+            end
+
+            self.loading_frame = (self.loading_frame % #SPINNER_FRAMES) + 1
+
+            if self.buf ~= nil and self.buf:is_valid() then
+                self:render_cached()
+            end
+        end)
+    )
+end
+
+function GitStatusWindow:stop_loading()
+    self.loading_message = nil
+
+    if self.loading_timer ~= nil then
+        self.loading_timer:stop()
+
+        if not self.loading_timer:is_closing() then
+            self.loading_timer:close()
+        end
+
+        self.loading_timer = nil
+    end
 end
 
 ---@return GitStatusWindow
@@ -368,6 +439,7 @@ function GitStatusWindow.new()
     self.lines = {}
     self.diff_created_win = false
     self.show_help = false
+    self.loading_frame = 1
     self.target_win = vim.api.nvim_get_current_win()
 
     ensure_highlights(self)

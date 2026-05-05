@@ -324,28 +324,38 @@ function M.push(self)
         return false
     end
 
-    local ok, output = git.push()
-    output = output or ''
-
-    if not ok then
-        if
-            output == 'No unpushed commits to push'
-            or output:match('^No upstream')
-            or output:match('^Cannot push')
-        then
-            common.notify_warn(output)
-        else
-            common.notify_error(output, 'Push failed')
-        end
-
+    if self.loading_message ~= nil then
+        common.notify_warn('Git command already running')
         return false
     end
 
-    common.notify(
-        output ~= '' and output or 'Pushed commits',
-        vim.log.levels.INFO
-    )
-    self:refresh()
+    self:start_loading('Pushing commits')
+
+    git.push_async(function(ok, output)
+        output = output or ''
+        self:stop_loading()
+
+        if not ok then
+            if
+                output == 'No unpushed commits to push'
+                or output:match('^No upstream')
+                or output:match('^Cannot push')
+            then
+                common.notify_warn(output)
+            else
+                common.notify_error(output, 'Push failed')
+            end
+
+            self:render_cached()
+            return
+        end
+
+        common.notify(
+            output ~= '' and output or 'Pushed commits',
+            vim.log.levels.INFO
+        )
+        self:refresh()
+    end)
 
     return true
 end

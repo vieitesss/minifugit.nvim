@@ -25,6 +25,8 @@ local conflict_statuses = {
 
 ---@class GitStatusRenderOpts
 ---@field show_help boolean?
+---@field loading_message string?
+---@field loading_frame string?
 
 local mapping_lines = {
     '? hide mappings',
@@ -137,6 +139,19 @@ local function message_line(text, group)
     local line = render.line(text)
 
     render.add_highlight(line, group, 0, #text)
+
+    return line
+end
+
+---@param message string
+---@param frame string
+---@param groups table<string, string>
+---@return MiniFugitRenderLine
+local function loading_line(message, frame, groups)
+    local text = frame .. ' ' .. message
+    local line = render.line(text)
+
+    render.add_highlight(line, groups.loading, 0, #text)
 
     return line
 end
@@ -279,6 +294,13 @@ function M.render(snapshot, groups, opts)
     opts = opts or {}
 
     local lines = { M.head_line(snapshot.branch, groups) }
+
+    if opts.loading_message ~= nil and opts.loading_frame ~= nil then
+        table.insert(
+            lines,
+            loading_line(opts.loading_message, opts.loading_frame, groups)
+        )
+    end
 
     if snapshot.error ~= nil then
         table.insert(lines, render.line(''))

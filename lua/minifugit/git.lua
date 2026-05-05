@@ -100,6 +100,10 @@ end
 ---stderr: string,
 ---}
 
+---@alias GitAsyncCallback fun(ok: boolean, output: string)
+
+local return_result
+
 ---Executes a git command and returns the result
 ---@param args string[] List of git arguments (e.g., {"status", "--porcelain"})
 ---@param opts? table Options { cwd = string?, ignore_error = boolean? }
@@ -154,9 +158,64 @@ function git.run(args, opts)
     }
 end
 
+---Executes a git command asynchronously.
+---@param args string[] List of git arguments (e.g., {"push"})
+---@param opts? table Options { cwd = string?, ignore_error = boolean? }
+---@param callback GitAsyncCallback
+function git.run_async(args, opts, callback)
+    opts = opts or {}
+
+    if not ensure_git() then
+        callback(false, '`git` is not executable')
+        return
+    end
+
+    local cmd = { 'git' }
+    vim.list_extend(cmd, args)
+
+    local cwd = opts.cwd or vim.fn.getcwd()
+
+    vim.system(cmd, { text = true, cwd = cwd }, function(result)
+        vim.schedule(function()
+            local output = result.stdout or ''
+            local stderr = result.stderr or ''
+            local exit_code = result.code or 1
+
+            if exit_code ~= 0 and not opts.ignore_error then
+                log.error(
+                    string.format(
+                        'git command failed (%d): %s\n%s',
+                        exit_code,
+                        table.concat(cmd, ' '),
+                        stderr
+                    )
+                )
+            end
+
+            log.info(
+                string.format(
+                    'output=%s, exit_code=%d, stderr=%s',
+                    output,
+                    exit_code,
+                    stderr
+                )
+            )
+
+            callback(
+                exit_code == 0,
+                return_result({
+                    output = output,
+                    exit_code = exit_code,
+                    stderr = stderr,
+                })
+            )
+        end)
+    end)
+end
+
 ---@param res GitResult
 ---@return string
-local function return_result(res)
+function return_result(res)
     local value = res.exit_code == 0 and res.output or res.stderr
 
     -- Preserve meaningful leading spaces in outputs like `git status --short`.
@@ -661,6 +720,36 @@ function git.push()
     )
 
     return out.exit_code == 0, return_result(out)
+end
+
+---@param callback GitAsyncCallback
+function git.push_async(callback)
+    ensure_git()
+
+    local root = git.root()
+
+    if root == '' then
+        callback(false, 'Not inside a git repository')
+        return
+    end
+
+    local destination, destination_error = git.push_destination(root)
+
+    if destination == nil then
+        callback(false, destination_error or 'No upstream configured')
+        return
+    end
+
+    if #git.unpushed_commits(root) == 0 then
+        callback(false, 'No unpushed commits to push')
+        return
+    end
+
+    git.run_async(
+        { 'push', destination.remote, 'HEAD:' .. destination.ref },
+        { cwd = root, ignore_error = true },
+        callback
+    )
 end
 
 return git
