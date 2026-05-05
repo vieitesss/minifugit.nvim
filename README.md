@@ -9,12 +9,14 @@ without leaving Neovim.
 ## Features
 
 - Open a Git status window with `:MinifugitStatus`.
-- View your files' status
+- View your files' status.
 - Stage and unstage files from the status window (visual mode as well).
 - Preview diffs for the entry under the cursor.
 - Discard unstaged changes or delete untracked paths, with confirmation by
   default.
-- Create commits.
+- Create commits. Status window reopens after commit.
+- Push unpushed commits to upstream with animated loading spinner.
+- View unpushed commits in the status window.
 - Run `:checkhealth minifugit` to verify Neovim and Git requirements.
 
 ## Requirements
@@ -67,5 +69,5 @@ Default status-window mappings:
 | n | `d` | Discard entry with confirmation |
 | n | `D` | Discard entry without confirmation |
 | n | `c` | Commit staged changes |
+| n | `p` | Push unpushed commits |
 | n | `?` | Toggle help |
-
