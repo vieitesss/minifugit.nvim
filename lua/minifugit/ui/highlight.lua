@@ -1,3 +1,4 @@
+---@class Highlight
 ---@field fallback_fg number?
 ---@field fallback_bg number?
 ---@field ensure function

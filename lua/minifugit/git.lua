@@ -96,7 +96,7 @@ end
 
 ---@alias GitResult {
 ---output: string,
----exit_code: string,
+---exit_code: number,
 ---stderr: string,
 ---}
 
@@ -325,7 +325,9 @@ function git.status_snapshot()
 end
 
 local COMMIT_FIELD_SEPARATOR = '\31'
-local NO_UPSTREAM_MESSAGE = 'No upstream configured. Run git push -u origin <branch>'
+local NO_UPSTREAM_MESSAGE = function()
+    return 'No upstream configured. Run git push -u origin ' .. git.branch()
+end
 
 ---@param output string
 ---@return GitCommit[]
@@ -365,13 +367,13 @@ function git.upstream(root)
     )
 
     if out.exit_code ~= 0 then
-        return nil, NO_UPSTREAM_MESSAGE
+        return nil, NO_UPSTREAM_MESSAGE()
     end
 
     local upstream = return_result(out)
 
     if upstream == '' then
-        return nil, NO_UPSTREAM_MESSAGE
+        return nil, NO_UPSTREAM_MESSAGE()
     end
 
     return upstream, nil
@@ -401,19 +403,19 @@ function git.push_destination(root)
     )
 
     if upstream_out.exit_code ~= 0 or upstream_out.output == '' then
-        return nil, NO_UPSTREAM_MESSAGE
+        return nil, NO_UPSTREAM_MESSAGE()
     end
 
     local remote, ref_start = read_nul_field(upstream_out.output, 1)
 
     if remote == nil or remote == '' or ref_start == nil then
-        return nil, NO_UPSTREAM_MESSAGE
+        return nil, NO_UPSTREAM_MESSAGE()
     end
 
     local ref = upstream_out.output:sub(ref_start):gsub('[\r\n]+$', '')
 
     if ref == '' then
-        return nil, NO_UPSTREAM_MESSAGE
+        return nil, NO_UPSTREAM_MESSAGE()
     end
 
     return {
