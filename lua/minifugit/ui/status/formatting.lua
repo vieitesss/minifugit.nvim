@@ -25,11 +25,15 @@ local conflict_statuses = {
 
 ---@class GitStatusRenderOpts
 ---@field show_help boolean?
+---@field filter string?
 ---@field loading_message string?
 ---@field loading_frame string?
 
 local mapping_lines = {
     '? hide mappings',
+    'q close status window',
+    '/ filter entries',
+    '<BS> clear filter',
     '<CR> or o open file',
     '= show diff preview',
     'r refresh status',
@@ -239,6 +243,35 @@ local function is_unstaged(entry)
         and entry.unstaged ~= '!'
 end
 
+---@param entry GitStatusEntry
+---@param query string?
+---@return boolean
+local function matches_filter(entry, query)
+    if query == nil or query == '' then
+        return true
+    end
+
+    local needle = query:lower()
+    local path = entry.path:lower()
+    local orig_path = entry.orig_path and entry.orig_path:lower() or ''
+
+    return path:find(needle, 1, true) ~= nil
+        or orig_path:find(needle, 1, true) ~= nil
+end
+
+---@param entries GitStatusEntry[]
+---@param query string?
+---@return GitStatusEntry[]
+local function filtered_entries(entries, query)
+    if query == nil or query == '' then
+        return entries
+    end
+
+    return vim.tbl_filter(function(entry)
+        return matches_filter(entry, query)
+    end, entries)
+end
+
 ---@param entries GitStatusEntry[]
 ---@return GitStatusSection[]
 local function sections(entries)
@@ -294,6 +327,7 @@ function M.render(snapshot, groups, opts)
     opts = opts or {}
 
     local lines = { M.head_line(snapshot.branch, groups) }
+    local entries = filtered_entries(snapshot.entries, opts.filter)
 
     if opts.loading_message ~= nil and opts.loading_frame ~= nil then
         table.insert(
@@ -316,11 +350,22 @@ function M.render(snapshot, groups, opts)
         return lines
     end
 
-    for _, section in ipairs(sections(snapshot.entries)) do
+    if opts.filter ~= nil and opts.filter ~= '' then
+        table.insert(lines, render.line(''))
+        table.insert(lines, message_line('filter=' .. opts.filter, 'Comment'))
+
+        if #entries == 0 then
+            table.insert(lines, message_line('No entries match filter', 'Comment'))
+            append_help(lines, opts.show_help)
+            return lines
+        end
+    end
+
+    for _, section in ipairs(sections(entries)) do
         append_section(lines, section, groups)
     end
 
-    if #snapshot.unpushed_commits > 0 then
+    if #snapshot.unpushed_commits > 0 and (opts.filter == nil or opts.filter == '') then
         table.insert(lines, render.line(''))
         table.insert(lines, section_line('Unpushed', #snapshot.unpushed_commits))
 

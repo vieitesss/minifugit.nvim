@@ -85,6 +85,24 @@ local DIFF_HEADER_PREFIXES = {
 }
 
 ---@param text string
+---@return string
+local function winbar_text(text)
+    return text:gsub('%%', '%%%%')
+end
+
+---@param entry GitStatusEntry
+---@param section GitStatusSectionName?
+---@return string
+local function diff_title(entry, section)
+    local prefix = section or 'diff'
+    local path = entry.orig_path ~= nil
+            and (entry.orig_path .. ' -> ' .. entry.path)
+        or entry.path
+
+    return winbar_text(prefix .. ': ' .. path)
+end
+
+---@param text string
 ---@return boolean
 local function is_diff_header(text)
     for _, prefix in ipairs(DIFF_HEADER_PREFIXES) do
@@ -385,6 +403,7 @@ function M.open_diff(self, entry, section, opts)
 
     vim.api.nvim_win_set_buf(target_win, buf.id)
     window.configure_diff_win(target_win)
+    vim.wo[target_win].winbar = diff_title(entry, section)
     self.diff_win = target_win
     self.diff_preview_key = preview_key
 

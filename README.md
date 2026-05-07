@@ -14,8 +14,8 @@ without leaving Neovim.
 - Preview diffs for the entry under the cursor.
 - Discard unstaged changes or delete untracked paths, with confirmation by
   default.
-- Create commits. Status window reopens after commit.
-- Push unpushed commits to upstream with animated loading spinner.
+- Create commits.
+- Animated loading spinner while pushing your commits.
 - View unpushed commits in the status window.
 - Run `:checkhealth minifugit` to verify Neovim and Git requirements.
 
@@ -61,6 +61,9 @@ Default status-window mappings:
 | --- | --- | --- |
 | n | `<CR>` / `o` | Open entry |
 | n | `=` | Preview diff |
+| n | `q` | Close status window |
+| n | `/` | Filter entries |
+| n | `<BS>` | Clear filter |
 | n | `r` | Refresh status |
 | n,v | `s` | Stage/Unstage entry |
 | n,v | `u` | Unstage entry |
