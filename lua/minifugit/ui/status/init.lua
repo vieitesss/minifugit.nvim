@@ -2,6 +2,7 @@ local Buffer = require('minifugit.ui.buffer')
 local Highlight = require('minifugit.ui.highlight')
 local render = require('minifugit.ui.render')
 local formatting = require('minifugit.ui.status.formatting')
+local help = require('minifugit.ui.status.help')
 local log = require('minifugit.log')
 local actions = require('minifugit.ui.status.actions')
 local common = require('minifugit.ui.status.common')
@@ -19,14 +20,20 @@ local git = require('minifugit.git')
 ---@field diff_created_win boolean
 ---@field diff_preview_key string?
 ---@field diff_prev_winopts GitStatusWindowOptions?
+---@field diff_wrap boolean
+---@field diff_show_headers boolean
+---@field diff_show_numbers boolean
+---@field help_buf Buffer?
+---@field help_win number?
+---@field help_prev_win number?
 ---@field win number?
 ---@field win_prev_winopts GitStatusWindowOptions?
 ---@field target_win number?
+---@field options MinifugitOptions
 ---@field groups table<string, string>
 ---@field highlights table<string, { ensure: fun() }>
 ---@field lines MiniFugitRenderLine[]
 ---@field snapshot GitStatusSnapshot?
----@field show_help boolean
 ---@field filter string
 ---@field loading_message string?
 ---@field loading_frame integer
@@ -264,7 +271,10 @@ function GitStatusWindow:show()
         return
     end
 
-    self.win, self.win_prev_winopts = window.create_status_win(self.buf)
+    self.win, self.win_prev_winopts = window.create_status_win(
+        self.buf,
+        self.options.status
+    )
     selection.move_to_first_entry(self)
 end
 
@@ -351,12 +361,12 @@ function GitStatusWindow:enter_entry()
 end
 
 function GitStatusWindow:toggle_help()
-    self.show_help = not self.show_help
-    self:refresh()
+    help.toggle(self)
 end
 
 function GitStatusWindow:close()
     self:stop_loading()
+    help.close(self)
 
     if preview.has_open_diff(self) then
         preview.close_diff(self)
@@ -422,7 +432,6 @@ function GitStatusWindow:render_cached()
     end
 
     self.lines = formatting.render(self.snapshot, self.groups, {
-        show_help = self.show_help,
         filter = self.filter,
         loading_message = self.loading_message,
         loading_frame = loading_frame,
@@ -486,15 +495,19 @@ function GitStatusWindow:stop_loading()
     end
 end
 
+---@param opts MinifugitOptions
 ---@return GitStatusWindow
-function GitStatusWindow.new()
+function GitStatusWindow.new(opts)
     local self = setmetatable({}, GitStatusWindow)
 
+    self.options = opts
     self.groups = create_highlight_groups()
     self.highlights = create_highlights()
     self.lines = {}
     self.diff_created_win = false
-    self.show_help = false
+    self.diff_wrap = opts.preview.wrap
+    self.diff_show_headers = opts.preview.show_metadata
+    self.diff_show_numbers = opts.preview.show_line_numbers
     self.filter = ''
     self.loading_frame = 1
     self.target_win = vim.api.nvim_get_current_win()
@@ -512,7 +525,10 @@ function GitStatusWindow.new()
     keymaps.attach(self)
     self:render()
 
-    self.win, self.win_prev_winopts = window.create_status_win(self.buf)
+    self.win, self.win_prev_winopts = window.create_status_win(
+        self.buf,
+        self.options.status
+    )
     selection.move_to_first_entry(self)
     ensure_autocmds(self)
 
