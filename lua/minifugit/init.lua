@@ -79,6 +79,18 @@ function M.setup(opts)
     if opts.status ~= nil then
         vim.validate('opts.status.width', opts.status.width, 'number', true)
         vim.validate('opts.status.min_width', opts.status.min_width, 'number', true)
+
+        if opts.status.width ~= nil then
+            if opts.status.width <= 0 or opts.status.width > 1 then
+                error('opts.status.width must be a number between 0 and 1')
+            end
+        end
+
+        if opts.status.min_width ~= nil then
+            if opts.status.min_width < 1 then
+                error('opts.status.min_width must be >= 1')
+            end
+        end
     end
 
     M.did_setup = true
