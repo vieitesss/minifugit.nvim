@@ -132,8 +132,10 @@ function M.toggle(self)
     end
 
     local lines = help_lines()
-    local width = math.min(content_width(lines) + 4, math.max(24, vim.o.columns - 4))
-    local height = math.min(#lines + 2, math.max(6, vim.o.lines - 4))
+    local max_width = math.min(vim.o.columns, math.max(24, vim.o.columns - 4))
+    local max_height = math.min(vim.o.lines, math.max(6, vim.o.lines - 4))
+    local width = math.min(content_width(lines) + 4, max_width)
+    local height = math.min(#lines + 2, max_height)
     local row = math.max(0, math.floor((vim.o.lines - height) / 2))
     local col = math.max(0, math.floor((vim.o.columns - width) / 2))
 
