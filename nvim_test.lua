@@ -10,7 +10,17 @@ vim.pack.add({
     { src = vim.env.HOME .. '/personal/minifugit.nvim' },
 })
 
-local mf = require('minifugit')
+local mf = require('minifugit').setup({
+    preview = {
+        wrap = false,
+        show_line_numbers = true,
+        show_metadata = false,
+    },
+    status = {
+        width = 0.4,
+        min_width = 20,
+    },
+})
 local log = require('minifugit.log')
 
 vim.keymap.set('n', '<leader>gs', function()
