@@ -277,6 +277,10 @@ local function diff_render_lines(lines, groups, opts)
         ::continue::
     end
 
+    if #diff_lines == 0 then
+        table.insert(diff_lines, render.line('(No diff content — only headers)'))
+    end
+
     return diff_lines
 end
 
