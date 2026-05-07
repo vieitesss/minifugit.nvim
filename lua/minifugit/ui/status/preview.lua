@@ -84,6 +84,12 @@ local DIFF_HEADER_PREFIXES = {
     'GIT binary patch',
 }
 
+---@param text string
+---@return string
+local function winbar_text(text)
+    return text:gsub('%%', '%%%%')
+end
+
 ---@param entry GitStatusEntry
 ---@param section GitStatusSectionName?
 ---@return string
@@ -93,7 +99,7 @@ local function diff_title(entry, section)
             and (entry.orig_path .. ' -> ' .. entry.path)
         or entry.path
 
-    return prefix .. ': ' .. path
+    return winbar_text(prefix .. ': ' .. path)
 end
 
 ---@param text string

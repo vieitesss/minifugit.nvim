@@ -356,13 +356,26 @@ function GitStatusWindow:toggle_help()
 end
 
 function GitStatusWindow:close()
+    self:stop_loading()
+
     if preview.has_open_diff(self) then
         preview.close_diff(self)
     end
 
     if self.win ~= nil and common.is_valid_win(self.win) then
         window.restore_winopts(self.win, self.win_prev_winopts)
-        vim.api.nvim_win_close(self.win, true)
+
+        if #vim.api.nvim_tabpage_list_wins(0) <= 1 then
+            common.notify_warn('Cannot close the last window')
+            return
+        end
+
+        local ok = pcall(vim.api.nvim_win_close, self.win, true)
+
+        if not ok then
+            common.notify_warn('Cannot close status window')
+            return
+        end
     end
 
     self.win = nil
@@ -378,8 +391,10 @@ function GitStatusWindow:filter_entries()
             return
         end
 
+        local state = selection.capture_cursor_state(self)
+        state.follow_entry = false
         self.filter = vim.trim(input)
-        self:refresh({ follow_entry = false })
+        self:refresh(state)
     end)
 end
 
@@ -388,8 +403,10 @@ function GitStatusWindow:clear_filter()
         return
     end
 
+    local state = selection.capture_cursor_state(self)
+    state.follow_entry = false
     self.filter = ''
-    self:refresh({ follow_entry = false })
+    self:refresh(state)
 end
 
 function GitStatusWindow:render_cached()
