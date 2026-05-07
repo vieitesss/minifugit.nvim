@@ -46,6 +46,7 @@ vim.pack.add({
 ### Options
 
 ```lua
+-- Returns Minifugit object
 require('minifugit').setup({
     preview = {
         -- Start diff previews with wrapping disabled.
