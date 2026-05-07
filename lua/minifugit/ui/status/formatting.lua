@@ -24,30 +24,9 @@ local conflict_statuses = {
 ---@field section GitStatusSectionName
 
 ---@class GitStatusRenderOpts
----@field show_help boolean?
 ---@field filter string?
 ---@field loading_message string?
 ---@field loading_frame string?
-
-local mapping_lines = {
-    '? hide mappings',
-    'q close status window',
-    '/ filter entries',
-    '<BS> clear filter',
-    '<CR> or o open file',
-    '= show diff preview',
-    'r refresh status',
-    's stage or unstage entry',
-    'u unstage entry',
-    'S stage all',
-    'U unstage all',
-    'd discard unstaged or untracked',
-    'D force discard unstaged or untracked',
-    'c commit staged changes',
-    'p push unpushed commits',
-    'visual s stage selection',
-    'visual u unstage selection',
-}
 
 ---@param commit GitCommit
 ---@param groups table<string, string>
@@ -158,23 +137,6 @@ local function loading_line(message, frame, groups)
     render.add_highlight(line, groups.loading, 0, #text)
 
     return line
-end
-
----@param lines MiniFugitRenderLine[]
----@param show_help boolean?
-local function append_help(lines, show_help)
-    table.insert(lines, render.line(''))
-
-    if not show_help then
-        table.insert(lines, message_line('? mappings', 'Comment'))
-        return
-    end
-
-    table.insert(lines, message_line('Mappings', 'Title'))
-
-    for _, text in ipairs(mapping_lines) do
-        table.insert(lines, message_line('  ' .. text, 'Comment'))
-    end
 end
 
 ---@param entry GitStatusEntry
@@ -339,14 +301,12 @@ function M.render(snapshot, groups, opts)
     if snapshot.error ~= nil then
         table.insert(lines, render.line(''))
         table.insert(lines, message_line(snapshot.error, 'WarningMsg'))
-        append_help(lines, opts.show_help)
         return lines
     end
 
     if #snapshot.entries == 0 and #snapshot.unpushed_commits == 0 then
         table.insert(lines, render.line(''))
         table.insert(lines, message_line('Working tree clean', 'Comment'))
-        append_help(lines, opts.show_help)
         return lines
     end
 
@@ -356,7 +316,6 @@ function M.render(snapshot, groups, opts)
 
         if #entries == 0 then
             table.insert(lines, message_line('No entries match filter', 'Comment'))
-            append_help(lines, opts.show_help)
             return lines
         end
     end
@@ -373,8 +332,6 @@ function M.render(snapshot, groups, opts)
             table.insert(lines, M.commit_line(commit, groups))
         end
     end
-
-    append_help(lines, opts.show_help)
 
     return lines
 end

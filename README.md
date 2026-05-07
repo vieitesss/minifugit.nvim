@@ -43,6 +43,34 @@ vim.pack.add({
 }
 ```
 
+### Options
+
+```lua
+require('minifugit').setup({
+    preview = {
+        -- Start diff previews with wrapping enabled.
+        wrap = false,
+
+        -- Show old/new line numbers in diff previews.
+        show_line_numbers = true,
+
+        -- Show git diff metadata rows such as `diff --git`, `index`, `---`,
+        -- and `+++`.
+        show_metadata = true,
+    },
+    status = {
+        -- Fraction of the editor width used by the status window.
+        width = 0.4,
+
+        -- Minimum status window width in columns.
+        min_width = 20,
+    },
+})
+```
+
+Diff-preview mappings can toggle `preview.wrap`, `preview.show_line_numbers`,
+and `preview.show_metadata` at runtime for the current status session.
+
 ## Usage
 
 Open the status window:
@@ -74,3 +102,13 @@ Default status-window mappings:
 | n | `c` | Commit staged changes |
 | n | `p` | Push unpushed commits |
 | n | `?` | Toggle help |
+
+Default diff-preview mappings:
+
+| Mode | Key | Action |
+| --- | --- | --- |
+| n | `q` | Close diff preview |
+| n | `[h` / `]h` | Jump to previous/next hunk |
+| n | `w` | Toggle wrap |
+| n | `l` | Toggle line numbers |
+| n | `m` | Toggle metadata rows |

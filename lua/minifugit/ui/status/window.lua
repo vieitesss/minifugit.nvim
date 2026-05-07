@@ -14,9 +14,10 @@ local M = {}
 ---@field winfixwidth boolean
 ---@field winbar string
 
+---@param opts MinifugitStatusOptions
 ---@return integer
-local function status_win_width()
-    return math.max(math.floor(vim.o.columns * 0.4), 20)
+local function status_win_width(opts)
+    return math.max(math.floor(vim.o.columns * opts.width), opts.min_width)
 end
 
 ---@param entry GitStatusEntry
@@ -32,9 +33,10 @@ local function entry_path(entry)
 end
 
 ---@param buf Buffer
+---@param opts MinifugitStatusOptions
 ---@return number, GitStatusWindowOptions
-function M.create_status_win(buf)
-    local width = status_win_width()
+function M.create_status_win(buf, opts)
+    local width = status_win_width(opts)
 
     vim.cmd('topleft ' .. width .. 'vsplit')
 

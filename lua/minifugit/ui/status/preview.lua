@@ -65,6 +65,10 @@ end
 ---@field new_number integer?
 ---@field text string
 
+---@class MiniFugitDiffRenderOpts
+---@field show_headers boolean?
+---@field show_numbers boolean?
+
 local DIFF_HEADER_PREFIXES = {
     'diff ',
     'index ',
@@ -127,9 +131,14 @@ end
 
 ---@param line MiniFugitDiffLine
 ---@param width integer
+---@param opts MiniFugitDiffRenderOpts
 ---@return string
-local function format_diff_line(line, width)
+local function format_diff_line(line, width, opts)
     if line.kind == 'header' or line.kind == 'hunk' then
+        return line.text
+    end
+
+    if opts.show_numbers == false then
         return line.text
     end
 
@@ -236,13 +245,21 @@ end
 
 ---@param lines string[]
 ---@param groups table<string, string>
+---@param opts MiniFugitDiffRenderOpts
 ---@return MiniFugitRenderLine[]
-local function diff_render_lines(lines, groups)
+local function diff_render_lines(lines, groups, opts)
+    opts = opts or {}
+
     local parsed = parse_diff_lines(lines)
     local width = diff_number_width(parsed)
+    local diff_lines = {}
 
-    return vim.tbl_map(function(diff_line)
-        local text = format_diff_line(diff_line, width)
+    for _, diff_line in ipairs(parsed) do
+        if diff_line.kind == 'header' and opts.show_headers == false then
+            goto continue
+        end
+
+        local text = format_diff_line(diff_line, width, opts)
         local line = render.line(text)
 
         if diff_line.kind == 'added' then
@@ -255,8 +272,82 @@ local function diff_render_lines(lines, groups)
             render.add_highlight(line, groups.diff_hunk_header, 0, #text)
         end
 
-        return line
-    end, parsed)
+        table.insert(diff_lines, line)
+
+        ::continue::
+    end
+
+    return diff_lines
+end
+
+---@param self GitStatusWindow
+---@param delta integer
+---@return boolean
+function M.jump_hunk(self, delta)
+    if not M.has_open_diff(self) then
+        common.notify_warn('Diff preview is not open')
+        return false
+    end
+
+    local win = self.diff_win
+    local cursor = vim.api.nvim_win_get_cursor(win)[1]
+    local lines = vim.api.nvim_buf_get_lines(self.diff_buf.id, 0, -1, false)
+    local start = delta > 0 and cursor + 1 or cursor - 1
+    local stop = delta > 0 and #lines or 1
+
+    for row = start, stop, delta do
+        if vim.startswith(lines[row] or '', '@@') then
+            vim.api.nvim_win_set_cursor(win, { row, 0 })
+            return true
+        end
+    end
+
+    common.notify_warn('No more hunks')
+    return false
+end
+
+---@param self GitStatusWindow
+---@return boolean
+function M.toggle_wrap(self)
+    if not M.has_open_diff(self) then
+        common.notify_warn('Diff preview is not open')
+        return false
+    end
+
+    self.diff_wrap = not self.diff_wrap
+    vim.wo[self.diff_win].wrap = self.diff_wrap
+    return true
+end
+
+---@param self GitStatusWindow
+---@param option 'numbers'|'headers'
+---@return boolean
+local function toggle_diff_render_option(self, option)
+    if option == 'numbers' then
+        self.diff_show_numbers = not self.diff_show_numbers
+    else
+        self.diff_show_headers = not self.diff_show_headers
+    end
+
+    local ok = M.refresh_current_entry(self) == true
+
+    if ok and M.has_open_diff(self) then
+        vim.api.nvim_set_current_win(self.diff_win)
+    end
+
+    return ok
+end
+
+---@param self GitStatusWindow
+---@return boolean
+function M.toggle_numbers(self)
+    return toggle_diff_render_option(self, 'numbers')
+end
+
+---@param self GitStatusWindow
+---@return boolean
+function M.toggle_headers(self)
+    return toggle_diff_render_option(self, 'headers')
 end
 
 ---@param self GitStatusWindow
@@ -336,6 +427,54 @@ function M.ensure_diff_buf(self)
         silent = true,
     })
 
+    vim.keymap.set('n', ']h', function()
+        M.jump_hunk(self, 1)
+    end, {
+        buffer = self.diff_buf.id,
+        desc = 'Jump to next git diff hunk',
+        silent = true,
+    })
+
+    vim.keymap.set('n', '[h', function()
+        M.jump_hunk(self, -1)
+    end, {
+        buffer = self.diff_buf.id,
+        desc = 'Jump to previous git diff hunk',
+        silent = true,
+    })
+
+    vim.keymap.set('n', 'w', function()
+        M.toggle_wrap(self)
+    end, {
+        buffer = self.diff_buf.id,
+        desc = 'Toggle git diff preview wrap',
+        silent = true,
+    })
+
+    vim.keymap.set('n', 'l', function()
+        M.toggle_numbers(self)
+    end, {
+        buffer = self.diff_buf.id,
+        desc = 'Toggle git diff preview line numbers',
+        silent = true,
+    })
+
+    vim.keymap.set('n', 'm', function()
+        M.toggle_headers(self)
+    end, {
+        buffer = self.diff_buf.id,
+        desc = 'Toggle git diff preview metadata',
+        silent = true,
+    })
+
+    vim.keymap.set('n', '?', function()
+        self:toggle_help()
+    end, {
+        buffer = self.diff_buf.id,
+        desc = 'Toggle git mappings help',
+        silent = true,
+    })
+
     return self.diff_buf
 end
 
@@ -369,7 +508,10 @@ function M.open_diff(self, entry, section, opts)
     if #lines == 0 then
         diff_lines = { render.line('No diff for ' .. entry.path) }
     else
-        diff_lines = diff_render_lines(lines, self.groups)
+        diff_lines = diff_render_lines(lines, self.groups, {
+            show_headers = self.diff_show_headers,
+            show_numbers = self.diff_show_numbers,
+        })
     end
 
     local buf = M.ensure_diff_buf(self)
@@ -403,6 +545,7 @@ function M.open_diff(self, entry, section, opts)
 
     vim.api.nvim_win_set_buf(target_win, buf.id)
     window.configure_diff_win(target_win)
+    vim.wo[target_win].wrap = self.diff_wrap
     vim.wo[target_win].winbar = diff_title(entry, section)
     self.diff_win = target_win
     self.diff_preview_key = preview_key
