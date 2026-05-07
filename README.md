@@ -48,7 +48,7 @@ vim.pack.add({
 ```lua
 require('minifugit').setup({
     preview = {
-        -- Start diff previews with wrapping enabled.
+        -- Start diff previews with wrapping disabled.
         wrap = false,
 
         -- Show old/new line numbers in diff previews.
