@@ -12,6 +12,7 @@ local M = {}
 ---@field wrap boolean
 ---@field cursorline boolean
 ---@field winfixwidth boolean
+---@field winbar string
 
 ---@return integer
 local function status_win_width()
@@ -136,6 +137,7 @@ function M.capture_winopts(win)
         wrap = vim.wo[win].wrap,
         cursorline = vim.wo[win].cursorline,
         winfixwidth = vim.wo[win].winfixwidth,
+        winbar = vim.wo[win].winbar,
     }
 end
 
@@ -153,6 +155,7 @@ function M.restore_winopts(win, opts)
     vim.wo[win].wrap = opts.wrap
     vim.wo[win].cursorline = opts.cursorline
     vim.wo[win].winfixwidth = opts.winfixwidth
+    vim.wo[win].winbar = opts.winbar
 end
 
 return M

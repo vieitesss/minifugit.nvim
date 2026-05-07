@@ -27,6 +27,7 @@ local git = require('minifugit.git')
 ---@field lines MiniFugitRenderLine[]
 ---@field snapshot GitStatusSnapshot?
 ---@field show_help boolean
+---@field filter string
 ---@field loading_message string?
 ---@field loading_frame integer
 ---@field loading_timer uv.uv_timer_t?
@@ -354,6 +355,43 @@ function GitStatusWindow:toggle_help()
     self:refresh()
 end
 
+function GitStatusWindow:close()
+    if preview.has_open_diff(self) then
+        preview.close_diff(self)
+    end
+
+    if self.win ~= nil and common.is_valid_win(self.win) then
+        window.restore_winopts(self.win, self.win_prev_winopts)
+        vim.api.nvim_win_close(self.win, true)
+    end
+
+    self.win = nil
+    self.win_prev_winopts = nil
+end
+
+function GitStatusWindow:filter_entries()
+    vim.ui.input({
+        prompt = 'Filter git status entries: ',
+        default = self.filter,
+    }, function(input)
+        if input == nil then
+            return
+        end
+
+        self.filter = vim.trim(input)
+        self:refresh({ follow_entry = false })
+    end)
+end
+
+function GitStatusWindow:clear_filter()
+    if self.filter == '' then
+        return
+    end
+
+    self.filter = ''
+    self:refresh({ follow_entry = false })
+end
+
 function GitStatusWindow:render_cached()
     assert(self.buf ~= nil)
     assert(self.buf:is_valid())
@@ -368,6 +406,7 @@ function GitStatusWindow:render_cached()
 
     self.lines = formatting.render(self.snapshot, self.groups, {
         show_help = self.show_help,
+        filter = self.filter,
         loading_message = self.loading_message,
         loading_frame = loading_frame,
     })
@@ -439,6 +478,7 @@ function GitStatusWindow.new()
     self.lines = {}
     self.diff_created_win = false
     self.show_help = false
+    self.filter = ''
     self.loading_frame = 1
     self.target_win = vim.api.nvim_get_current_win()
 

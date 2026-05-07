@@ -84,6 +84,18 @@ local DIFF_HEADER_PREFIXES = {
     'GIT binary patch',
 }
 
+---@param entry GitStatusEntry
+---@param section GitStatusSectionName?
+---@return string
+local function diff_title(entry, section)
+    local prefix = section or 'diff'
+    local path = entry.orig_path ~= nil
+            and (entry.orig_path .. ' -> ' .. entry.path)
+        or entry.path
+
+    return prefix .. ': ' .. path
+end
+
 ---@param text string
 ---@return boolean
 local function is_diff_header(text)
@@ -385,6 +397,7 @@ function M.open_diff(self, entry, section, opts)
 
     vim.api.nvim_win_set_buf(target_win, buf.id)
     window.configure_diff_win(target_win)
+    vim.wo[target_win].winbar = diff_title(entry, section)
     self.diff_win = target_win
     self.diff_preview_key = preview_key
 

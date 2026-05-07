@@ -61,6 +61,9 @@ Default status-window mappings:
 | --- | --- | --- |
 | n | `<CR>` / `o` | Open entry |
 | n | `=` | Preview diff |
+| n | `q` | Close status window |
+| n | `/` | Filter entries |
+| n | `<BS>` | Clear filter |
 | n | `r` | Refresh status |
 | n,v | `s` | Stage/Unstage entry |
 | n,v | `u` | Unstage entry |

@@ -31,6 +31,30 @@ function M.attach(self)
         silent = true,
     })
 
+    vim.keymap.set('n', 'q', function()
+        self:close()
+    end, {
+        buffer = self.buf.id,
+        desc = 'Close git status window',
+        silent = true,
+    })
+
+    vim.keymap.set('n', '/', function()
+        self:filter_entries()
+    end, {
+        buffer = self.buf.id,
+        desc = 'Filter git status entries',
+        silent = true,
+    })
+
+    vim.keymap.set('n', '<BS>', function()
+        self:clear_filter()
+    end, {
+        buffer = self.buf.id,
+        desc = 'Clear git status filter',
+        silent = true,
+    })
+
     vim.keymap.set('n', 'r', function()
         self:refresh()
     end, {
