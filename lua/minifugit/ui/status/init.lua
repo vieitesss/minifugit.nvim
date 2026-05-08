@@ -292,6 +292,15 @@ end
 
 ---@return boolean
 function GitStatusWindow:diff_entry()
+    local commit_item = selection.current_commit_item(self)
+
+    if commit_item ~= nil then
+        return preview.preview_current_commit(self, {
+            force = true,
+            notify = true,
+        })
+    end
+
     return preview.preview_current_entry(self, {
         force = true,
         notify = true,
@@ -346,6 +355,15 @@ end
 
 ---@return boolean
 function GitStatusWindow:enter_entry()
+    local commit_item = selection.current_commit_item(self)
+
+    if commit_item ~= nil then
+        return preview.preview_current_commit(self, {
+            force = true,
+            notify = true,
+        })
+    end
+
     local entry = selection.current_entry(self)
 
     if entry == nil then
