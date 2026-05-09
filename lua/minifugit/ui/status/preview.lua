@@ -382,7 +382,7 @@ local function toggle_diff_render_option(self, option)
 
     local ok = M.refresh_current_entry(self) == true
 
-    if ok and M.has_open_diff(self) then
+    if ok and self.diff_win ~= nil and vim.api.nvim_win_is_valid(self.diff_win) then
         vim.api.nvim_set_current_win(self.diff_win)
     end
 
@@ -438,7 +438,10 @@ function M.open_commit_diff(self, commit, opts)
     if #lines == 0 then
         diff_lines = { render.line('No diff for commit ' .. commit.hash) }
     else
-        diff_lines = diff_render_lines(lines, self.groups)
+        diff_lines = diff_render_lines(lines, self.groups, {
+            show_headers = self.diff_show_headers,
+            show_numbers = self.diff_show_numbers,
+        })
     end
 
     local buf = M.ensure_diff_buf(self)
@@ -472,6 +475,7 @@ function M.open_commit_diff(self, commit, opts)
 
     vim.api.nvim_win_set_buf(target_win, buf.id)
     window.configure_diff_win(target_win)
+    vim.wo[target_win].wrap = self.diff_wrap
     vim.wo[target_win].winbar = commit_diff_title(commit)
     self.diff_win = target_win
     self.diff_preview_key = preview_key
