@@ -13,6 +13,7 @@ local M = {}
 ---@field row integer?
 ---@field item_key string?
 ---@field entry_key string?
+---@field commit_key string?
 ---@field follow_entry boolean?
 
 ---@param data any
@@ -346,7 +347,7 @@ end
 function M.restore_cursor(self, row)
     M.set_cursor_row(self, row)
 
-    if M.current_entry_item(self) == nil then
+    if M.current_entry_item(self) == nil and M.current_commit_item(self) == nil then
         M.move_to_first_entry(self)
     end
 end
@@ -399,6 +400,10 @@ function M.restore_cursor_state(self, state)
 
     if target_row == nil and state.entry_key ~= nil then
         target_row = M.row_for_entry_key(self, state.entry_key)
+    end
+
+    if target_row == nil and state.commit_key ~= nil then
+        target_row = M.row_for_commit_key(self, state.commit_key)
     end
 
     if target_row ~= nil then
