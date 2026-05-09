@@ -650,6 +650,24 @@ local function parse_diff(diff)
     return vim.split(diff, '\n', { plain = true })
 end
 
+---@param commit GitCommit
+---@return string[]
+---@return string?
+function git.show_commit(commit)
+    ensure_git()
+
+    local out = git.run(
+        { 'show', '--stat', '--patch', commit.hash },
+        root_opts()
+    )
+
+    if out.exit_code ~= 0 then
+        return {}, return_result(out)
+    end
+
+    return parse_diff(out.output), nil
+end
+
 ---@param entry GitStatusEntry
 ---@param section string?
 ---@return string[]

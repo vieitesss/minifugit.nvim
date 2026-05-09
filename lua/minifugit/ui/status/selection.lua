@@ -6,10 +6,14 @@ local M = {}
 ---@field entry GitStatusEntry
 ---@field section GitStatusSectionName?
 
+---@class GitStatusCommitItem
+---@field commit GitCommit
+
 ---@class GitStatusCursorState
 ---@field row integer?
 ---@field item_key string?
 ---@field entry_key string?
+---@field commit_key string?
 ---@field follow_entry boolean?
 
 ---@param data any
@@ -45,6 +49,34 @@ function M.entry_item_from_data(data)
     }
 end
 
+---@param data any
+---@return GitCommit?
+function M.commit_from_data(data)
+    if type(data) ~= 'table' then
+        return nil
+    end
+
+    if type(data.commit) == 'table' then
+        return data.commit
+    end
+
+    return nil
+end
+
+---@param data any
+---@return GitStatusCommitItem?
+function M.commit_item_from_data(data)
+    local commit = M.commit_from_data(data)
+
+    if commit == nil then
+        return nil
+    end
+
+    return {
+        commit = commit,
+    }
+end
+
 ---@param self GitStatusWindow
 ---@return MiniFugitRenderLine?
 function M.current_line(self)
@@ -77,6 +109,18 @@ function M.current_entry_item(self)
     end
 
     return M.entry_item_from_data(line.data)
+end
+
+---@param self GitStatusWindow
+---@return GitStatusCommitItem?
+function M.current_commit_item(self)
+    local line = M.current_line(self)
+
+    if line == nil then
+        return nil
+    end
+
+    return M.commit_item_from_data(line.data)
 end
 
 ---@param self GitStatusWindow
@@ -196,6 +240,16 @@ function M.entry_identity_key(item)
     }, '\0')
 end
 
+---@param item GitStatusCommitItem?
+---@return string?
+function M.commit_item_key(item)
+    if item == nil then
+        return nil
+    end
+
+    return item.commit.hash
+end
+
 ---@param self GitStatusWindow
 ---@return GitStatusCursorState
 function M.capture_cursor_state(self)
@@ -203,16 +257,24 @@ function M.capture_cursor_state(self)
         row = nil,
         item_key = nil,
         entry_key = nil,
+        commit_key = nil,
         follow_entry = true,
     }
     local item = M.current_entry_item(self)
+    local commit_item = M.current_commit_item(self)
 
     if self.win ~= nil and common.is_valid_win(self.win) then
         state.row = vim.api.nvim_win_get_cursor(self.win)[1]
     end
 
-    state.item_key = M.entry_item_key(item)
-    state.entry_key = M.entry_identity_key(item)
+    if item ~= nil then
+        state.item_key = M.entry_item_key(item)
+        state.entry_key = M.entry_identity_key(item)
+    end
+
+    if commit_item ~= nil then
+        state.commit_key = M.commit_item_key(commit_item)
+    end
 
     return state
 end
@@ -238,6 +300,19 @@ function M.row_for_entry_key(self, entry_key)
         if
             M.entry_identity_key(M.entry_item_from_data(line.data)) == entry_key
         then
+            return row
+        end
+    end
+
+    return nil
+end
+
+---@param self GitStatusWindow
+---@param commit_key string
+---@return integer?
+function M.row_for_commit_key(self, commit_key)
+    for row, line in ipairs(self.lines) do
+        if M.commit_item_key(M.commit_item_from_data(line.data)) == commit_key then
             return row
         end
     end
@@ -272,7 +347,7 @@ end
 function M.restore_cursor(self, row)
     M.set_cursor_row(self, row)
 
-    if M.current_entry_item(self) == nil then
+    if M.current_entry_item(self) == nil and M.current_commit_item(self) == nil then
         M.move_to_first_entry(self)
     end
 end
@@ -325,6 +400,10 @@ function M.restore_cursor_state(self, state)
 
     if target_row == nil and state.entry_key ~= nil then
         target_row = M.row_for_entry_key(self, state.entry_key)
+    end
+
+    if target_row == nil and state.commit_key ~= nil then
+        target_row = M.row_for_commit_key(self, state.commit_key)
     end
 
     if target_row ~= nil then

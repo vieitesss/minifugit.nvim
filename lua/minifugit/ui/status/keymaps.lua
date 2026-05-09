@@ -155,10 +155,11 @@ function M.attach(self)
         buffer = self.buf.id,
         callback = function()
             if preview.has_open_diff(self) then
-                preview.preview_current_entry(self, {
-                    force = false,
-                    notify = false,
-                })
+                local opts = { force = false, notify = false }
+
+                if not preview.preview_current_commit(self, opts) then
+                    preview.preview_current_entry(self, opts)
+                end
             end
         end,
     })

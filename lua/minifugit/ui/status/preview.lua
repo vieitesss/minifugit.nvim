@@ -25,6 +25,23 @@ local function entry_item_at_row(self, row)
 end
 
 ---@param self GitStatusWindow
+---@param row integer?
+---@return GitStatusCommitItem?
+local function commit_item_at_row(self, row)
+    if row == nil then
+        return nil
+    end
+
+    local line = self.lines[row]
+
+    if line == nil then
+        return nil
+    end
+
+    return selection.commit_item_from_data(line.data)
+end
+
+---@param self GitStatusWindow
 ---@param state GitStatusCursorState?
 ---@return GitStatusEntryItem?
 local function refresh_entry_item(self, state)
@@ -53,6 +70,30 @@ local function refresh_entry_item(self, state)
         return entry_item_at_row(
             self,
             selection.row_for_entry_key(self, state.entry_key)
+        )
+    end
+
+    return nil
+end
+
+---@param self GitStatusWindow
+---@param state GitStatusCursorState?
+---@return GitStatusCommitItem?
+local function refresh_commit_item(self, state)
+    local item = selection.current_commit_item(self)
+
+    if item ~= nil then
+        return item
+    end
+
+    if state == nil then
+        return nil
+    end
+
+    if state.commit_key ~= nil then
+        return commit_item_at_row(
+            self,
+            selection.row_for_commit_key(self, state.commit_key)
         )
     end
 
@@ -88,10 +129,20 @@ local DIFF_HEADER_PREFIXES = {
     'GIT binary patch',
 }
 
+local DIFF_HEADER_EXACT = {
+    '---',
+}
+
 ---@param text string
 ---@return string
 local function winbar_text(text)
     return text:gsub('%%', '%%%%')
+end
+
+---@param commit GitCommit
+---@return string
+local function commit_diff_title(commit)
+    return winbar_text('commit: ' .. commit.hash .. ' ' .. commit.message)
 end
 
 ---@param entry GitStatusEntry
@@ -111,6 +162,12 @@ end
 local function is_diff_header(text)
     for _, prefix in ipairs(DIFF_HEADER_PREFIXES) do
         if vim.startswith(text, prefix) then
+            return true
+        end
+    end
+
+    for _, exact in ipairs(DIFF_HEADER_EXACT) do
+        if text == exact then
             return true
         end
     end
@@ -335,7 +392,7 @@ local function toggle_diff_render_option(self, option)
 
     local ok = M.refresh_current_entry(self) == true
 
-    if ok and M.has_open_diff(self) then
+    if ok and self.diff_win ~= nil and vim.api.nvim_win_is_valid(self.diff_win) then
         vim.api.nvim_set_current_win(self.diff_win)
     end
 
@@ -361,6 +418,97 @@ function M.has_open_diff(self)
         and self.diff_buf:is_valid()
         and common.is_valid_win(self.diff_win)
         and vim.api.nvim_win_get_buf(self.diff_win) == self.diff_buf.id
+end
+
+---@param self GitStatusWindow
+---@param diff_lines MiniFugitRenderLine[]
+---@param preview_key string
+---@param title string
+---@return boolean
+local function show_diff_lines(self, diff_lines, preview_key, title)
+    local buf = M.ensure_diff_buf(self)
+
+    vim.bo[buf.id].modifiable = true
+    buf:set_lines(render.text_lines(diff_lines))
+    vim.bo[buf.id].modifiable = false
+    render.apply(buf.id, diff_lines)
+
+    local target_win = window.find_target_win(self)
+    local created_win = false
+
+    if target_win == nil then
+        vim.cmd('leftabove vsplit')
+        target_win = vim.api.nvim_get_current_win()
+        self.target_win = target_win
+        created_win = true
+    else
+        vim.api.nvim_set_current_win(target_win)
+    end
+
+    local previous_buf = vim.api.nvim_win_get_buf(target_win)
+    local was_diff_preview = previous_buf == buf.id
+        and self.diff_win == target_win
+
+    if not was_diff_preview then
+        self.diff_prev_buf = previous_buf
+        self.diff_prev_winopts = window.capture_winopts(target_win)
+        self.diff_created_win = created_win
+    end
+
+    vim.api.nvim_win_set_buf(target_win, buf.id)
+    window.configure_diff_win(target_win)
+    vim.wo[target_win].wrap = self.diff_wrap
+    vim.wo[target_win].winbar = title
+    self.diff_win = target_win
+    self.diff_preview_key = preview_key
+
+    if self.win ~= nil and common.is_valid_win(self.win) then
+        vim.api.nvim_set_current_win(self.win)
+    end
+
+    return true
+end
+
+---@param self GitStatusWindow
+---@param commit GitCommit
+---@param opts? { force: boolean? }
+---@return boolean
+function M.open_commit_diff(self, commit, opts)
+    opts = opts or {}
+
+    local preview_key = 'commit:' .. commit.hash
+
+    if
+        not opts.force
+        and M.has_open_diff(self)
+        and self.diff_preview_key == preview_key
+    then
+        return true
+    end
+
+    local lines, err = git.show_commit(commit)
+    local diff_lines
+
+    if err ~= nil then
+        common.notify_error(err, 'Cannot show commit diff')
+        return false
+    end
+
+    if #lines == 0 then
+        diff_lines = { render.line('No diff for commit ' .. commit.hash) }
+    else
+        diff_lines = diff_render_lines(lines, self.groups, {
+            show_headers = self.diff_show_headers,
+            show_numbers = self.diff_show_numbers,
+        })
+    end
+
+    return show_diff_lines(
+        self,
+        diff_lines,
+        preview_key,
+        commit_diff_title(commit)
+    )
 end
 
 ---@param self GitStatusWindow
@@ -518,47 +666,7 @@ function M.open_diff(self, entry, section, opts)
         })
     end
 
-    local buf = M.ensure_diff_buf(self)
-
-    vim.bo[buf.id].modifiable = true
-    buf:set_lines(render.text_lines(diff_lines))
-    vim.bo[buf.id].modifiable = false
-    render.apply(buf.id, diff_lines)
-
-    local target_win = window.find_target_win(self)
-    local created_win = false
-
-    if target_win == nil then
-        vim.cmd('leftabove vsplit')
-        target_win = vim.api.nvim_get_current_win()
-        self.target_win = target_win
-        created_win = true
-    else
-        vim.api.nvim_set_current_win(target_win)
-    end
-
-    local previous_buf = vim.api.nvim_win_get_buf(target_win)
-    local was_diff_preview = previous_buf == buf.id
-        and self.diff_win == target_win
-
-    if not was_diff_preview then
-        self.diff_prev_buf = previous_buf
-        self.diff_prev_winopts = window.capture_winopts(target_win)
-        self.diff_created_win = created_win
-    end
-
-    vim.api.nvim_win_set_buf(target_win, buf.id)
-    window.configure_diff_win(target_win)
-    vim.wo[target_win].wrap = self.diff_wrap
-    vim.wo[target_win].winbar = diff_title(entry, section)
-    self.diff_win = target_win
-    self.diff_preview_key = preview_key
-
-    if self.win ~= nil and common.is_valid_win(self.win) then
-        vim.api.nvim_set_current_win(self.win)
-    end
-
-    return true
+    return show_diff_lines(self, diff_lines, preview_key, diff_title(entry, section))
 end
 
 ---@param self GitStatusWindow
@@ -584,18 +692,56 @@ end
 
 ---@param self GitStatusWindow
 ---@param state GitStatusCursorState?
+---@return boolean?
 function M.refresh_current_entry(self, state)
-    if M.has_open_diff(self) then
-        local item = refresh_entry_item(self, state)
+    if not M.has_open_diff(self) then
+        return
+    end
+
+    local preview_key = self.diff_preview_key or ''
+
+    if vim.startswith(preview_key, 'commit:') then
+        local item = refresh_commit_item(self, state)
 
         if item == nil then
-            return false
+            return
         end
 
-        return M.open_diff(self, item.entry, item.section, {
+        return M.open_commit_diff(self, item.commit, {
             force = true,
         })
     end
+
+    local item = refresh_entry_item(self, state)
+
+    if item == nil then
+        return
+    end
+
+    return M.open_diff(self, item.entry, item.section, {
+        force = true,
+    })
+end
+
+---@param self GitStatusWindow
+---@param opts? { force: boolean?, notify: boolean? }
+---@return boolean
+function M.preview_current_commit(self, opts)
+    opts = opts or {}
+
+    local item = selection.current_commit_item(self)
+
+    if item == nil then
+        if opts.notify ~= false then
+            common.notify_warn('No unpushed commit under cursor')
+        end
+
+        return false
+    end
+
+    return M.open_commit_diff(self, item.commit, {
+        force = opts.force,
+    })
 end
 
 return M
