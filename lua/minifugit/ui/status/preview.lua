@@ -129,6 +129,10 @@ local DIFF_HEADER_PREFIXES = {
     'GIT binary patch',
 }
 
+local DIFF_HEADER_EXACT = {
+    '---',
+}
+
 ---@param text string
 ---@return string
 local function winbar_text(text)
@@ -158,6 +162,12 @@ end
 local function is_diff_header(text)
     for _, prefix in ipairs(DIFF_HEADER_PREFIXES) do
         if vim.startswith(text, prefix) then
+            return true
+        end
+    end
+
+    for _, exact in ipairs(DIFF_HEADER_EXACT) do
+        if text == exact then
             return true
         end
     end
@@ -411,6 +421,55 @@ function M.has_open_diff(self)
 end
 
 ---@param self GitStatusWindow
+---@param diff_lines MiniFugitRenderLine[]
+---@param preview_key string
+---@param title string
+---@return boolean
+local function show_diff_lines(self, diff_lines, preview_key, title)
+    local buf = M.ensure_diff_buf(self)
+
+    vim.bo[buf.id].modifiable = true
+    buf:set_lines(render.text_lines(diff_lines))
+    vim.bo[buf.id].modifiable = false
+    render.apply(buf.id, diff_lines)
+
+    local target_win = window.find_target_win(self)
+    local created_win = false
+
+    if target_win == nil then
+        vim.cmd('leftabove vsplit')
+        target_win = vim.api.nvim_get_current_win()
+        self.target_win = target_win
+        created_win = true
+    else
+        vim.api.nvim_set_current_win(target_win)
+    end
+
+    local previous_buf = vim.api.nvim_win_get_buf(target_win)
+    local was_diff_preview = previous_buf == buf.id
+        and self.diff_win == target_win
+
+    if not was_diff_preview then
+        self.diff_prev_buf = previous_buf
+        self.diff_prev_winopts = window.capture_winopts(target_win)
+        self.diff_created_win = created_win
+    end
+
+    vim.api.nvim_win_set_buf(target_win, buf.id)
+    window.configure_diff_win(target_win)
+    vim.wo[target_win].wrap = self.diff_wrap
+    vim.wo[target_win].winbar = title
+    self.diff_win = target_win
+    self.diff_preview_key = preview_key
+
+    if self.win ~= nil and common.is_valid_win(self.win) then
+        vim.api.nvim_set_current_win(self.win)
+    end
+
+    return true
+end
+
+---@param self GitStatusWindow
 ---@param commit GitCommit
 ---@param opts? { force: boolean? }
 ---@return boolean
@@ -444,47 +503,12 @@ function M.open_commit_diff(self, commit, opts)
         })
     end
 
-    local buf = M.ensure_diff_buf(self)
-
-    vim.bo[buf.id].modifiable = true
-    buf:set_lines(render.text_lines(diff_lines))
-    vim.bo[buf.id].modifiable = false
-    render.apply(buf.id, diff_lines)
-
-    local target_win = window.find_target_win(self)
-    local created_win = false
-
-    if target_win == nil then
-        vim.cmd('leftabove vsplit')
-        target_win = vim.api.nvim_get_current_win()
-        self.target_win = target_win
-        created_win = true
-    else
-        vim.api.nvim_set_current_win(target_win)
-    end
-
-    local previous_buf = vim.api.nvim_win_get_buf(target_win)
-    local was_diff_preview = previous_buf == buf.id
-        and self.diff_win == target_win
-
-    if not was_diff_preview then
-        self.diff_prev_buf = previous_buf
-        self.diff_prev_winopts = window.capture_winopts(target_win)
-        self.diff_created_win = created_win
-    end
-
-    vim.api.nvim_win_set_buf(target_win, buf.id)
-    window.configure_diff_win(target_win)
-    vim.wo[target_win].wrap = self.diff_wrap
-    vim.wo[target_win].winbar = commit_diff_title(commit)
-    self.diff_win = target_win
-    self.diff_preview_key = preview_key
-
-    if self.win ~= nil and common.is_valid_win(self.win) then
-        vim.api.nvim_set_current_win(self.win)
-    end
-
-    return true
+    return show_diff_lines(
+        self,
+        diff_lines,
+        preview_key,
+        commit_diff_title(commit)
+    )
 end
 
 ---@param self GitStatusWindow
@@ -642,47 +666,7 @@ function M.open_diff(self, entry, section, opts)
         })
     end
 
-    local buf = M.ensure_diff_buf(self)
-
-    vim.bo[buf.id].modifiable = true
-    buf:set_lines(render.text_lines(diff_lines))
-    vim.bo[buf.id].modifiable = false
-    render.apply(buf.id, diff_lines)
-
-    local target_win = window.find_target_win(self)
-    local created_win = false
-
-    if target_win == nil then
-        vim.cmd('leftabove vsplit')
-        target_win = vim.api.nvim_get_current_win()
-        self.target_win = target_win
-        created_win = true
-    else
-        vim.api.nvim_set_current_win(target_win)
-    end
-
-    local previous_buf = vim.api.nvim_win_get_buf(target_win)
-    local was_diff_preview = previous_buf == buf.id
-        and self.diff_win == target_win
-
-    if not was_diff_preview then
-        self.diff_prev_buf = previous_buf
-        self.diff_prev_winopts = window.capture_winopts(target_win)
-        self.diff_created_win = created_win
-    end
-
-    vim.api.nvim_win_set_buf(target_win, buf.id)
-    window.configure_diff_win(target_win)
-    vim.wo[target_win].wrap = self.diff_wrap
-    vim.wo[target_win].winbar = diff_title(entry, section)
-    self.diff_win = target_win
-    self.diff_preview_key = preview_key
-
-    if self.win ~= nil and common.is_valid_win(self.win) then
-        vim.api.nvim_set_current_win(self.win)
-    end
-
-    return true
+    return show_diff_lines(self, diff_lines, preview_key, diff_title(entry, section))
 end
 
 ---@param self GitStatusWindow
@@ -708,6 +692,7 @@ end
 
 ---@param self GitStatusWindow
 ---@param state GitStatusCursorState?
+---@return boolean?
 function M.refresh_current_entry(self, state)
     if not M.has_open_diff(self) then
         return
@@ -722,10 +707,9 @@ function M.refresh_current_entry(self, state)
             return
         end
 
-        M.open_commit_diff(self, item.commit, {
+        return M.open_commit_diff(self, item.commit, {
             force = true,
         })
-        return
     end
 
     local item = refresh_entry_item(self, state)
@@ -734,7 +718,7 @@ function M.refresh_current_entry(self, state)
         return
     end
 
-    M.open_diff(self, item.entry, item.section, {
+    return M.open_diff(self, item.entry, item.section, {
         force = true,
     })
 end
