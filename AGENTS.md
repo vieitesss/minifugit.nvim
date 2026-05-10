@@ -1,6 +1,6 @@
 This is a Neovim plugin, written in Lua, that provides a lightweight Git status UI inspired by fugitive.nvim.
 
-Format with `stylua .`; if it is not on shell PATH, open Neovim with `v` and run Stylua from there.
+Format with `stylua .`; if it is not on shell PATH in this environment, open Neovim with `v` and run Stylua from there.
 
 Smoke-test changes with `nvim -u nvim_test.lua`, and use `:checkhealth minifugit` when runtime or dependency assumptions matter.
 
