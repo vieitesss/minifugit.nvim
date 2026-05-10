@@ -393,14 +393,11 @@ function git.push_destination(root)
     end
 
     local branch = return_result(branch_out)
-    local upstream_out = git.run(
-        {
-            'for-each-ref',
-            '--format=%(upstream:remotename)%00%(upstream:remoteref)',
-            'refs/heads/' .. branch,
-        },
-        { cwd = root, ignore_error = true }
-    )
+    local upstream_out = git.run({
+        'for-each-ref',
+        '--format=%(upstream:remotename)%00%(upstream:remoteref)',
+        'refs/heads/' .. branch,
+    }, { cwd = root, ignore_error = true })
 
     if upstream_out.exit_code ~= 0 or upstream_out.output == '' then
         return nil, NO_UPSTREAM_MESSAGE()
@@ -605,6 +602,43 @@ function git.discard_untracked_entries(entries)
     return out.exit_code == 0, return_result(out)
 end
 
+---@param patch string[]
+---@param kind 'stage'|'unstage'|'discard'
+---@return boolean
+---@return string?
+function git.apply_hunk(patch, kind)
+    ensure_git()
+
+    if #patch == 0 then
+        return false, 'No hunk patch to apply'
+    end
+
+    if kind ~= 'stage' and kind ~= 'unstage' and kind ~= 'discard' then
+        return false, 'Unknown hunk action: ' .. kind
+    end
+
+    local path = vim.fn.tempname() .. '.patch'
+    vim.fn.writefile(patch, path)
+
+    local args = { 'apply' }
+
+    if kind == 'stage' then
+        table.insert(args, '--cached')
+    elseif kind == 'unstage' then
+        table.insert(args, '--cached')
+        table.insert(args, '--reverse')
+    elseif kind == 'discard' then
+        table.insert(args, '--reverse')
+    end
+
+    table.insert(args, path)
+
+    local out = git.run(args, root_opts())
+    vim.fn.delete(path)
+
+    return out.exit_code == 0, return_result(out)
+end
+
 ---@param file string
 ---@return boolean
 ---@return string
@@ -656,10 +690,8 @@ end
 function git.show_commit(commit)
     ensure_git()
 
-    local out = git.run(
-        { 'show', '--stat', '--patch', commit.hash },
-        root_opts()
-    )
+    local out =
+        git.run({ 'show', '--stat', '--patch', commit.hash }, root_opts())
 
     if out.exit_code ~= 0 then
         return {}, return_result(out)
