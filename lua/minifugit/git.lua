@@ -613,6 +613,10 @@ function git.apply_hunk(patch, kind)
         return false, 'No hunk patch to apply'
     end
 
+    if kind ~= 'stage' and kind ~= 'unstage' and kind ~= 'discard' then
+        return false, 'Unknown hunk action: ' .. kind
+    end
+
     local path = vim.fn.tempname() .. '.patch'
     vim.fn.writefile(patch, path)
 
