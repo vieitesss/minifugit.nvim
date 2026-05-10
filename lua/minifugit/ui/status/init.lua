@@ -16,16 +16,28 @@ local git = require('minifugit.git')
 ---@field buf Buffer
 ---@field diff_buf Buffer?
 ---@field diff_win number?
+---@field diff_left_buf Buffer?
+---@field diff_right_buf Buffer?
+---@field diff_left_win number?
+---@field diff_right_win number?
 ---@field diff_prev_buf number?
+---@field diff_left_prev_buf number?
+---@field diff_right_prev_buf number?
 ---@field diff_created_win boolean
+---@field diff_left_created_win boolean
+---@field diff_right_created_win boolean
 ---@field diff_preview_key string?
 ---@field diff_raw_lines string[]?
 ---@field diff_raw_rows integer[]?
 ---@field diff_section GitStatusSectionName?
 ---@field diff_prev_winopts GitStatusWindowOptions?
+---@field diff_left_prev_winopts GitStatusWindowOptions?
+---@field diff_right_prev_winopts GitStatusWindowOptions?
 ---@field diff_wrap boolean
 ---@field diff_show_headers boolean
 ---@field diff_show_numbers boolean
+---@field diff_layout 'stacked'|'split'|'auto'
+---@field diff_layout_override 'stacked'|'split'?
 ---@field help_buf Buffer?
 ---@field help_win number?
 ---@field help_prev_win number?
@@ -524,9 +536,12 @@ function GitStatusWindow.new(opts)
     self.highlights = create_highlights()
     self.lines = {}
     self.diff_created_win = false
+    self.diff_left_created_win = false
+    self.diff_right_created_win = false
     self.diff_wrap = opts.preview.wrap
     self.diff_show_headers = opts.preview.show_metadata
     self.diff_show_numbers = opts.preview.show_line_numbers
+    self.diff_layout = opts.preview.diff_layout
     self.filter = ''
     self.loading_frame = 1
     self.target_win = vim.api.nvim_get_current_win()

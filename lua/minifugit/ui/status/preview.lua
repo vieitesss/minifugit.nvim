@@ -158,6 +158,121 @@ local function diff_title(entry, section)
     return winbar_text(prefix .. ': ' .. path)
 end
 
+---@param self GitStatusWindow
+---@return 'stacked'|'split'
+local function resolved_layout(self)
+    local layout = self.diff_layout_override or self.diff_layout
+
+    if layout == 'auto' then
+        return vim.o.columns >= self.options.preview.diff_auto_threshold
+                and 'split'
+            or 'stacked'
+    end
+
+    return layout
+end
+
+---@param self GitStatusWindow
+---@return boolean
+local function has_open_split_diff(self)
+    return self.diff_left_buf ~= nil
+        and self.diff_left_buf:is_valid()
+        and self.diff_right_buf ~= nil
+        and self.diff_right_buf:is_valid()
+        and common.is_valid_win(self.diff_left_win)
+        and common.is_valid_win(self.diff_right_win)
+        and vim.api.nvim_win_get_buf(self.diff_left_win) == self.diff_left_buf.id
+        and vim.api.nvim_win_get_buf(self.diff_right_win)
+            == self.diff_right_buf.id
+end
+
+---@param self GitStatusWindow
+---@return boolean
+local function has_any_split_diff(self)
+    local has_left = self.diff_left_buf ~= nil
+        and self.diff_left_buf:is_valid()
+        and common.is_valid_win(self.diff_left_win)
+        and vim.api.nvim_win_get_buf(self.diff_left_win) == self.diff_left_buf.id
+    local has_right = self.diff_right_buf ~= nil
+        and self.diff_right_buf:is_valid()
+        and common.is_valid_win(self.diff_right_win)
+        and vim.api.nvim_win_get_buf(self.diff_right_win)
+            == self.diff_right_buf.id
+
+    return has_left or has_right
+end
+
+---@param win number?
+local function diffoff(win)
+    if common.is_valid_win(win) then
+        pcall(vim.api.nvim_win_call, win, function()
+            vim.cmd('diffoff')
+        end)
+    end
+end
+
+---@param self GitStatusWindow
+---@param buf_name string
+---@param existing Buffer?
+---@return Buffer
+local function ensure_split_buf(self, buf_name, existing)
+    if existing ~= nil and existing:is_valid() then
+        return existing
+    end
+
+    local buf = Buffer.new({
+        listed = false,
+        scratch = true,
+        name = buf_name,
+    })
+
+    vim.bo[buf.id].buftype = 'nofile'
+    vim.bo[buf.id].bufhidden = 'hide'
+    vim.bo[buf.id].swapfile = false
+
+    vim.keymap.set('n', 'q', function()
+        M.close_diff(self)
+    end, {
+        buffer = buf.id,
+        desc = 'Close git diff preview',
+        silent = true,
+    })
+
+    vim.keymap.set('n', 'w', function()
+        M.toggle_wrap(self)
+    end, {
+        buffer = buf.id,
+        desc = 'Toggle git diff preview wrap',
+        silent = true,
+    })
+
+    vim.keymap.set('n', 't', function()
+        M.toggle_layout(self)
+    end, {
+        buffer = buf.id,
+        desc = 'Toggle stacked/split git diff preview layout',
+        silent = true,
+    })
+
+    vim.keymap.set('n', '?', function()
+        self:toggle_help()
+    end, {
+        buffer = buf.id,
+        desc = 'Toggle git mappings help',
+        silent = true,
+    })
+
+    return buf
+end
+
+---@param buf Buffer
+---@param lines string[]
+local function set_plain_lines(buf, lines)
+    vim.bo[buf.id].modifiable = true
+    vim.api.nvim_buf_set_lines(buf.id, 0, -1, false, lines)
+    vim.bo[buf.id].modifiable = false
+end
+
 ---@param text string
 ---@return boolean
 local function is_diff_header(text)
@@ -520,8 +635,47 @@ function M.toggle_wrap(self)
     end
 
     self.diff_wrap = not self.diff_wrap
-    vim.wo[self.diff_win].wrap = self.diff_wrap
+
+    if common.is_valid_win(self.diff_win) then
+        vim.wo[self.diff_win].wrap = self.diff_wrap
+    end
+
+    if common.is_valid_win(self.diff_left_win) then
+        vim.wo[self.diff_left_win].wrap = self.diff_wrap
+    end
+
+    if common.is_valid_win(self.diff_right_win) then
+        vim.wo[self.diff_right_win].wrap = self.diff_wrap
+    end
+
     return true
+end
+
+---@param self GitStatusWindow
+---@param layout 'stacked'|'split'
+---@return boolean
+function M.set_layout(self, layout)
+    self.diff_layout_override = layout
+
+    local ok = M.refresh_current_entry(self) == true
+
+    if ok and self.win ~= nil and common.is_valid_win(self.win) then
+        vim.api.nvim_set_current_win(self.win)
+    end
+
+    return ok
+end
+
+---@param self GitStatusWindow
+---@return boolean
+function M.toggle_layout(self)
+    if not M.has_open_diff(self) then
+        common.notify_warn('Diff preview is not open')
+        return false
+    end
+
+    local current = resolved_layout(self)
+    return M.set_layout(self, current == 'split' and 'stacked' or 'split')
 end
 
 ---@param self GitStatusWindow
@@ -562,10 +716,12 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.has_open_diff(self)
-    return self.diff_buf ~= nil
+    return (
+        self.diff_buf ~= nil
         and self.diff_buf:is_valid()
         and common.is_valid_win(self.diff_win)
         and vim.api.nvim_win_get_buf(self.diff_win) == self.diff_buf.id
+    ) or has_any_split_diff(self)
 end
 
 ---@param self GitStatusWindow
@@ -574,6 +730,10 @@ end
 ---@param title string
 ---@return boolean
 local function show_diff_lines(self, diff_lines, preview_key, title)
+    if has_any_split_diff(self) then
+        M.close_diff(self)
+    end
+
     local buf = M.ensure_diff_buf(self)
 
     vim.bo[buf.id].modifiable = true
@@ -608,6 +768,117 @@ local function show_diff_lines(self, diff_lines, preview_key, title)
     vim.wo[target_win].wrap = self.diff_wrap
     vim.wo[target_win].winbar = title
     self.diff_win = target_win
+    self.diff_preview_key = preview_key
+
+    if self.win ~= nil and common.is_valid_win(self.win) then
+        vim.api.nvim_set_current_win(self.win)
+    end
+
+    return true
+end
+
+---@param self GitStatusWindow
+---@param split_diff GitSplitDiff
+---@param preview_key string
+---@param title string
+---@return boolean
+local function show_split_diff(self, split_diff, preview_key, title)
+    if (M.has_open_diff(self) or has_any_split_diff(self))
+        and not has_open_split_diff(self)
+    then
+        M.close_diff(self)
+    end
+
+    local left_buf = ensure_split_buf(
+        self,
+        'Minifugit diff left',
+        self.diff_left_buf
+    )
+    local right_buf = ensure_split_buf(
+        self,
+        'Minifugit diff right',
+        self.diff_right_buf
+    )
+
+    self.diff_left_buf = left_buf
+    self.diff_right_buf = right_buf
+    set_plain_lines(left_buf, split_diff.left.lines)
+    set_plain_lines(right_buf, split_diff.right.lines)
+
+    if split_diff.filetype ~= '' then
+        vim.bo[left_buf.id].filetype = split_diff.filetype
+        vim.bo[right_buf.id].filetype = split_diff.filetype
+    end
+
+    local target_win = window.find_target_win(self)
+    local left_created = false
+
+    if target_win == nil then
+        vim.cmd('leftabove vsplit')
+        target_win = vim.api.nvim_get_current_win()
+        self.target_win = target_win
+        left_created = true
+    else
+        vim.api.nvim_set_current_win(target_win)
+    end
+
+    local was_left_preview = target_win == self.diff_left_win
+        and vim.api.nvim_win_get_buf(target_win) == left_buf.id
+
+    if not was_left_preview then
+        self.diff_left_prev_buf = vim.api.nvim_win_get_buf(target_win)
+        self.diff_left_prev_winopts = window.capture_winopts(target_win)
+        self.diff_left_created_win = left_created
+    end
+
+    vim.api.nvim_win_set_buf(target_win, left_buf.id)
+    window.configure_split_diff_win(target_win)
+    vim.wo[target_win].wrap = self.diff_wrap
+    vim.wo[target_win].winbar = winbar_text(
+        title .. ' [1/2] ' .. split_diff.left.title
+    )
+    self.diff_left_win = target_win
+
+    local right_win = self.diff_right_win
+    local right_created = false
+
+    if not common.is_valid_win(right_win) then
+        vim.cmd('rightbelow vsplit')
+        right_win = vim.api.nvim_get_current_win()
+        right_created = true
+    else
+        vim.api.nvim_set_current_win(right_win)
+    end
+
+    local was_right_preview = vim.api.nvim_win_get_buf(right_win) == right_buf.id
+
+    if not was_right_preview then
+        self.diff_right_prev_buf = vim.api.nvim_win_get_buf(right_win)
+        self.diff_right_prev_winopts = window.capture_winopts(right_win)
+        self.diff_right_created_win = right_created
+    end
+
+    vim.api.nvim_win_set_buf(right_win, right_buf.id)
+    window.configure_split_diff_win(right_win)
+    vim.wo[right_win].wrap = self.diff_wrap
+    vim.wo[right_win].winbar = winbar_text(
+        title .. ' [2/2] ' .. split_diff.right.title
+    )
+    self.diff_right_win = right_win
+
+    diffoff(self.diff_left_win)
+    diffoff(self.diff_right_win)
+    vim.api.nvim_win_call(self.diff_left_win, function()
+        vim.cmd('diffthis')
+    end)
+    vim.api.nvim_win_call(self.diff_right_win, function()
+        vim.cmd('diffthis')
+    end)
+    vim.api.nvim_win_call(self.diff_left_win, function()
+        vim.cmd('diffupdate')
+        vim.cmd('syncbind')
+    end)
+
     self.diff_preview_key = preview_key
 
     if self.win ~= nil and common.is_valid_win(self.win) then
@@ -665,34 +936,75 @@ end
 
 ---@param self GitStatusWindow
 function M.close_diff(self)
-    local current_win = vim.api.nvim_get_current_win()
-    local diff_win = current_win
+    local closed = false
 
-    if
-        not self.diff_buf
-        or not self.diff_buf:is_valid()
-        or vim.api.nvim_win_get_buf(diff_win) ~= self.diff_buf.id
-    then
-        if not common.is_valid_win(self.diff_win) then
-            return
+    if has_any_split_diff(self) then
+        diffoff(self.diff_left_win)
+        diffoff(self.diff_right_win)
+
+        local wins = {
+            {
+                win = self.diff_right_win,
+                created = self.diff_right_created_win,
+                prev_buf = self.diff_right_prev_buf,
+                prev_winopts = self.diff_right_prev_winopts,
+            },
+            {
+                win = self.diff_left_win,
+                created = self.diff_left_created_win,
+                prev_buf = self.diff_left_prev_buf,
+                prev_winopts = self.diff_left_prev_winopts,
+            },
+        }
+
+        for _, item in ipairs(wins) do
+            if common.is_valid_win(item.win) then
+                if item.created and #vim.api.nvim_tabpage_list_wins(0) > 1 then
+                    vim.api.nvim_win_close(item.win, true)
+                elseif item.prev_buf and vim.api.nvim_buf_is_valid(item.prev_buf) then
+                    vim.api.nvim_win_set_buf(item.win, item.prev_buf)
+                    window.restore_winopts(item.win, item.prev_winopts)
+                elseif #vim.api.nvim_tabpage_list_wins(0) > 1 then
+                    vim.api.nvim_win_close(item.win, true)
+                end
+            end
         end
 
-        diff_win = self.diff_win
-
-        if vim.api.nvim_win_get_buf(diff_win) ~= self.diff_buf.id then
-            return
-        end
+        self.diff_left_win = nil
+        self.diff_right_win = nil
+        self.diff_left_prev_buf = nil
+        self.diff_right_prev_buf = nil
+        self.diff_left_prev_winopts = nil
+        self.diff_right_prev_winopts = nil
+        self.diff_left_created_win = false
+        self.diff_right_created_win = false
+        closed = true
     end
 
-    if self.diff_created_win and #vim.api.nvim_tabpage_list_wins(0) > 1 then
-        vim.api.nvim_win_close(diff_win, true)
-    elseif
-        self.diff_prev_buf and vim.api.nvim_buf_is_valid(self.diff_prev_buf)
+    if
+        self.diff_buf ~= nil
+        and self.diff_buf:is_valid()
+        and common.is_valid_win(self.diff_win)
+        and vim.api.nvim_win_get_buf(self.diff_win) == self.diff_buf.id
     then
-        vim.api.nvim_win_set_buf(diff_win, self.diff_prev_buf)
-        window.restore_winopts(diff_win, self.diff_prev_winopts)
-    elseif #vim.api.nvim_tabpage_list_wins(0) > 1 then
-        vim.api.nvim_win_close(diff_win, true)
+        local diff_win = self.diff_win
+
+        if self.diff_created_win and #vim.api.nvim_tabpage_list_wins(0) > 1 then
+            vim.api.nvim_win_close(diff_win, true)
+        elseif
+            self.diff_prev_buf and vim.api.nvim_buf_is_valid(self.diff_prev_buf)
+        then
+            vim.api.nvim_win_set_buf(diff_win, self.diff_prev_buf)
+            window.restore_winopts(diff_win, self.diff_prev_winopts)
+        elseif #vim.api.nvim_tabpage_list_wins(0) > 1 then
+            vim.api.nvim_win_close(diff_win, true)
+        end
+
+        closed = true
+    end
+
+    if not closed then
+        return
     end
 
     self.diff_win = nil
@@ -798,6 +1110,14 @@ function M.ensure_diff_buf(self)
         silent = true,
     })
 
+    vim.keymap.set('n', 't', function()
+        M.toggle_layout(self)
+    end, {
+        buffer = self.diff_buf.id,
+        desc = 'Toggle stacked/split git diff preview layout',
+        silent = true,
+    })
+
     vim.keymap.set('n', '?', function()
         self:toggle_help()
     end, {
@@ -826,6 +1146,23 @@ function M.open_diff(self, entry, section, opts)
         and self.diff_preview_key == preview_key
     then
         return true
+    end
+
+    if resolved_layout(self) == 'split' then
+        local split_diff, split_err = git.split_diff(entry, section)
+
+        if split_diff ~= nil then
+            return show_split_diff(
+                self,
+                split_diff,
+                preview_key,
+                diff_title(entry, section)
+            )
+        end
+
+        if split_err ~= nil then
+            common.notify_warn(split_err .. '; showing stacked diff')
+        end
     end
 
     local lines, err = git.diff(entry, section)

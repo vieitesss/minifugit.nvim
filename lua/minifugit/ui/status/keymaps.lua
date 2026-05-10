@@ -135,6 +135,14 @@ function M.attach(self)
         silent = true,
     })
 
+    vim.keymap.set('n', 't', function()
+        preview.toggle_layout(self)
+    end, {
+        buffer = self.buf.id,
+        desc = 'Toggle stacked/split diff preview layout',
+        silent = true,
+    })
+
     vim.keymap.set('x', 's', function()
         self:stage_selected_entries()
     end, {

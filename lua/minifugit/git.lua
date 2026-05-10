@@ -4,6 +4,15 @@
 ---@field path string
 ---@field orig_path string?
 
+---@class GitDiffSide
+---@field title string
+---@field lines string[]
+
+---@class GitSplitDiff
+---@field left GitDiffSide
+---@field right GitDiffSide
+---@field filetype string
+
 ---@class GitCommit
 ---@field hash string
 ---@field short_hash string
@@ -682,6 +691,129 @@ local function parse_diff(diff)
     end
 
     return vim.split(diff, '\n', { plain = true })
+end
+
+---@param path string
+---@return string[]
+---@return string?
+local function read_worktree_lines(path)
+    local root = git.root()
+    local full_path = root ~= '' and vim.fs.joinpath(root, path) or path
+    local stat = vim.uv.fs_stat(full_path)
+
+    if stat == nil then
+        return {}, nil
+    end
+
+    if stat.type == 'directory' then
+        return {}, 'Diff preview is not available for directories'
+    end
+
+    local lines = vim.fn.readfile(full_path)
+
+    return lines, nil
+end
+
+---@param spec string
+---@return string[]
+---@return string?
+local function read_blob_lines(spec)
+    local out = git.run({ 'show', spec }, root_opts())
+
+    if out.exit_code ~= 0 then
+        return {}, return_result(out)
+    end
+
+    return parse_diff(out.output)
+end
+
+---@param entry GitStatusEntry
+---@param section GitStatusSectionName?
+---@return GitSplitDiff?
+---@return string?
+function git.split_diff(entry, section)
+    ensure_git()
+
+    if section == 'conflicts' then
+        return nil, 'Split diff preview is not available for conflicts'
+    end
+
+    local old_path = entry.orig_path or entry.path
+    local ft = vim.filetype.match({ filename = entry.path }) or ''
+
+    if section == 'untracked' or entry.unstaged == '?' then
+        local right, err = read_worktree_lines(entry.path)
+
+        if err ~= nil then
+            return nil, err
+        end
+
+        return {
+            left = { title = '/dev/null', lines = {} },
+            right = { title = 'worktree:' .. entry.path, lines = right },
+            filetype = ft,
+        }, nil
+    end
+
+    if section == 'staged' then
+        local left = {}
+        local err
+
+        if entry.staged ~= 'A' then
+            left, err = read_blob_lines('HEAD:' .. old_path)
+
+            if err ~= nil then
+                return nil, err
+            end
+        end
+
+        local right = {}
+
+        if entry.staged ~= 'D' then
+            right, err = read_blob_lines(':' .. entry.path)
+
+            if err ~= nil then
+                return nil, err
+            end
+        end
+
+        return {
+            left = { title = 'HEAD:' .. old_path, lines = left },
+            right = { title = 'index:' .. entry.path, lines = right },
+            filetype = ft,
+        }, nil
+    end
+
+    if section == 'unstaged' then
+        local left = {}
+        local err
+
+        if entry.unstaged ~= 'A' then
+            left, err = read_blob_lines(':' .. old_path)
+
+            if err ~= nil then
+                return nil, err
+            end
+        end
+
+        local right = {}
+
+        if entry.unstaged ~= 'D' then
+            right, err = read_worktree_lines(entry.path)
+
+            if err ~= nil then
+                return nil, err
+            end
+        end
+
+        return {
+            left = { title = 'index:' .. old_path, lines = left },
+            right = { title = 'worktree:' .. entry.path, lines = right },
+            filetype = ft,
+        }, nil
+    end
+
+    return nil, 'Split diff preview requires a status section'
 end
 
 ---@param commit GitCommit

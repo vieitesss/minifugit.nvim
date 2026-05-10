@@ -2,6 +2,8 @@
 ---@field wrap boolean
 ---@field show_line_numbers boolean
 ---@field show_metadata boolean
+---@field diff_layout 'stacked'|'split'|'auto'
+---@field diff_auto_threshold integer
 
 ---@class MinifugitStatusOptions
 ---@field width number
@@ -16,6 +18,8 @@ local defaults = {
         wrap = false,
         show_line_numbers = true,
         show_metadata = true,
+        diff_layout = 'stacked',
+        diff_auto_threshold = 120,
     },
     status = {
         width = 0.4,
@@ -74,6 +78,36 @@ function M.setup(opts)
             'boolean',
             true
         )
+        vim.validate(
+            'opts.preview.diff_layout',
+            opts.preview.diff_layout,
+            'string',
+            true
+        )
+        vim.validate(
+            'opts.preview.diff_auto_threshold',
+            opts.preview.diff_auto_threshold,
+            'number',
+            true
+        )
+
+        if
+            opts.preview.diff_layout ~= nil
+            and opts.preview.diff_layout ~= 'stacked'
+            and opts.preview.diff_layout ~= 'split'
+            and opts.preview.diff_layout ~= 'auto'
+        then
+            error(
+                "opts.preview.diff_layout must be 'stacked', 'split', or 'auto'"
+            )
+        end
+
+        if
+            opts.preview.diff_auto_threshold ~= nil
+            and opts.preview.diff_auto_threshold < 1
+        then
+            error('opts.preview.diff_auto_threshold must be >= 1')
+        end
     end
 
     if opts.status ~= nil then

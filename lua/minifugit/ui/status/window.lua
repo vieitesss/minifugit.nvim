@@ -13,6 +13,7 @@ local M = {}
 ---@field cursorline boolean
 ---@field winfixwidth boolean
 ---@field winbar string
+---@field diff boolean
 
 ---@param opts MinifugitStatusOptions
 ---@return integer
@@ -23,7 +24,7 @@ end
 ---@param entry GitStatusEntry
 ---@return string
 local function entry_path(entry)
-    local root = git.root()
+    local root = git.root();
 
     if root == '' then
         return vim.fn.fnamemodify(entry.path, ':p')
@@ -129,6 +130,16 @@ function M.configure_diff_win(win)
 end
 
 ---@param win number
+function M.configure_split_diff_win(win)
+    vim.wo[win].number = true
+    vim.wo[win].relativenumber = false
+    vim.wo[win].signcolumn = 'no'
+    vim.wo[win].foldcolumn = '0'
+    vim.wo[win].wrap = false
+    vim.wo[win].cursorline = false
+end
+
+---@param win number
 ---@return GitStatusWindowOptions
 function M.capture_winopts(win)
     return {
@@ -140,6 +151,7 @@ function M.capture_winopts(win)
         cursorline = vim.wo[win].cursorline,
         winfixwidth = vim.wo[win].winfixwidth,
         winbar = vim.wo[win].winbar,
+        diff = vim.wo[win].diff,
     }
 end
 
@@ -158,6 +170,7 @@ function M.restore_winopts(win, opts)
     vim.wo[win].cursorline = opts.cursorline
     vim.wo[win].winfixwidth = opts.winfixwidth
     vim.wo[win].winbar = opts.winbar
+    vim.wo[win].diff = opts.diff
 end
 
 return M
