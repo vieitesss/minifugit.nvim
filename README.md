@@ -110,6 +110,9 @@ Default diff-preview mappings:
 | --- | --- | --- |
 | n | `q` | Close diff preview |
 | n | `[h` / `]h` | Jump to previous/next hunk |
+| n | `s` | Stage current unstaged hunk |
+| n | `u` | Unstage current staged hunk |
+| n | `d` | Discard current unstaged hunk with confirmation |
 | n | `w` | Toggle wrap |
 | n | `l` | Toggle line numbers |
 | n | `m` | Toggle metadata rows |
