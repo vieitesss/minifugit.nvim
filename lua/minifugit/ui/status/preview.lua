@@ -104,6 +104,7 @@ end
 ---@field kind 'header'|'hunk'|'context'|'added'|'removed'
 ---@field old_number integer?
 ---@field new_number integer?
+---@field raw_row integer
 ---@field text string
 
 ---@class MiniFugitDiffRenderOpts
@@ -245,21 +246,28 @@ local function parse_diff_lines(lines)
     local old_number
     local new_number
 
-    for _, text in ipairs(lines) do
+    for raw_row, text in ipairs(lines) do
         if text == '' then
             goto continue
         end
 
         if vim.startswith(text, '@@') then
             old_number, new_number = parse_hunk_header(text)
-            table.insert(parsed, { kind = 'hunk', text = text })
+            table.insert(
+                parsed,
+                { kind = 'hunk', raw_row = raw_row, text = text }
+            )
         elseif is_diff_header(text) then
-            table.insert(parsed, { kind = 'header', text = text })
+            table.insert(
+                parsed,
+                { kind = 'header', raw_row = raw_row, text = text }
+            )
         elseif vim.startswith(text, '+') then
             table.insert(parsed, {
                 kind = 'added',
                 old_number = nil,
                 new_number = new_number,
+                raw_row = raw_row,
                 text = text,
             })
 
@@ -271,6 +279,7 @@ local function parse_diff_lines(lines)
                 kind = 'removed',
                 old_number = old_number,
                 new_number = nil,
+                raw_row = raw_row,
                 text = text,
             })
 
@@ -282,6 +291,7 @@ local function parse_diff_lines(lines)
                 kind = 'context',
                 old_number = old_number,
                 new_number = new_number,
+                raw_row = raw_row,
                 text = text,
             })
 
@@ -304,12 +314,14 @@ end
 ---@param groups table<string, string>
 ---@param opts MiniFugitDiffRenderOpts
 ---@return MiniFugitRenderLine[]
+---@return integer[]
 local function diff_render_lines(lines, groups, opts)
     opts = opts or {}
 
     local parsed = parse_diff_lines(lines)
     local width = diff_number_width(parsed)
     local diff_lines = {}
+    local raw_rows = {}
 
     for _, diff_line in ipairs(parsed) do
         if diff_line.kind == 'header' and opts.show_headers == false then
@@ -330,15 +342,147 @@ local function diff_render_lines(lines, groups, opts)
         end
 
         table.insert(diff_lines, line)
+        table.insert(raw_rows, diff_line.raw_row)
 
         ::continue::
     end
 
     if #diff_lines == 0 then
-        table.insert(diff_lines, render.line('(No diff content — only headers)'))
+        table.insert(
+            diff_lines,
+            render.line('(No diff content — only headers)')
+        )
     end
 
-    return diff_lines
+    return diff_lines, raw_rows
+end
+
+---@param self GitStatusWindow
+---@return string[]?
+local function current_hunk_patch(self)
+    if not M.has_open_diff(self) or self.diff_raw_lines == nil then
+        common.notify_warn('Diff preview is not open')
+        return nil
+    end
+
+    local cursor = vim.api.nvim_win_get_cursor(self.diff_win)[1]
+    local raw_row = self.diff_raw_rows and self.diff_raw_rows[cursor]
+
+    if raw_row == nil then
+        common.notify_warn('No hunk under cursor')
+        return nil
+    end
+
+    local lines = self.diff_raw_lines
+    local hunk_start
+
+    for row = raw_row, 1, -1 do
+        if vim.startswith(lines[row] or '', '@@') then
+            hunk_start = row
+            break
+        end
+
+        if vim.startswith(lines[row] or '', 'diff ') then
+            break
+        end
+    end
+
+    if hunk_start == nil then
+        common.notify_warn('No hunk under cursor')
+        return nil
+    end
+
+    local file_start = hunk_start
+
+    while
+        file_start > 1 and not vim.startswith(lines[file_start] or '', 'diff ')
+    do
+        file_start = file_start - 1
+    end
+
+    local header_stop = hunk_start - 1
+
+    for row = file_start, hunk_start - 1 do
+        if vim.startswith(lines[row] or '', '@@') then
+            header_stop = row - 1
+            break
+        end
+    end
+
+    local hunk_stop = #lines
+
+    for row = hunk_start + 1, #lines do
+        local line = lines[row] or ''
+
+        if vim.startswith(line, '@@') or vim.startswith(line, 'diff ') then
+            hunk_stop = row - 1
+            break
+        end
+    end
+
+    local patch = {}
+
+    for row = file_start, header_stop do
+        table.insert(patch, lines[row])
+    end
+
+    for row = hunk_start, hunk_stop do
+        table.insert(patch, lines[row])
+    end
+
+    return patch
+end
+
+---@param self GitStatusWindow
+---@param kind 'stage'|'unstage'|'discard'
+---@return boolean
+local function apply_current_hunk(self, kind)
+    local section = self.diff_section
+
+    if kind == 'stage' and section ~= 'unstaged' then
+        common.notify_warn('No unstaged hunk to stage')
+        return false
+    end
+
+    if kind == 'unstage' and section ~= 'staged' then
+        common.notify_warn('No staged hunk to unstage')
+        return false
+    end
+
+    if kind == 'discard' and section ~= 'unstaged' then
+        common.notify_warn('No unstaged hunk to discard')
+        return false
+    end
+
+    local patch = current_hunk_patch(self)
+
+    if patch == nil then
+        return false
+    end
+
+    if
+        kind == 'discard'
+        and vim.fn.confirm('Discard current hunk?', '&Discard\n&Cancel', 2)
+            ~= 1
+    then
+        return false
+    end
+
+    local cursor_state = selection.capture_cursor_state(self)
+    local ok, err = git.apply_hunk(patch, kind)
+
+    if not ok then
+        common.notify_error(err, 'Git hunk action failed')
+        return false
+    end
+
+    self:refresh(cursor_state)
+
+    if M.has_open_diff(self) then
+        vim.api.nvim_set_current_win(self.diff_win)
+    end
+
+    return true
 end
 
 ---@param self GitStatusWindow
@@ -392,7 +536,11 @@ local function toggle_diff_render_option(self, option)
 
     local ok = M.refresh_current_entry(self) == true
 
-    if ok and self.diff_win ~= nil and vim.api.nvim_win_is_valid(self.diff_win) then
+    if
+        ok
+        and self.diff_win ~= nil
+        and vim.api.nvim_win_is_valid(self.diff_win)
+    then
         vim.api.nvim_set_current_win(self.diff_win)
     end
 
@@ -503,6 +651,10 @@ function M.open_commit_diff(self, commit, opts)
         })
     end
 
+    self.diff_raw_lines = nil
+    self.diff_raw_rows = nil
+    self.diff_section = nil
+
     return show_diff_lines(
         self,
         diff_lines,
@@ -548,6 +700,9 @@ function M.close_diff(self)
     self.diff_prev_winopts = nil
     self.diff_created_win = false
     self.diff_preview_key = nil
+    self.diff_raw_lines = nil
+    self.diff_raw_rows = nil
+    self.diff_section = nil
 
     if self.win ~= nil and common.is_valid_win(self.win) then
         vim.api.nvim_set_current_win(self.win)
@@ -619,6 +774,30 @@ function M.ensure_diff_buf(self)
         silent = true,
     })
 
+    vim.keymap.set('n', 's', function()
+        M.stage_current_hunk(self)
+    end, {
+        buffer = self.diff_buf.id,
+        desc = 'Stage current git diff hunk',
+        silent = true,
+    })
+
+    vim.keymap.set('n', 'u', function()
+        M.unstage_current_hunk(self)
+    end, {
+        buffer = self.diff_buf.id,
+        desc = 'Unstage current git diff hunk',
+        silent = true,
+    })
+
+    vim.keymap.set('n', 'd', function()
+        M.discard_current_hunk(self)
+    end, {
+        buffer = self.diff_buf.id,
+        desc = 'Discard current git diff hunk',
+        silent = true,
+    })
+
     vim.keymap.set('n', '?', function()
         self:toggle_help()
     end, {
@@ -651,6 +830,7 @@ function M.open_diff(self, entry, section, opts)
 
     local lines, err = git.diff(entry, section)
     local diff_lines
+    local raw_rows
 
     if err ~= nil then
         common.notify_error(err, 'Cannot show diff')
@@ -660,13 +840,40 @@ function M.open_diff(self, entry, section, opts)
     if #lines == 0 then
         diff_lines = { render.line('No diff for ' .. entry.path) }
     else
-        diff_lines = diff_render_lines(lines, self.groups, {
+        diff_lines, raw_rows = diff_render_lines(lines, self.groups, {
             show_headers = self.diff_show_headers,
             show_numbers = self.diff_show_numbers,
         })
     end
 
-    return show_diff_lines(self, diff_lines, preview_key, diff_title(entry, section))
+    self.diff_raw_lines = lines
+    self.diff_raw_rows = raw_rows
+    self.diff_section = section
+
+    return show_diff_lines(
+        self,
+        diff_lines,
+        preview_key,
+        diff_title(entry, section)
+    )
+end
+
+---@param self GitStatusWindow
+---@return boolean
+function M.stage_current_hunk(self)
+    return apply_current_hunk(self, 'stage')
+end
+
+---@param self GitStatusWindow
+---@return boolean
+function M.unstage_current_hunk(self)
+    return apply_current_hunk(self, 'unstage')
+end
+
+---@param self GitStatusWindow
+---@return boolean
+function M.discard_current_hunk(self)
+    return apply_current_hunk(self, 'discard')
 end
 
 ---@param self GitStatusWindow

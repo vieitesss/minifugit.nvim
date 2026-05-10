@@ -315,7 +315,10 @@ function M.render(snapshot, groups, opts)
         table.insert(lines, message_line('filter=' .. opts.filter, 'Comment'))
 
         if #entries == 0 then
-            table.insert(lines, message_line('No entries match filter', 'Comment'))
+            table.insert(
+                lines,
+                message_line('No entries match filter', 'Comment')
+            )
             return lines
         end
     end
@@ -324,9 +327,15 @@ function M.render(snapshot, groups, opts)
         append_section(lines, section, groups)
     end
 
-    if #snapshot.unpushed_commits > 0 and (opts.filter == nil or opts.filter == '') then
+    if
+        #snapshot.unpushed_commits > 0
+        and (opts.filter == nil or opts.filter == '')
+    then
         table.insert(lines, render.line(''))
-        table.insert(lines, section_line('Unpushed', #snapshot.unpushed_commits))
+        table.insert(
+            lines,
+            section_line('Unpushed', #snapshot.unpushed_commits)
+        )
 
         for _, commit in ipairs(snapshot.unpushed_commits) do
             table.insert(lines, M.commit_line(commit, groups))

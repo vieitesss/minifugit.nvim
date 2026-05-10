@@ -31,6 +31,9 @@ local sections = {
         rows = {
             { 'q', 'Close diff preview' },
             { '[h / ]h', 'Jump to previous or next hunk' },
+            { 's', 'Stage current unstaged hunk' },
+            { 'u', 'Unstage current staged hunk' },
+            { 'd', 'Discard current unstaged hunk' },
             { 'w', 'Toggle wrap' },
             { 'l', 'Toggle line numbers' },
             { 'm', 'Toggle metadata rows' },
@@ -67,7 +70,10 @@ local function help_lines()
     for section_index, section in ipairs(sections) do
         table.insert(lines, section.title)
         table.insert(lines, pad('Key', key_width) .. '  Action')
-        table.insert(lines, string.rep('-', key_width) .. '  ' .. string.rep('-', 32))
+        table.insert(
+            lines,
+            string.rep('-', key_width) .. '  ' .. string.rep('-', 32)
+        )
 
         for _, row in ipairs(section.rows) do
             table.insert(lines, pad(row[1], key_width) .. '  ' .. row[2])

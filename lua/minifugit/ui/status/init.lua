@@ -19,6 +19,9 @@ local git = require('minifugit.git')
 ---@field diff_prev_buf number?
 ---@field diff_created_win boolean
 ---@field diff_preview_key string?
+---@field diff_raw_lines string[]?
+---@field diff_raw_rows integer[]?
+---@field diff_section GitStatusSectionName?
 ---@field diff_prev_winopts GitStatusWindowOptions?
 ---@field diff_wrap boolean
 ---@field diff_show_headers boolean
@@ -271,10 +274,8 @@ function GitStatusWindow:show()
         return
     end
 
-    self.win, self.win_prev_winopts = window.create_status_win(
-        self.buf,
-        self.options.status
-    )
+    self.win, self.win_prev_winopts =
+        window.create_status_win(self.buf, self.options.status)
     selection.move_to_first_entry(self)
 end
 
@@ -543,10 +544,8 @@ function GitStatusWindow.new(opts)
     keymaps.attach(self)
     self:render()
 
-    self.win, self.win_prev_winopts = window.create_status_win(
-        self.buf,
-        self.options.status
-    )
+    self.win, self.win_prev_winopts =
+        window.create_status_win(self.buf, self.options.status)
     selection.move_to_first_entry(self)
     ensure_autocmds(self)
 

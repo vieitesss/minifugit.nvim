@@ -312,7 +312,9 @@ end
 ---@return integer?
 function M.row_for_commit_key(self, commit_key)
     for row, line in ipairs(self.lines) do
-        if M.commit_item_key(M.commit_item_from_data(line.data)) == commit_key then
+        if
+            M.commit_item_key(M.commit_item_from_data(line.data)) == commit_key
+        then
             return row
         end
     end
@@ -347,7 +349,10 @@ end
 function M.restore_cursor(self, row)
     M.set_cursor_row(self, row)
 
-    if M.current_entry_item(self) == nil and M.current_commit_item(self) == nil then
+    if
+        M.current_entry_item(self) == nil
+        and M.current_commit_item(self) == nil
+    then
         M.move_to_first_entry(self)
     end
 end
