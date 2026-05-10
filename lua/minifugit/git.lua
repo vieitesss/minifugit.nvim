@@ -724,7 +724,17 @@ local function read_blob_lines(spec)
         return {}, return_result(out)
     end
 
-    return parse_diff(out.output)
+    local lines = parse_diff(out.output)
+
+    -- vim.split leaves a synthetic trailing "" on \n-terminated output, while
+    -- vim.fn.readfile() strips the final newline naturally. Strip it here so
+    -- both sides of a split diff use the same line-count convention and the
+    -- diff engine can align trailing-newline changes correctly.
+    if lines[#lines] == '' then
+        table.remove(lines)
+    end
+
+    return lines
 end
 
 ---@param entry GitStatusEntry

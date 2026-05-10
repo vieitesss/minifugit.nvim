@@ -3,6 +3,7 @@
 A lightweight Git status UI for Neovim, inspired by
 [vim-fugitive](https://github.com/tpope/vim-fugitive).
 
+
 minifugit.nvim focuses on a compact status window for everyday Git operations
 without leaving Neovim.
 
