@@ -738,7 +738,7 @@ local function read_blob_lines(spec)
         table.remove(lines)
     end
 
-    return lines
+    return lines, nil
 end
 
 ---@param entry GitStatusEntry
