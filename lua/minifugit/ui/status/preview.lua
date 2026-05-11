@@ -7,9 +7,7 @@ local selection = require('minifugit.ui.status.selection')
 
 local M = {}
 
-local SPLIT_DIFF_NAMESPACE = vim.api.nvim_create_namespace(
-    'MiniFugitSplitDiff'
-)
+local SPLIT_DIFF_NAMESPACE = vim.api.nvim_create_namespace('MiniFugitSplitDiff')
 
 ---@param self GitStatusWindow
 ---@param row integer?
@@ -214,7 +212,8 @@ local function has_any_split_diff(self)
     local has_left = self.diff_left_buf ~= nil
         and self.diff_left_buf:is_valid()
         and common.is_valid_win(self.diff_left_win)
-        and vim.api.nvim_win_get_buf(self.diff_left_win) == self.diff_left_buf.id
+        and vim.api.nvim_win_get_buf(self.diff_left_win)
+            == self.diff_left_buf.id
     local has_right = self.diff_right_buf ~= nil
         and self.diff_right_buf:is_valid()
         and common.is_valid_win(self.diff_right_win)
@@ -381,7 +380,8 @@ local function resize_split_preview_windows(self)
         math.floor(vim.o.columns * self.options.status.width),
         self.options.status.min_width
     )
-    local diff_width = math.max(1, math.floor((vim.o.columns - status_width) / 2))
+    local diff_width =
+        math.max(1, math.floor((vim.o.columns - status_width) / 2))
 
     set_win_width(self.win, status_width)
     set_win_width(self.diff_left_win, diff_width)
@@ -487,16 +487,13 @@ local function parse_diff_lines(lines)
         if vim.startswith(text, '@@') then
             local old_start, _, new_start = parse_hunk_header(text)
             old_number, new_number = old_start, new_start
-            table.insert(
-                parsed,
-                {
-                    kind = 'hunk',
-                    old_number = old_number,
-                    new_number = new_number,
-                    raw_row = raw_row,
-                    text = text,
-                }
-            )
+            table.insert(parsed, {
+                kind = 'hunk',
+                old_number = old_number,
+                new_number = new_number,
+                raw_row = raw_row,
+                text = text,
+            })
         elseif is_diff_header(text) then
             table.insert(
                 parsed,
@@ -802,11 +799,8 @@ local function current_hunk_position(self)
 
     if is_left or is_right then
         local side = is_left and 'left' or 'right'
-        local hunk, offset = hunk_at_split_row(
-            self.diff_hunks,
-            side,
-            cursor_row
-        )
+        local hunk, offset =
+            hunk_at_split_row(self.diff_hunks, side, cursor_row)
 
         if hunk == nil then
             return nil
@@ -838,9 +832,16 @@ local function stacked_row_for_hunk_position(
     local target = side == 'left' and hunk.old_start + offset
         or hunk.new_start + offset
 
+    -- Parse once and index by raw_row to avoid an O(n) re-parse on every
+    -- iteration of the loop below (which would make cursor restores O(n²)).
+    local parsed_by_row = {}
+    for _, line in ipairs(parse_diff_lines(raw_lines)) do
+        parsed_by_row[line.raw_row] = line
+    end
+
     for row, raw_row in ipairs(raw_rows) do
         if raw_row >= hunk.raw_start_row and raw_row <= hunk.raw_end_row then
-            local line = diff_line_at_raw_row(raw_lines, raw_row)
+            local line = parsed_by_row[raw_row]
             local line_number
 
             if line ~= nil then
@@ -1302,22 +1303,17 @@ end
 ---@param title string
 ---@return boolean
 local function show_split_diff(self, split_diff, diff_lines, preview_key, title)
-    if (M.has_open_diff(self) or has_any_split_diff(self))
+    if
+        (M.has_open_diff(self) or has_any_split_diff(self))
         and not has_open_split_diff(self)
     then
         M.close_diff(self)
     end
 
-    local left_buf = ensure_split_buf(
-        self,
-        'Minifugit diff left',
-        self.diff_left_buf
-    )
-    local right_buf = ensure_split_buf(
-        self,
-        'Minifugit diff right',
-        self.diff_right_buf
-    )
+    local left_buf =
+        ensure_split_buf(self, 'Minifugit diff left', self.diff_left_buf)
+    local right_buf =
+        ensure_split_buf(self, 'Minifugit diff right', self.diff_right_buf)
 
     self.diff_left_buf = left_buf
     self.diff_right_buf = right_buf
@@ -1330,16 +1326,27 @@ local function show_split_diff(self, split_diff, diff_lines, preview_key, title)
         vim.bo[right_buf.id].filetype = split_diff.filetype
     end
 
-    local target_win = window.find_target_win(self)
+    local target_win
     local left_created = false
 
-    if target_win == nil then
-        vim.cmd('leftabove vsplit')
-        target_win = vim.api.nvim_get_current_win()
-        self.target_win = target_win
-        left_created = true
-    else
+    if has_open_split_diff(self) then
+        -- Reuse the existing left window directly. find_target_win(self) could
+        -- return diff_right_win if the user last focused it (self.target_win ==
+        -- diff_right_win), which would make diff_left_win and diff_right_win
+        -- point at the same window and corrupt the two-window layout.
+        target_win = self.diff_left_win
         vim.api.nvim_set_current_win(target_win)
+    else
+        target_win = window.find_target_win(self)
+
+        if target_win == nil then
+            vim.cmd('leftabove vsplit')
+            target_win = vim.api.nvim_get_current_win()
+            self.target_win = target_win
+            left_created = true
+        else
+            vim.api.nvim_set_current_win(target_win)
+        end
     end
 
     local was_left_preview = target_win == self.diff_left_win
@@ -1355,9 +1362,8 @@ local function show_split_diff(self, split_diff, diff_lines, preview_key, title)
     window.configure_split_diff_win(target_win)
     set_split_line_numbers(target_win, self.diff_show_numbers)
     vim.wo[target_win].wrap = self.diff_wrap
-    vim.wo[target_win].winbar = winbar_text(
-        title .. ' [1/2] ' .. split_diff.left.title
-    )
+    vim.wo[target_win].winbar =
+        winbar_text(title .. ' [1/2] ' .. split_diff.left.title)
     self.diff_left_win = target_win
 
     local right_win = self.diff_right_win
@@ -1371,7 +1377,8 @@ local function show_split_diff(self, split_diff, diff_lines, preview_key, title)
         vim.api.nvim_set_current_win(right_win)
     end
 
-    local was_right_preview = vim.api.nvim_win_get_buf(right_win) == right_buf.id
+    local was_right_preview = vim.api.nvim_win_get_buf(right_win)
+        == right_buf.id
 
     if not was_right_preview then
         self.diff_right_prev_buf = vim.api.nvim_win_get_buf(right_win)
@@ -1383,9 +1390,8 @@ local function show_split_diff(self, split_diff, diff_lines, preview_key, title)
     window.configure_split_diff_win(right_win)
     set_split_line_numbers(right_win, self.diff_show_numbers)
     vim.wo[right_win].wrap = self.diff_wrap
-    vim.wo[right_win].winbar = winbar_text(
-        title .. ' [2/2] ' .. split_diff.right.title
-    )
+    vim.wo[right_win].winbar =
+        winbar_text(title .. ' [2/2] ' .. split_diff.right.title)
     self.diff_right_win = right_win
     resize_split_preview_windows(self)
 
@@ -1485,7 +1491,9 @@ function M.close_diff(self)
             if common.is_valid_win(item.win) then
                 if item.created and #vim.api.nvim_tabpage_list_wins(0) > 1 then
                     vim.api.nvim_win_close(item.win, true)
-                elseif item.prev_buf and vim.api.nvim_buf_is_valid(item.prev_buf) then
+                elseif
+                    item.prev_buf and vim.api.nvim_buf_is_valid(item.prev_buf)
+                then
                     vim.api.nvim_win_set_buf(item.win, item.prev_buf)
                     window.restore_winopts(item.win, item.prev_winopts)
                 elseif #vim.api.nvim_tabpage_list_wins(0) > 1 then

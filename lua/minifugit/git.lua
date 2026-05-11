@@ -766,7 +766,8 @@ function git.split_diff(entry, section)
             left = { title = '/dev/null', lines = {} },
             right = { title = 'worktree:' .. entry.path, lines = right },
             filetype = ft,
-        }, nil
+        },
+            nil
     end
 
     if section == 'staged' then
@@ -803,7 +804,8 @@ function git.split_diff(entry, section)
                 lines = right,
             },
             filetype = ft,
-        }, nil
+        },
+            nil
     end
 
     if section == 'unstaged' then
@@ -840,7 +842,8 @@ function git.split_diff(entry, section)
                 lines = right,
             },
             filetype = ft,
-        }, nil
+        },
+            nil
     end
 
     return nil, 'Split diff preview requires a status section'
