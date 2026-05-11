@@ -120,11 +120,11 @@ Default diff-preview mappings:
 | --- | --- | --- |
 | n | `q` | Close diff preview |
 | n | `[h` / `]h` | Jump to previous/next hunk |
-| n | `s` | Stage current unstaged hunk |
-| n | `u` | Unstage current staged hunk |
-| n | `d` | Discard current unstaged hunk with confirmation |
+| n | `s` | Stage current unstaged hunk *(stacked only)* |
+| n | `u` | Unstage current staged hunk *(stacked only)* |
+| n | `d` | Discard current unstaged hunk with confirmation *(stacked only)* |
 | n | `w` | Toggle wrap |
 | n | `l` | Toggle line numbers |
-| n | `m` | Toggle metadata rows |
+| n | `m` | Toggle metadata rows *(stacked only)* |
 | n | `t` | Toggle stacked/split layout |
 

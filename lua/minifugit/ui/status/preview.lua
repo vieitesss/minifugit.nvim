@@ -250,6 +250,34 @@ local function ensure_split_buf(self, buf_name, existing)
         silent = true,
     })
 
+    vim.keymap.set('n', ']h', function()
+        vim.cmd('normal! ]c')
+    end, {
+        buffer = buf.id,
+        desc = 'Jump to next git diff hunk',
+        silent = true,
+    })
+
+    vim.keymap.set('n', '[h', function()
+        vim.cmd('normal! [c')
+    end, {
+        buffer = buf.id,
+        desc = 'Jump to previous git diff hunk',
+        silent = true,
+    })
+
+    vim.keymap.set('n', 'l', function()
+        for _, win in ipairs({ self.diff_left_win, self.diff_right_win }) do
+            if common.is_valid_win(win) then
+                vim.wo[win].number = not vim.wo[win].number
+            end
+        end
+    end, {
+        buffer = buf.id,
+        desc = 'Toggle git diff preview line numbers',
+        silent = true,
+    })
+
     vim.keymap.set('n', 't', function()
         M.toggle_layout(self)
     end, {
