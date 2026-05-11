@@ -1119,6 +1119,11 @@ function M.jump_hunk(self, delta)
         return false
     end
 
+    if not common.is_valid_win(self.diff_win) then
+        -- Split diff layout uses vim-native ]c / [c for hunk navigation.
+        return false
+    end
+
     local win = self.diff_win
     local cursor = vim.api.nvim_win_get_cursor(win)[1]
     local lines = vim.api.nvim_buf_get_lines(self.diff_buf.id, 0, -1, false)
