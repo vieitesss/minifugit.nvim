@@ -7,7 +7,7 @@ This is a Neovim plugin, written in Lua, that provides a lightweight Git status 
 - Create a new branch for the issue following conventional naming (e.g. feat/new-feat, fix/fixing-this, etc.).
 - Plan the implementation regarding the issue motivation.
 - Follow the code structure:
-    - Create a new file if the implementation does not fit in any of the current files or if splitting into more files is necessary because the code handles a very specific functionallity.
+    - Create a new file if the implementation does not fit in any of the current files or if splitting into more files is necessary because the code handles a very specific functionality.
     - Do not over-split code. Long files are okay. Long files that handle more functionalities than what it should, no.
 - Write the code.
 - Format the code.
