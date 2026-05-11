@@ -305,6 +305,8 @@ local function ensure_split_buf(self, buf_name, existing)
             end
         end
 
+        self.diff_show_numbers = enabled
+
         for _, win in ipairs({ self.diff_left_win, self.diff_right_win }) do
             set_split_line_numbers(win, enabled)
         end
@@ -375,11 +377,15 @@ end
 
 ---@param self GitStatusWindow
 local function resize_split_preview_windows(self)
-    local width = math.max(1, math.floor(vim.o.columns / 3))
+    local status_width = math.max(
+        math.floor(vim.o.columns * self.options.status.width),
+        self.options.status.min_width
+    )
+    local diff_width = math.max(1, math.floor((vim.o.columns - status_width) / 2))
 
-    set_win_width(self.win, width)
-    set_win_width(self.diff_left_win, width)
-    set_win_width(self.diff_right_win, width)
+    set_win_width(self.win, status_width)
+    set_win_width(self.diff_left_win, diff_width)
+    set_win_width(self.diff_right_win, diff_width)
 end
 
 ---@param text string
@@ -755,8 +761,6 @@ end
 ---@return MiniFugitDiffHunk?
 ---@return integer
 local function hunk_at_split_row(hunks, side, row)
-    local fallback
-
     for _, hunk in ipairs(hunks or {}) do
         local start = side == 'left' and hunk.old_start or hunk.new_start
         local count = side == 'left' and hunk.old_count or hunk.new_count
@@ -765,17 +769,9 @@ local function hunk_at_split_row(hunks, side, row)
         if count > 0 and row >= start and row <= stop then
             return hunk, hunk_offset_for_split_row(hunk, side, row)
         end
-
-        if count > 0 and row >= start then
-            fallback = hunk
-        end
     end
 
-    if fallback ~= nil then
-        return fallback, hunk_offset_for_split_row(fallback, side, row)
-    end
-
-    return (hunks or {})[1], 0
+    return nil, 0
 end
 
 ---@param self GitStatusWindow
