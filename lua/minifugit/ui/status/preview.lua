@@ -7,6 +7,10 @@ local selection = require('minifugit.ui.status.selection')
 
 local M = {}
 
+local SPLIT_DIFF_NAMESPACE = vim.api.nvim_create_namespace(
+    'MiniFugitSplitDiff'
+)
+
 ---@param self GitStatusWindow
 ---@param row integer?
 ---@return GitStatusEntryItem?
@@ -273,6 +277,23 @@ local function set_plain_lines(buf, lines)
     vim.bo[buf.id].modifiable = false
 end
 
+---@param win number?
+---@param width integer
+local function set_win_width(win, width)
+    if common.is_valid_win(win) then
+        pcall(vim.api.nvim_win_set_width, win, width)
+    end
+end
+
+---@param self GitStatusWindow
+local function resize_split_preview_windows(self)
+    local width = math.max(1, math.floor(vim.o.columns / 3))
+
+    set_win_width(self.win, width)
+    set_win_width(self.diff_left_win, width)
+    set_win_width(self.diff_right_win, width)
+end
+
 ---@param text string
 ---@return boolean
 local function is_diff_header(text)
@@ -470,6 +491,57 @@ local function diff_render_lines(lines, groups, opts)
     end
 
     return diff_lines, raw_rows
+end
+
+---@param buf Buffer
+---@param row integer?
+---@param group string
+---@param marker string
+local function mark_split_change(buf, row, group, marker)
+    if row == nil or row < 1 then
+        return
+    end
+
+    pcall(
+        vim.api.nvim_buf_set_extmark,
+        buf.id,
+        SPLIT_DIFF_NAMESPACE,
+        row - 1,
+        0,
+        {
+            line_hl_group = group,
+            sign_text = marker,
+            sign_hl_group = group,
+            priority = 200,
+        }
+    )
+end
+
+---@param left_buf Buffer
+---@param right_buf Buffer
+---@param diff_lines string[]
+---@param groups table<string, string>
+local function mark_split_changes(left_buf, right_buf, diff_lines, groups)
+    vim.api.nvim_buf_clear_namespace(left_buf.id, SPLIT_DIFF_NAMESPACE, 0, -1)
+    vim.api.nvim_buf_clear_namespace(right_buf.id, SPLIT_DIFF_NAMESPACE, 0, -1)
+
+    for _, line in ipairs(parse_diff_lines(diff_lines)) do
+        if line.kind == 'added' then
+            mark_split_change(
+                right_buf,
+                line.new_number,
+                groups.diff_added,
+                '+'
+            )
+        elseif line.kind == 'removed' then
+            mark_split_change(
+                left_buf,
+                line.old_number,
+                groups.diff_removed,
+                '-'
+            )
+        end
+    end
 end
 
 ---@param self GitStatusWindow
@@ -779,10 +851,11 @@ end
 
 ---@param self GitStatusWindow
 ---@param split_diff GitSplitDiff
+---@param diff_lines string[]
 ---@param preview_key string
 ---@param title string
 ---@return boolean
-local function show_split_diff(self, split_diff, preview_key, title)
+local function show_split_diff(self, split_diff, diff_lines, preview_key, title)
     if (M.has_open_diff(self) or has_any_split_diff(self))
         and not has_open_split_diff(self)
     then
@@ -804,6 +877,7 @@ local function show_split_diff(self, split_diff, preview_key, title)
     self.diff_right_buf = right_buf
     set_plain_lines(left_buf, split_diff.left.lines)
     set_plain_lines(right_buf, split_diff.right.lines)
+    mark_split_changes(left_buf, right_buf, diff_lines, self.groups)
 
     if split_diff.filetype ~= '' then
         vim.bo[left_buf.id].filetype = split_diff.filetype
@@ -865,6 +939,7 @@ local function show_split_diff(self, split_diff, preview_key, title)
         title .. ' [2/2] ' .. split_diff.right.title
     )
     self.diff_right_win = right_win
+    resize_split_preview_windows(self)
 
     diffoff(self.diff_left_win)
     diffoff(self.diff_right_win)
@@ -1148,6 +1223,13 @@ function M.open_diff(self, entry, section, opts)
         return true
     end
 
+    local lines, err = git.diff(entry, section)
+
+    if err ~= nil then
+        common.notify_error(err, 'Cannot show diff')
+        return false
+    end
+
     if resolved_layout(self) == 'split' then
         local split_diff, split_err = git.split_diff(entry, section)
 
@@ -1155,6 +1237,7 @@ function M.open_diff(self, entry, section, opts)
             return show_split_diff(
                 self,
                 split_diff,
+                lines,
                 preview_key,
                 diff_title(entry, section)
             )
@@ -1165,14 +1248,8 @@ function M.open_diff(self, entry, section, opts)
         end
     end
 
-    local lines, err = git.diff(entry, section)
     local diff_lines
     local raw_rows
-
-    if err ~= nil then
-        common.notify_error(err, 'Cannot show diff')
-        return false
-    end
 
     if #lines == 0 then
         diff_lines = { render.line('No diff for ' .. entry.path) }

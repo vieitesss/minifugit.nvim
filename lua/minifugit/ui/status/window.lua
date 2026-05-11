@@ -15,6 +15,7 @@ local M = {}
 ---@field winbar string
 ---@field diff boolean
 ---@field fillchars string
+---@field statuscolumn string
 
 ---@param opts MinifugitStatusOptions
 ---@return integer
@@ -134,8 +135,9 @@ end
 function M.configure_split_diff_win(win)
     vim.wo[win].number = true
     vim.wo[win].relativenumber = false
-    vim.wo[win].signcolumn = 'no'
+    vim.wo[win].signcolumn = 'yes:1'
     vim.wo[win].foldcolumn = '0'
+    vim.wo[win].statuscolumn = '%l %s '
     vim.wo[win].wrap = false
     vim.wo[win].cursorline = false
     vim.api.nvim_win_call(win, function()
@@ -157,6 +159,7 @@ function M.capture_winopts(win)
         winbar = vim.wo[win].winbar,
         diff = vim.wo[win].diff,
         fillchars = vim.wo[win].fillchars,
+        statuscolumn = vim.wo[win].statuscolumn,
     }
 end
 
@@ -177,6 +180,7 @@ function M.restore_winopts(win, opts)
     vim.wo[win].winbar = opts.winbar
     vim.wo[win].diff = opts.diff
     vim.wo[win].fillchars = opts.fillchars
+    vim.wo[win].statuscolumn = opts.statuscolumn
 end
 
 return M

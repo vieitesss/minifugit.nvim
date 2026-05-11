@@ -127,3 +127,4 @@ Default diff-preview mappings:
 | n | `l` | Toggle line numbers |
 | n | `m` | Toggle metadata rows |
 | n | `t` | Toggle stacked/split layout |
+
