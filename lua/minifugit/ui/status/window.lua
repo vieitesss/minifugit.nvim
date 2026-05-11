@@ -26,7 +26,7 @@ end
 ---@param entry GitStatusEntry
 ---@return string
 local function entry_path(entry)
-    local root = git.root();
+    local root = git.root()
 
     if root == '' then
         return vim.fn.fnamemodify(entry.path, ':p')
