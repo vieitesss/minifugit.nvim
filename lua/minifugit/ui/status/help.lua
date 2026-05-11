@@ -32,9 +32,9 @@ local sections = {
         rows = {
             { 'q', 'Close diff preview' },
             { '[h / ]h', 'Jump to previous or next hunk' },
-            { 's', 'Stage current unstaged hunk (stacked only)' },
-            { 'u', 'Unstage current staged hunk (stacked only)' },
-            { 'd', 'Discard current unstaged hunk (stacked only)' },
+            { 's', 'Stage current unstaged hunk' },
+            { 'u', 'Unstage current staged hunk' },
+            { 'd', 'Discard current unstaged hunk' },
             { 'w', 'Toggle wrap' },
             { 'l', 'Toggle line numbers' },
             { 'm', 'Toggle metadata rows (stacked only)' },

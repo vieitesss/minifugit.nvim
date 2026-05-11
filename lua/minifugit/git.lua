@@ -709,7 +709,11 @@ local function read_worktree_lines(path)
         return {}, 'Diff preview is not available for directories'
     end
 
-    local lines = vim.fn.readfile(full_path)
+    local ok, lines = pcall(vim.fn.readfile, full_path)
+
+    if not ok then
+        return {}, 'Cannot read file: ' .. tostring(lines)
+    end
 
     return lines, nil
 end
@@ -788,8 +792,16 @@ function git.split_diff(entry, section)
         end
 
         return {
-            left = { title = 'HEAD:' .. old_path, lines = left },
-            right = { title = 'index:' .. entry.path, lines = right },
+            left = {
+                title = entry.staged == 'A' and '/dev/null'
+                    or 'HEAD:' .. old_path,
+                lines = left,
+            },
+            right = {
+                title = entry.staged == 'D' and '/dev/null'
+                    or 'index:' .. entry.path,
+                lines = right,
+            },
             filetype = ft,
         }, nil
     end
@@ -817,8 +829,16 @@ function git.split_diff(entry, section)
         end
 
         return {
-            left = { title = 'index:' .. old_path, lines = left },
-            right = { title = 'worktree:' .. entry.path, lines = right },
+            left = {
+                title = entry.unstaged == 'A' and '/dev/null'
+                    or 'index:' .. old_path,
+                lines = left,
+            },
+            right = {
+                title = entry.unstaged == 'D' and '/dev/null'
+                    or 'worktree:' .. entry.path,
+                lines = right,
+            },
             filetype = ft,
         }, nil
     end

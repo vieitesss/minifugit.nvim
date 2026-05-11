@@ -111,6 +111,24 @@ end
 ---@field raw_row integer
 ---@field text string
 
+---@class MiniFugitDiffHunk
+---@field index integer
+---@field raw_header_row integer
+---@field raw_start_row integer
+---@field raw_end_row integer
+---@field old_start integer
+---@field old_count integer
+---@field old_end integer
+---@field new_start integer
+---@field new_count integer
+---@field new_end integer
+---@field stacked_row integer?
+
+---@class MiniFugitDiffHunkPosition
+---@field hunk_index integer
+---@field side 'left'|'right'
+---@field offset integer
+
 ---@class MiniFugitDiffRenderOpts
 ---@field show_headers boolean?
 ---@field show_numbers boolean?
@@ -215,6 +233,17 @@ local function diffoff(win)
     end
 end
 
+---@param win number?
+---@param enabled boolean
+local function set_split_line_numbers(win, enabled)
+    if not common.is_valid_win(win) then
+        return
+    end
+
+    vim.wo[win].number = enabled
+    vim.wo[win].statuscolumn = enabled and '%l %s ' or '%s '
+end
+
 ---@param self GitStatusWindow
 ---@param buf_name string
 ---@param existing Buffer?
@@ -267,14 +296,45 @@ local function ensure_split_buf(self, buf_name, existing)
     })
 
     vim.keymap.set('n', 'l', function()
+        local enabled = false
+
         for _, win in ipairs({ self.diff_left_win, self.diff_right_win }) do
             if common.is_valid_win(win) then
-                vim.wo[win].number = not vim.wo[win].number
+                enabled = not vim.wo[win].number
+                break
             end
+        end
+
+        for _, win in ipairs({ self.diff_left_win, self.diff_right_win }) do
+            set_split_line_numbers(win, enabled)
         end
     end, {
         buffer = buf.id,
         desc = 'Toggle git diff preview line numbers',
+        silent = true,
+    })
+
+    vim.keymap.set('n', 's', function()
+        M.stage_current_hunk(self)
+    end, {
+        buffer = buf.id,
+        desc = 'Stage current git diff hunk',
+        silent = true,
+    })
+
+    vim.keymap.set('n', 'u', function()
+        M.unstage_current_hunk(self)
+    end, {
+        buffer = buf.id,
+        desc = 'Unstage current git diff hunk',
+        silent = true,
+    })
+
+    vim.keymap.set('n', 'd', function()
+        M.discard_current_hunk(self)
+    end, {
+        buffer = buf.id,
+        desc = 'Discard current git diff hunk',
         silent = true,
     })
 
@@ -391,16 +451,19 @@ local function diff_number_width(lines)
 end
 
 ---@param hunk_header string
----@return integer?, integer?
+---@return integer?, integer?, integer?, integer?
 local function parse_hunk_header(hunk_header)
-    local old_start, new_start =
-        hunk_header:match('^@@ %-(%d+)[^ ]* %+(%d+)[^ ]* @@')
+    local old_start, old_count, new_start, new_count =
+        hunk_header:match('^@@ %-(%d+),?(%d*) %+(%d+),?(%d*) @@')
 
     if old_start == nil or new_start == nil then
-        return nil, nil
+        return nil, nil, nil, nil
     end
 
-    return tonumber(old_start), tonumber(new_start)
+    return tonumber(old_start),
+        old_count == '' and 1 or tonumber(old_count),
+        tonumber(new_start),
+        new_count == '' and 1 or tonumber(new_count)
 end
 
 ---@param lines string[]
@@ -416,10 +479,17 @@ local function parse_diff_lines(lines)
         end
 
         if vim.startswith(text, '@@') then
-            old_number, new_number = parse_hunk_header(text)
+            local old_start, _, new_start = parse_hunk_header(text)
+            old_number, new_number = old_start, new_start
             table.insert(
                 parsed,
-                { kind = 'hunk', raw_row = raw_row, text = text }
+                {
+                    kind = 'hunk',
+                    old_number = old_number,
+                    new_number = new_number,
+                    raw_row = raw_row,
+                    text = text,
+                }
             )
         elseif is_diff_header(text) then
             table.insert(
@@ -474,6 +544,57 @@ local function parse_diff_lines(lines)
     return parsed
 end
 
+---@param start integer
+---@param count integer
+---@return integer
+local function range_end(start, count)
+    return count > 0 and start + count - 1 or start
+end
+
+---@param lines string[]
+---@return MiniFugitDiffHunk[]
+local function parse_diff_hunks(lines)
+    local hunks = {}
+    local current
+
+    for raw_row, text in ipairs(lines) do
+        if vim.startswith(text, '@@') then
+            if current ~= nil then
+                current.raw_end_row = raw_row - 1
+            end
+
+            local old_start, old_count, new_start, new_count =
+                parse_hunk_header(text)
+
+            if
+                old_start ~= nil
+                and old_count ~= nil
+                and new_start ~= nil
+                and new_count ~= nil
+            then
+                current = {
+                    index = #hunks + 1,
+                    raw_header_row = raw_row,
+                    raw_start_row = raw_row,
+                    raw_end_row = #lines,
+                    old_start = old_start,
+                    old_count = old_count,
+                    old_end = range_end(old_start, old_count),
+                    new_start = new_start,
+                    new_count = new_count,
+                    new_end = range_end(new_start, new_count),
+                }
+                table.insert(hunks, current)
+            end
+        elseif current ~= nil and vim.startswith(text, 'diff ') then
+            current.raw_end_row = raw_row - 1
+            current = nil
+        end
+    end
+
+    return hunks
+end
+
 ---@param lines string[]
 ---@param groups table<string, string>
 ---@param opts MiniFugitDiffRenderOpts
@@ -519,6 +640,301 @@ local function diff_render_lines(lines, groups, opts)
     end
 
     return diff_lines, raw_rows
+end
+
+---@param hunks MiniFugitDiffHunk[]
+---@param raw_rows integer[]?
+local function assign_stacked_rows(hunks, raw_rows)
+    if raw_rows == nil then
+        return
+    end
+
+    for _, hunk in ipairs(hunks) do
+        hunk.stacked_row = nil
+    end
+
+    for row, raw_row in ipairs(raw_rows) do
+        for _, hunk in ipairs(hunks) do
+            if raw_row == hunk.raw_header_row then
+                hunk.stacked_row = row
+                break
+            end
+        end
+    end
+end
+
+---@param hunks MiniFugitDiffHunk[]?
+---@param index integer
+---@return MiniFugitDiffHunk?
+local function hunk_by_index(hunks, index)
+    for _, hunk in ipairs(hunks or {}) do
+        if hunk.index == index then
+            return hunk
+        end
+    end
+
+    return nil
+end
+
+---@param hunks MiniFugitDiffHunk[]?
+---@param raw_row integer?
+---@return MiniFugitDiffHunk?
+local function hunk_at_raw_row(hunks, raw_row)
+    if raw_row == nil then
+        return nil
+    end
+
+    for _, hunk in ipairs(hunks or {}) do
+        if raw_row >= hunk.raw_start_row and raw_row <= hunk.raw_end_row then
+            return hunk
+        end
+    end
+
+    return nil
+end
+
+---@param raw_lines string[]?
+---@param raw_row integer?
+---@return MiniFugitDiffLine?
+local function diff_line_at_raw_row(raw_lines, raw_row)
+    if raw_lines == nil or raw_row == nil then
+        return nil
+    end
+
+    for _, line in ipairs(parse_diff_lines(raw_lines)) do
+        if line.raw_row == raw_row then
+            return line
+        end
+    end
+
+    return nil
+end
+
+---@param hunk MiniFugitDiffHunk
+---@param line MiniFugitDiffLine?
+---@return 'left'|'right'
+---@return integer
+local function hunk_position_from_diff_line(hunk, line)
+    if line == nil then
+        return 'right', 0
+    end
+
+    if line.kind == 'removed' and line.old_number ~= nil then
+        return 'left', math.max(0, line.old_number - hunk.old_start)
+    end
+
+    if line.new_number ~= nil then
+        return 'right', math.max(0, line.new_number - hunk.new_start)
+    end
+
+    if line.old_number ~= nil then
+        return 'left', math.max(0, line.old_number - hunk.old_start)
+    end
+
+    return 'right', 0
+end
+
+---@param hunk MiniFugitDiffHunk
+---@param side 'left'|'right'
+---@param row integer
+---@return integer
+local function hunk_offset_for_split_row(hunk, side, row)
+    local start = side == 'left' and hunk.old_start or hunk.new_start
+    local count = side == 'left' and hunk.old_count or hunk.new_count
+
+    if count <= 0 then
+        return 0
+    end
+
+    return math.min(math.max(row - start, 0), count - 1)
+end
+
+---@param hunks MiniFugitDiffHunk[]?
+---@param side 'left'|'right'
+---@param row integer
+---@return MiniFugitDiffHunk?
+---@return integer
+local function hunk_at_split_row(hunks, side, row)
+    local fallback
+
+    for _, hunk in ipairs(hunks or {}) do
+        local start = side == 'left' and hunk.old_start or hunk.new_start
+        local count = side == 'left' and hunk.old_count or hunk.new_count
+        local stop = side == 'left' and hunk.old_end or hunk.new_end
+
+        if count > 0 and row >= start and row <= stop then
+            return hunk, hunk_offset_for_split_row(hunk, side, row)
+        end
+
+        if count > 0 and row >= start then
+            fallback = hunk
+        end
+    end
+
+    if fallback ~= nil then
+        return fallback, hunk_offset_for_split_row(fallback, side, row)
+    end
+
+    return (hunks or {})[1], 0
+end
+
+---@param self GitStatusWindow
+---@return MiniFugitDiffHunkPosition?
+local function current_hunk_position(self)
+    local current_win = vim.api.nvim_get_current_win()
+    local current_buf = vim.api.nvim_win_get_buf(current_win)
+    local cursor_row = vim.api.nvim_win_get_cursor(current_win)[1]
+    local is_stacked = self.diff_buf ~= nil and current_buf == self.diff_buf.id
+    local is_left = self.diff_left_buf ~= nil
+        and current_buf == self.diff_left_buf.id
+    local is_right = self.diff_right_buf ~= nil
+        and current_buf == self.diff_right_buf.id
+
+    if is_stacked then
+        local raw_row = self.diff_raw_rows and self.diff_raw_rows[cursor_row]
+        local hunk = hunk_at_raw_row(self.diff_hunks, raw_row)
+
+        if hunk == nil then
+            return nil
+        end
+
+        local line = diff_line_at_raw_row(self.diff_raw_lines, raw_row)
+        local side, offset = hunk_position_from_diff_line(hunk, line)
+
+        return { hunk_index = hunk.index, side = side, offset = offset }
+    end
+
+    if is_left or is_right then
+        local side = is_left and 'left' or 'right'
+        local hunk, offset = hunk_at_split_row(
+            self.diff_hunks,
+            side,
+            cursor_row
+        )
+
+        if hunk == nil then
+            return nil
+        end
+
+        return { hunk_index = hunk.index, side = side, offset = offset }
+    end
+
+    return nil
+end
+
+---@param raw_lines string[]?
+---@param raw_rows integer[]?
+---@param hunk MiniFugitDiffHunk
+---@param side 'left'|'right'
+---@param offset integer
+---@return integer?
+local function stacked_row_for_hunk_position(
+    raw_lines,
+    raw_rows,
+    hunk,
+    side,
+    offset
+)
+    if raw_rows == nil then
+        return hunk.stacked_row
+    end
+
+    local target = side == 'left' and hunk.old_start + offset
+        or hunk.new_start + offset
+
+    for row, raw_row in ipairs(raw_rows) do
+        if raw_row >= hunk.raw_start_row and raw_row <= hunk.raw_end_row then
+            local line = diff_line_at_raw_row(raw_lines, raw_row)
+            local line_number
+
+            if line ~= nil then
+                if side == 'left' then
+                    line_number = line.old_number
+                else
+                    line_number = line.new_number
+                end
+            end
+
+            if line_number == target then
+                return row
+            end
+        end
+    end
+
+    return hunk.stacked_row
+end
+
+---@param hunk MiniFugitDiffHunk
+---@param position MiniFugitDiffHunkPosition
+---@return 'left'|'right'
+---@return integer
+local function split_row_for_hunk_position(hunk, position)
+    local side = position.side
+    local start = side == 'left' and hunk.old_start or hunk.new_start
+    local count = side == 'left' and hunk.old_count or hunk.new_count
+
+    if count <= 0 then
+        side = side == 'left' and 'right' or 'left'
+        start = side == 'left' and hunk.old_start or hunk.new_start
+        count = side == 'left' and hunk.old_count or hunk.new_count
+    end
+
+    if count <= 0 then
+        return side, 1
+    end
+
+    return side, start + math.min(position.offset, count - 1)
+end
+
+---@param win number
+---@param row integer?
+local function set_cursor_row(win, row)
+    if row == nil then
+        return
+    end
+
+    local buf = vim.api.nvim_win_get_buf(win)
+    local line_count = math.max(1, vim.api.nvim_buf_line_count(buf))
+    local clamped = math.min(math.max(row, 1), line_count)
+
+    pcall(vim.api.nvim_win_set_cursor, win, { clamped, 0 })
+end
+
+---@param self GitStatusWindow
+---@param position MiniFugitDiffHunkPosition?
+local function restore_hunk_position(self, position)
+    if position == nil then
+        return
+    end
+
+    local hunk = hunk_by_index(self.diff_hunks, position.hunk_index)
+
+    if hunk == nil then
+        return
+    end
+
+    if common.is_valid_win(self.diff_win) then
+        local row = stacked_row_for_hunk_position(
+            self.diff_raw_lines,
+            self.diff_raw_rows,
+            hunk,
+            position.side,
+            position.offset
+        )
+
+        vim.api.nvim_set_current_win(self.diff_win)
+        set_cursor_row(self.diff_win, row)
+
+        return
+    end
+
+    local side, row = split_row_for_hunk_position(hunk, position)
+    local win = side == 'left' and self.diff_left_win or self.diff_right_win
+
+    if common.is_valid_win(win) then
+        vim.api.nvim_set_current_win(win)
+        set_cursor_row(win, row)
+    end
 end
 
 ---@param buf Buffer
@@ -573,40 +989,17 @@ local function mark_split_changes(left_buf, right_buf, diff_lines, groups)
 end
 
 ---@param self GitStatusWindow
+---@param hunk MiniFugitDiffHunk
 ---@return string[]?
-local function current_hunk_patch(self)
-    if not M.has_open_diff(self) or self.diff_raw_lines == nil then
+local function hunk_patch(self, hunk)
+    local lines = self.diff_raw_lines
+
+    if lines == nil then
         common.notify_warn('Diff preview is not open')
         return nil
     end
 
-    local cursor = vim.api.nvim_win_get_cursor(self.diff_win)[1]
-    local raw_row = self.diff_raw_rows and self.diff_raw_rows[cursor]
-
-    if raw_row == nil then
-        common.notify_warn('No hunk under cursor')
-        return nil
-    end
-
-    local lines = self.diff_raw_lines
-    local hunk_start
-
-    for row = raw_row, 1, -1 do
-        if vim.startswith(lines[row] or '', '@@') then
-            hunk_start = row
-            break
-        end
-
-        if vim.startswith(lines[row] or '', 'diff ') then
-            break
-        end
-    end
-
-    if hunk_start == nil then
-        common.notify_warn('No hunk under cursor')
-        return nil
-    end
-
+    local hunk_start = hunk.raw_header_row
     local file_start = hunk_start
 
     while
@@ -624,28 +1017,42 @@ local function current_hunk_patch(self)
         end
     end
 
-    local hunk_stop = #lines
-
-    for row = hunk_start + 1, #lines do
-        local line = lines[row] or ''
-
-        if vim.startswith(line, '@@') or vim.startswith(line, 'diff ') then
-            hunk_stop = row - 1
-            break
-        end
-    end
-
     local patch = {}
 
     for row = file_start, header_stop do
         table.insert(patch, lines[row])
     end
 
-    for row = hunk_start, hunk_stop do
+    for row = hunk_start, hunk.raw_end_row do
         table.insert(patch, lines[row])
     end
 
     return patch
+end
+
+---@param self GitStatusWindow
+---@return string[]?
+local function current_hunk_patch(self)
+    if not M.has_open_diff(self) or self.diff_raw_lines == nil then
+        common.notify_warn('Diff preview is not open')
+        return nil
+    end
+
+    local position = current_hunk_position(self)
+
+    if position == nil then
+        common.notify_warn('No hunk under cursor')
+        return nil
+    end
+
+    local hunk = hunk_by_index(self.diff_hunks, position.hunk_index)
+
+    if hunk == nil then
+        common.notify_warn('No hunk under cursor')
+        return nil
+    end
+
+    return hunk_patch(self, hunk)
 end
 
 ---@param self GitStatusWindow
@@ -694,7 +1101,13 @@ local function apply_current_hunk(self, kind)
     self:refresh(cursor_state)
 
     if M.has_open_diff(self) then
-        vim.api.nvim_set_current_win(self.diff_win)
+        if common.is_valid_win(self.diff_win) then
+            vim.api.nvim_set_current_win(self.diff_win)
+        elseif common.is_valid_win(self.diff_right_win) then
+            vim.api.nvim_set_current_win(self.diff_right_win)
+        elseif common.is_valid_win(self.diff_left_win) then
+            vim.api.nvim_set_current_win(self.diff_left_win)
+        end
     end
 
     return true
@@ -769,13 +1182,22 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.toggle_layout(self)
+    local current = resolved_layout(self)
+    local next_layout = current == 'split' and 'stacked' or 'split'
+
     if not M.has_open_diff(self) then
-        common.notify_warn('Diff preview is not open')
-        return false
+        self.diff_layout_override = next_layout
+        return true
     end
 
-    local current = resolved_layout(self)
-    return M.set_layout(self, current == 'split' and 'stacked' or 'split')
+    local position = current_hunk_position(self)
+    local ok = M.set_layout(self, next_layout)
+
+    if ok then
+        restore_hunk_position(self, position)
+    end
+
+    return ok
 end
 
 ---@param self GitStatusWindow
@@ -935,6 +1357,7 @@ local function show_split_diff(self, split_diff, diff_lines, preview_key, title)
 
     vim.api.nvim_win_set_buf(target_win, left_buf.id)
     window.configure_split_diff_win(target_win)
+    set_split_line_numbers(target_win, self.diff_show_numbers)
     vim.wo[target_win].wrap = self.diff_wrap
     vim.wo[target_win].winbar = winbar_text(
         title .. ' [1/2] ' .. split_diff.left.title
@@ -962,6 +1385,7 @@ local function show_split_diff(self, split_diff, diff_lines, preview_key, title)
 
     vim.api.nvim_win_set_buf(right_win, right_buf.id)
     window.configure_split_diff_win(right_win)
+    set_split_line_numbers(right_win, self.diff_show_numbers)
     vim.wo[right_win].wrap = self.diff_wrap
     vim.wo[right_win].winbar = winbar_text(
         title .. ' [2/2] ' .. split_diff.right.title
@@ -1027,6 +1451,7 @@ function M.open_commit_diff(self, commit, opts)
 
     self.diff_raw_lines = nil
     self.diff_raw_rows = nil
+    self.diff_hunks = nil
     self.diff_section = nil
 
     return show_diff_lines(
@@ -1117,6 +1542,7 @@ function M.close_diff(self)
     self.diff_preview_key = nil
     self.diff_raw_lines = nil
     self.diff_raw_rows = nil
+    self.diff_hunks = nil
     self.diff_section = nil
 
     if self.win ~= nil and common.is_valid_win(self.win) then
@@ -1258,20 +1684,31 @@ function M.open_diff(self, entry, section, opts)
         return false
     end
 
+    local hunks = parse_diff_hunks(lines)
+
     if resolved_layout(self) == 'split' then
         local split_diff, split_err = git.split_diff(entry, section)
 
         if split_diff ~= nil then
-            return show_split_diff(
+            local ok = show_split_diff(
                 self,
                 split_diff,
                 lines,
                 preview_key,
                 diff_title(entry, section)
             )
+
+            if ok then
+                self.diff_raw_lines = lines
+                self.diff_raw_rows = nil
+                self.diff_hunks = hunks
+                self.diff_section = section
+            end
+
+            return ok
         end
 
-        if split_err ~= nil then
+        if split_err ~= nil and opts.notify ~= false then
             common.notify_warn(split_err .. '; showing stacked diff')
         end
     end
@@ -1288,16 +1725,23 @@ function M.open_diff(self, entry, section, opts)
         })
     end
 
-    self.diff_raw_lines = lines
-    self.diff_raw_rows = raw_rows
-    self.diff_section = section
+    assign_stacked_rows(hunks, raw_rows)
 
-    return show_diff_lines(
+    local ok = show_diff_lines(
         self,
         diff_lines,
         preview_key,
         diff_title(entry, section)
     )
+
+    if ok then
+        self.diff_raw_lines = lines
+        self.diff_raw_rows = raw_rows
+        self.diff_hunks = hunks
+        self.diff_section = section
+    end
+
+    return ok
 end
 
 ---@param self GitStatusWindow
