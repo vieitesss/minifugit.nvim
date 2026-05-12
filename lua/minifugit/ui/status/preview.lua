@@ -484,6 +484,10 @@ local function parse_diff_lines(lines)
             goto continue
         end
 
+        if vim.startswith(text, '\\ No newline') then
+            goto continue
+        end
+
         if vim.startswith(text, '@@') then
             local old_start, _, new_start = parse_hunk_header(text)
             old_number, new_number = old_start, new_start
