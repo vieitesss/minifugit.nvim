@@ -141,7 +141,9 @@ function M.configure_split_diff_win(win)
     vim.wo[win].wrap = false
     vim.wo[win].cursorline = false
     vim.api.nvim_win_call(win, function()
-        vim.opt_local.fillchars:append({ diff = ' ' })
+        local fc = vim.opt_local.fillchars:get()
+        fc.diff = ' '
+        vim.opt_local.fillchars = fc
     end)
 end
 
