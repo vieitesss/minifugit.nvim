@@ -7,7 +7,8 @@ local selection = require('minifugit.ui.status.selection')
 
 local M = {}
 
-local SPLIT_DIFF_NAMESPACE = vim.api.nvim_create_namespace('MiniFugitSplitDiff')
+local SPLIT_DIFF_NAMESPACE =
+    vim.api.nvim_create_namespace('minifugit.ui.split_diff')
 
 ---@param self GitStatusWindow
 ---@param row integer?
@@ -1681,10 +1682,13 @@ function M.open_diff(self, entry, section, opts)
 
     local preview_key =
         table.concat({ section or '', entry.orig_path or '', entry.path }, '\0')
+    local has_open_preview = resolved_layout(self) == 'split'
+            and has_open_split_diff(self)
+        or M.has_open_diff(self)
 
     if
         not opts.force
-        and M.has_open_diff(self)
+        and has_open_preview
         and self.diff_preview_key == preview_key
     then
         return true
