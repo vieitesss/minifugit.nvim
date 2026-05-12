@@ -702,7 +702,7 @@ local function read_worktree_lines(path)
     local stat = vim.uv.fs_stat(full_path)
 
     if stat == nil then
-        return {}, nil
+        return {}, 'Cannot stat file: ' .. full_path
     end
 
     if stat.type == 'directory' then
