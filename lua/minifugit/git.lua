@@ -813,7 +813,7 @@ function git.split_diff(entry, section)
         local err
 
         if entry.unstaged ~= 'A' then
-            left, err = read_blob_lines(':' .. old_path)
+            left, err = read_blob_lines(':' .. entry.path)
 
             if err ~= nil then
                 return nil, err
@@ -833,7 +833,7 @@ function git.split_diff(entry, section)
         return {
             left = {
                 title = entry.unstaged == 'A' and '/dev/null'
-                    or 'index:' .. old_path,
+                    or 'index:' .. entry.path,
                 lines = left,
             },
             right = {

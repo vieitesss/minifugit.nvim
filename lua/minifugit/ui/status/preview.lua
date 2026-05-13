@@ -224,6 +224,15 @@ local function has_any_split_diff(self)
     return has_left or has_right
 end
 
+---@param self GitStatusWindow
+---@return boolean
+local function has_open_stacked_diff(self)
+    return self.diff_buf ~= nil
+        and self.diff_buf:is_valid()
+        and common.is_valid_win(self.diff_win)
+        and vim.api.nvim_win_get_buf(self.diff_win) == self.diff_buf.id
+end
+
 ---@param win number?
 local function diffoff(win)
     if common.is_valid_win(win) then
@@ -770,6 +779,12 @@ local function hunk_at_split_row(hunks, side, row)
 
         if count > 0 and row >= start and row <= stop then
             return hunk, hunk_offset_for_split_row(hunk, side, row)
+        end
+
+        -- count == 0 means a pure insertion or pure deletion; Vim's diff-filler
+        -- may anchor the cursor at `start` or `start - 1` on the empty side.
+        if count == 0 and (row == start or row == start - 1) then
+            return hunk, 0
         end
     end
 
@@ -1682,9 +1697,9 @@ function M.open_diff(self, entry, section, opts)
 
     local preview_key =
         table.concat({ section or '', entry.orig_path or '', entry.path }, '\0')
-    local has_open_preview = resolved_layout(self) == 'split'
-            and has_open_split_diff(self)
-        or M.has_open_diff(self)
+    local layout = resolved_layout(self)
+    local has_open_preview = (layout == 'split' and has_open_split_diff(self))
+        or (layout ~= 'split' and has_open_stacked_diff(self))
 
     if
         not opts.force
@@ -1703,7 +1718,7 @@ function M.open_diff(self, entry, section, opts)
 
     local hunks = parse_diff_hunks(lines)
 
-    if resolved_layout(self) == 'split' then
+    if layout == 'split' then
         local split_diff, split_err = git.split_diff(entry, section)
 
         if split_diff ~= nil then
