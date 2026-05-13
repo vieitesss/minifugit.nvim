@@ -31,6 +31,7 @@ local sections = {
         title = 'Diff preview mappings',
         rows = {
             { 'q', 'Close diff preview' },
+            { '<CR>', 'Go to code under cursor' },
             { '[h / ]h', 'Jump to previous or next hunk' },
             { 's', 'Stage current unstaged hunk' },
             { 'u', 'Unstage current staged hunk' },
