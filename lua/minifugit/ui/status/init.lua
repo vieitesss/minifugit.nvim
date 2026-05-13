@@ -114,6 +114,11 @@ local HIGHLIGHT_SPECS = {
         sources = { 'DiagnosticInfo', 'Identifier' },
         fallback_fg = 0x61AFEF,
     },
+    diff_line_nr = {
+        name = 'MiniFugitDiffLineNr',
+        sources = { 'LineNr', 'Comment' },
+        fallback_fg = 0x5C6370,
+    },
 }
 
 ---@return vim.api.keyset.highlight

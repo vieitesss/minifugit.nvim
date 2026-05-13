@@ -6,6 +6,7 @@
 ---@class MiniFugitRenderLine
 ---@field text string
 ---@field highlights MiniFugitRenderSpan[]
+---@field line_hl_group string?
 ---@field data any?
 
 local M = {}
@@ -57,6 +58,13 @@ function M.apply(buf, lines)
     vim.api.nvim_buf_clear_namespace(buf, namespace, 0, -1)
 
     for index, line in ipairs(lines) do
+        if line.line_hl_group then
+            vim.api.nvim_buf_set_extmark(buf, namespace, index - 1, 0, {
+                line_hl_group = line.line_hl_group,
+                priority = 200,
+            })
+        end
+
         for _, range in ipairs(line.highlights) do
             vim.api.nvim_buf_set_extmark(
                 buf,
@@ -66,7 +74,8 @@ function M.apply(buf, lines)
                 {
                     end_col = range.end_col,
                     hl_group = range.group,
-                    hl_mode = 'replace',
+                    hl_mode = 'combine',
+                    priority = 200,
                 }
             )
         end
