@@ -1,4 +1,6 @@
 local Buffer = require('minifugit.ui.buffer')
+local diff_parser = require('minifugit.ui.diff.parser')
+local diff_render = require('minifugit.ui.diff.render')
 local render = require('minifugit.ui.render')
 local git = require('minifugit.git')
 local common = require('minifugit.ui.status.common')
@@ -103,68 +105,10 @@ local function refresh_commit_item(self, state)
     return nil
 end
 
----@class MiniFugitDiffLine
----@field kind 'header'|'hunk'|'context'|'added'|'removed'
----@field old_number integer?
----@field new_number integer?
----@field raw_row integer
----@field text string
-
----@class MiniFugitDiffHunk
----@field index integer
----@field raw_header_row integer
----@field raw_start_row integer
----@field raw_end_row integer
----@field old_start integer
----@field old_count integer
----@field old_end integer
----@field new_start integer
----@field new_count integer
----@field new_end integer
----@field stacked_row integer?
-
 ---@class MiniFugitDiffHunkPosition
 ---@field hunk_index integer
 ---@field side 'left'|'right'
 ---@field offset integer
-
----@class MiniFugitSyntaxSpan
----@field group string
----@field start_col integer
----@field end_col integer
-
----@class MiniFugitDiffSyntaxSource
----@field filetype string
----@field left_lines string[]
----@field right_lines string[]
-
----@class MiniFugitDiffRenderOpts
----@field show_headers boolean?
----@field show_numbers boolean?
----@field syntax MiniFugitDiffSyntaxSource?
-
-local DIFF_HEADER_PREFIXES = {
-    'diff ',
-    'index ',
-    '--- ',
-    '+++ ',
-    'old mode ',
-    'new mode ',
-    'deleted file mode ',
-    'new file mode ',
-    'similarity index ',
-    'dissimilarity index ',
-    'rename from ',
-    'rename to ',
-    'copy from ',
-    'copy to ',
-    'Binary files ',
-    'GIT binary patch',
-}
-
-local DIFF_HEADER_EXACT = {
-    '---',
-}
 
 ---@param text string
 ---@return string
@@ -213,7 +157,8 @@ local function has_open_split_diff(self)
         and self.diff_right_buf:is_valid()
         and common.is_valid_win(self.diff_left_win)
         and common.is_valid_win(self.diff_right_win)
-        and vim.api.nvim_win_get_buf(self.diff_left_win) == self.diff_left_buf.id
+        and vim.api.nvim_win_get_buf(self.diff_left_win)
+            == self.diff_left_buf.id
         and vim.api.nvim_win_get_buf(self.diff_right_win)
             == self.diff_right_buf.id
 end
@@ -407,668 +352,6 @@ local function resize_split_preview_windows(self)
     set_win_width(self.diff_right_win, width)
 end
 
----@param text string
----@return boolean
-local function is_diff_header(text)
-    for _, prefix in ipairs(DIFF_HEADER_PREFIXES) do
-        if vim.startswith(text, prefix) then
-            return true
-        end
-    end
-
-    for _, exact in ipairs(DIFF_HEADER_EXACT) do
-        if text == exact then
-            return true
-        end
-    end
-
-    return false
-end
-
----@param number integer?
----@param width integer
----@return string
-local function format_number(number, width)
-    if number == nil then
-        return string.rep(' ', width)
-    end
-
-    return string.format('%' .. width .. 'd', number)
-end
-
----@param line MiniFugitDiffLine
----@param width integer
----@param opts MiniFugitDiffRenderOpts
----@return string
-local function format_diff_line(line, width, opts)
-    if line.kind == 'header' or line.kind == 'hunk' then
-        return line.text
-    end
-
-    if opts.show_numbers == false then
-        return line.text
-    end
-
-    return string.format(
-        '%s %s %s',
-        format_number(line.old_number, width),
-        format_number(line.new_number, width),
-        line.text
-    )
-end
-
----@param lines MiniFugitDiffLine[]
----@return integer
-local function diff_number_width(lines)
-    local max_number = 0
-
-    for _, line in ipairs(lines) do
-        if line.old_number ~= nil then
-            max_number = math.max(max_number, line.old_number)
-        end
-
-        if line.new_number ~= nil then
-            max_number = math.max(max_number, line.new_number)
-        end
-    end
-
-    return math.max(#tostring(max_number), 1)
-end
-
----@param hunk_header string
----@return integer?, integer?, integer?, integer?
-local function parse_hunk_header(hunk_header)
-    local old_start, old_count, new_start, new_count =
-        hunk_header:match('^@@ %-(%d+),?(%d*) %+(%d+),?(%d*) @@')
-
-    if old_start == nil or new_start == nil then
-        return nil, nil, nil, nil
-    end
-
-    return tonumber(old_start),
-        old_count == '' and 1 or tonumber(old_count),
-        tonumber(new_start),
-        new_count == '' and 1 or tonumber(new_count)
-end
-
----@param lines string[]
----@return MiniFugitDiffLine[]
-local function parse_diff_lines(lines)
-    local parsed = {}
-    local old_number
-    local new_number
-
-    for raw_row, text in ipairs(lines) do
-        if text == '' then
-            goto continue
-        end
-
-        if vim.startswith(text, '\\ No newline') then
-            goto continue
-        end
-
-        if vim.startswith(text, '@@') then
-            local old_start, _, new_start = parse_hunk_header(text)
-            old_number, new_number = old_start, new_start
-            table.insert(parsed, {
-                kind = 'hunk',
-                old_number = old_number,
-                new_number = new_number,
-                raw_row = raw_row,
-                text = text,
-            })
-        elseif is_diff_header(text) then
-            table.insert(
-                parsed,
-                { kind = 'header', raw_row = raw_row, text = text }
-            )
-        elseif vim.startswith(text, '+') then
-            table.insert(parsed, {
-                kind = 'added',
-                old_number = nil,
-                new_number = new_number,
-                raw_row = raw_row,
-                text = text,
-            })
-
-            if new_number ~= nil then
-                new_number = new_number + 1
-            end
-        elseif vim.startswith(text, '-') then
-            table.insert(parsed, {
-                kind = 'removed',
-                old_number = old_number,
-                new_number = nil,
-                raw_row = raw_row,
-                text = text,
-            })
-
-            if old_number ~= nil then
-                old_number = old_number + 1
-            end
-        else
-            table.insert(parsed, {
-                kind = 'context',
-                old_number = old_number,
-                new_number = new_number,
-                raw_row = raw_row,
-                text = text,
-            })
-
-            if old_number ~= nil then
-                old_number = old_number + 1
-            end
-
-            if new_number ~= nil then
-                new_number = new_number + 1
-            end
-        end
-
-        ::continue::
-    end
-
-    return parsed
-end
-
----@param start integer
----@param count integer
----@return integer
-local function range_end(start, count)
-    return count > 0 and start + count - 1 or start
-end
-
----@param lines string[]
----@return MiniFugitDiffHunk[]
-local function parse_diff_hunks(lines)
-    local hunks = {}
-    local current
-
-    for raw_row, text in ipairs(lines) do
-        if vim.startswith(text, '@@') then
-            if current ~= nil then
-                current.raw_end_row = raw_row - 1
-            end
-
-            local old_start, old_count, new_start, new_count =
-                parse_hunk_header(text)
-
-            if
-                old_start ~= nil
-                and old_count ~= nil
-                and new_start ~= nil
-                and new_count ~= nil
-            then
-                current = {
-                    index = #hunks + 1,
-                    raw_header_row = raw_row,
-                    raw_start_row = raw_row,
-                    raw_end_row = #lines,
-                    old_start = old_start,
-                    old_count = old_count,
-                    old_end = range_end(old_start, old_count),
-                    new_start = new_start,
-                    new_count = new_count,
-                    new_end = range_end(new_start, new_count),
-                }
-                table.insert(hunks, current)
-            end
-        elseif current ~= nil and vim.startswith(text, 'diff ') then
-            current.raw_end_row = raw_row - 1
-            current = nil
-        end
-    end
-
-    return hunks
-end
-
----@param lines string[]
----@return table<integer, MiniFugitSyntaxSpan[]>
-local function empty_syntax_spans(lines)
-    local spans = {}
-
-    for index = 1, #lines do
-        spans[index] = {}
-    end
-
-    return spans
-end
-
----@param spans table<integer, MiniFugitSyntaxSpan[]>
----@return boolean
-local function has_syntax_spans(spans)
-    for _, line_spans in pairs(spans) do
-        if #line_spans > 0 then
-            return true
-        end
-    end
-
-    return false
-end
-
----@param name string
----@return boolean
-local function highlight_exists(name)
-    return vim.fn.hlexists(name) == 1
-end
-
----@param capture string
----@param lang string
----@return string?
-local function treesitter_capture_group(capture, lang)
-    local lang_group = '@' .. capture .. '.' .. lang
-
-    if highlight_exists(lang_group) then
-        return lang_group
-    end
-
-    local group = '@' .. capture
-
-    if highlight_exists(group) then
-        return group
-    end
-
-    return nil
-end
-
----@param spans table<integer, MiniFugitSyntaxSpan[]>
----@param lines string[]
----@param row integer
----@param start_col integer
----@param end_col integer
----@param group string?
-local function add_syntax_span(spans, lines, row, start_col, end_col, group)
-    if group == nil or row < 1 or row > #lines or end_col <= start_col then
-        return
-    end
-
-    table.insert(spans[row], {
-        group = group,
-        start_col = start_col,
-        end_col = end_col,
-    })
-end
-
-local VIM_SYNTAX_MAX_LINES = 2000
-local VIM_SYNTAX_MAX_BYTES = 200000
-
----@param buf integer
----@param filetype string
----@param lines string[]
----@param rows table<integer, true>?
----@return table<integer, MiniFugitSyntaxSpan[]>?
-local function treesitter_syntax_spans(buf, filetype, lines, rows)
-    if
-        vim.treesitter == nil
-        or vim.treesitter.get_parser == nil
-        or vim.treesitter.query == nil
-        or vim.treesitter.query.get == nil
-    then
-        return nil
-    end
-
-    local lang = filetype
-
-    if vim.treesitter.language ~= nil then
-        local ok, matched_lang =
-            pcall(vim.treesitter.language.get_lang, filetype)
-
-        if ok and matched_lang ~= nil then
-            lang = matched_lang
-        end
-    end
-
-    local ok_parser, parser = pcall(vim.treesitter.get_parser, buf, lang)
-
-    if not ok_parser or parser == nil then
-        return nil
-    end
-
-    local ok_query, query = pcall(vim.treesitter.query.get, lang, 'highlights')
-
-    if not ok_query or query == nil then
-        return nil
-    end
-
-    local ok_parse, trees = pcall(function()
-        return parser:parse()
-    end)
-
-    if not ok_parse or trees == nil then
-        return nil
-    end
-
-    local spans = empty_syntax_spans(lines)
-
-    local start_row = 0
-    local end_row = -1
-
-    if rows ~= nil then
-        for row in pairs(rows) do
-            start_row = start_row == 0 and row - 1
-                or math.min(start_row, row - 1)
-            end_row = math.max(end_row, row)
-        end
-    end
-
-    for _, tree in ipairs(trees) do
-        for id, node in query:iter_captures(
-            tree:root(),
-            buf,
-            start_row,
-            end_row
-        ) do
-            local capture = query.captures[id]
-            local group = treesitter_capture_group(capture, lang)
-            local node_start_row, start_col, node_end_row, end_col =
-                node:range()
-
-            for row = node_start_row + 1, node_end_row + 1 do
-                if rows == nil or rows[row] then
-                    add_syntax_span(
-                        spans,
-                        lines,
-                        row,
-                        row == node_start_row + 1 and start_col or 0,
-                        row == node_end_row + 1 and end_col
-                            or #(lines[row] or ''),
-                        group
-                    )
-                end
-            end
-        end
-    end
-
-    return has_syntax_spans(spans) and spans or nil
-end
-
----@param lines string[]
----@return boolean
-local function vim_syntax_fallback_allowed(lines)
-    if #lines > VIM_SYNTAX_MAX_LINES then
-        return false
-    end
-
-    local bytes = 0
-
-    for _, line in ipairs(lines) do
-        bytes = bytes + #line
-
-        if bytes > VIM_SYNTAX_MAX_BYTES then
-            return false
-        end
-    end
-
-    return true
-end
-
----@param buf integer
----@param filetype string
----@param lines string[]
----@param rows table<integer, true>?
----@return table<integer, MiniFugitSyntaxSpan[]>
-local function vim_syntax_spans(buf, filetype, lines, rows)
-    local spans = empty_syntax_spans(lines)
-
-    if not vim_syntax_fallback_allowed(lines) then
-        return spans
-    end
-
-    pcall(vim.api.nvim_buf_call, buf, function()
-        vim.bo[buf].syntax = filetype
-        vim.cmd('syntax sync fromstart')
-
-        local scan_rows = rows or {}
-
-        if rows == nil then
-            for row = 1, #lines do
-                scan_rows[row] = true
-            end
-        end
-
-        for row in pairs(scan_rows) do
-            local text = lines[row]
-
-            if text ~= nil then
-                local current_group
-                local start_col = 0
-
-                for col = 1, #text do
-                    local id = vim.fn.synIDtrans(vim.fn.synID(row, col, 1))
-                    local group = vim.fn.synIDattr(id, 'name')
-
-                    if group == '' then
-                        group = nil
-                    end
-
-                    if group ~= current_group then
-                        add_syntax_span(
-                            spans,
-                            lines,
-                            row,
-                            start_col,
-                            col - 1,
-                            current_group
-                        )
-                        current_group = group
-                        start_col = col - 1
-                    end
-                end
-
-                add_syntax_span(
-                    spans,
-                    lines,
-                    row,
-                    start_col,
-                    #text,
-                    current_group
-                )
-            end
-        end
-    end)
-
-    return spans
-end
-
----@param filetype string
----@param lines string[]
----@param rows table<integer, true>?
----@return table<integer, MiniFugitSyntaxSpan[]>
-local function syntax_spans_by_line(filetype, lines, rows)
-    if
-        filetype == ''
-        or #lines == 0
-        or (rows ~= nil and next(rows) == nil)
-    then
-        return empty_syntax_spans(lines)
-    end
-
-    local buf = vim.api.nvim_create_buf(false, true)
-
-    vim.bo[buf].buftype = 'nofile'
-    vim.bo[buf].bufhidden = 'wipe'
-    vim.bo[buf].swapfile = false
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    vim.bo[buf].filetype = filetype
-
-    local spans = treesitter_syntax_spans(buf, filetype, lines, rows)
-        or vim_syntax_spans(buf, filetype, lines, rows)
-
-    pcall(vim.api.nvim_buf_delete, buf, { force = true })
-
-    return spans
-end
-
----@param parsed MiniFugitDiffLine[]
----@return table<'left'|'right', table<integer, true>>
-local function referenced_syntax_rows(parsed)
-    local rows = { left = {}, right = {} }
-
-    for _, diff_line in ipairs(parsed) do
-        if diff_line.kind == 'removed' and diff_line.old_number ~= nil then
-            rows.left[diff_line.old_number] = true
-        elseif diff_line.kind == 'added' and diff_line.new_number ~= nil then
-            rows.right[diff_line.new_number] = true
-        elseif diff_line.kind == 'context' then
-            local source_row = diff_line.new_number or diff_line.old_number
-
-            if source_row ~= nil then
-                rows.right[source_row] = true
-            end
-        end
-    end
-
-    return rows
-end
-
----@param source MiniFugitDiffSyntaxSource?
----@param parsed MiniFugitDiffLine[]
----@return table<string, table<integer, MiniFugitSyntaxSpan[]>>?
-local function syntax_spans_for_diff(source, parsed)
-    if source == nil or source.filetype == '' then
-        return nil
-    end
-
-    local rows = referenced_syntax_rows(parsed)
-
-    return {
-        left = syntax_spans_by_line(
-            source.filetype,
-            source.left_lines,
-            rows.left
-        ),
-        right = syntax_spans_by_line(
-            source.filetype,
-            source.right_lines,
-            rows.right
-        ),
-    }
-end
-
----@param line MiniFugitRenderLine
----@param spans MiniFugitSyntaxSpan[]?
----@param start_col integer
-local function add_source_syntax_highlights(line, spans, start_col)
-    for _, span in ipairs(spans or {}) do
-        render.add_highlight(
-            line,
-            span.group,
-            start_col + span.start_col,
-            start_col + span.end_col
-        )
-    end
-end
-
----@param diff_line MiniFugitDiffLine
----@return 'left'|'right'?
----@return integer?
-local function syntax_side_and_row(diff_line)
-    if diff_line.kind == 'removed' then
-        return 'left', diff_line.old_number
-    end
-
-    if diff_line.kind == 'added' then
-        return 'right', diff_line.new_number
-    end
-
-    if diff_line.kind == 'context' then
-        return 'right', diff_line.new_number or diff_line.old_number
-    end
-
-    return nil, nil
-end
-
----@param lines string[]
----@param groups table<string, string>
----@param opts MiniFugitDiffRenderOpts
----@return MiniFugitRenderLine[]
----@return integer[]
-local function diff_render_lines(lines, groups, opts)
-    opts = opts or {}
-
-    local parsed = parse_diff_lines(lines)
-    local width = diff_number_width(parsed)
-    local diff_lines = {}
-    local raw_rows = {}
-    local source_spans = syntax_spans_for_diff(opts.syntax, parsed)
-
-    for _, diff_line in ipairs(parsed) do
-        if diff_line.kind == 'header' and opts.show_headers == false then
-            goto continue
-        end
-
-        local text = format_diff_line(diff_line, width, opts)
-        local line = render.line(text)
-
-        if diff_line.kind == 'added' then
-            line.line_hl_group = groups.diff_added
-        elseif diff_line.kind == 'removed' then
-            line.line_hl_group = groups.diff_removed
-        elseif diff_line.kind == 'header' then
-            render.add_highlight(line, groups.diff_header, 0, #text)
-        elseif diff_line.kind == 'hunk' then
-            render.add_highlight(line, groups.diff_hunk_header, 0, #text)
-        end
-
-        -- Highlight the old/new number prefix so it reads as a gutter, not
-        -- plain text. Applies only to context/added/removed rows (headers and
-        -- hunk lines have no prepended numbers).
-        if
-            opts.show_numbers ~= false
-            and diff_line.kind ~= 'header'
-            and diff_line.kind ~= 'hunk'
-        then
-            render.add_highlight(line, groups.diff_line_nr, 0, 2 * width + 2)
-        end
-
-        local side, source_row = syntax_side_and_row(diff_line)
-
-        if source_spans ~= nil and side ~= nil and source_row ~= nil then
-            local text_start = (opts.show_numbers ~= false) and (2 * width + 2)
-                or 0
-            add_source_syntax_highlights(
-                line,
-                source_spans[side][source_row],
-                text_start + 1
-            )
-        end
-
-        table.insert(diff_lines, line)
-        table.insert(raw_rows, diff_line.raw_row)
-
-        ::continue::
-    end
-
-    if #diff_lines == 0 then
-        table.insert(
-            diff_lines,
-            render.line('(No diff content — only headers)')
-        )
-    end
-
-    return diff_lines, raw_rows
-end
-
----@param hunks MiniFugitDiffHunk[]
----@param raw_rows integer[]?
-local function assign_stacked_rows(hunks, raw_rows)
-    if raw_rows == nil then
-        return
-    end
-
-    for _, hunk in ipairs(hunks) do
-        hunk.stacked_row = nil
-    end
-
-    for row, raw_row in ipairs(raw_rows) do
-        for _, hunk in ipairs(hunks) do
-            if raw_row == hunk.raw_header_row then
-                hunk.stacked_row = row
-                break
-            end
-        end
-    end
-end
-
 ---@param hunks MiniFugitDiffHunk[]?
 ---@param index integer
 ---@return MiniFugitDiffHunk?
@@ -1093,23 +376,6 @@ local function hunk_at_raw_row(hunks, raw_row)
     for _, hunk in ipairs(hunks or {}) do
         if raw_row >= hunk.raw_start_row and raw_row <= hunk.raw_end_row then
             return hunk
-        end
-    end
-
-    return nil
-end
-
----@param raw_lines string[]?
----@param raw_row integer?
----@return MiniFugitDiffLine?
-local function diff_line_at_raw_row(raw_lines, raw_row)
-    if raw_lines == nil or raw_row == nil then
-        return nil
-    end
-
-    for _, line in ipairs(parse_diff_lines(raw_lines)) do
-        if line.raw_row == raw_row then
-            return line
         end
     end
 
@@ -1200,7 +466,7 @@ local function current_hunk_position(self)
             return nil
         end
 
-        local line = diff_line_at_raw_row(self.diff_raw_lines, raw_row)
+        local line = diff_parser.line_at_raw_row(self.diff_raw_lines, raw_row)
         local side, offset = hunk_position_from_diff_line(hunk, line)
 
         return { hunk_index = hunk.index, side = side, offset = offset }
@@ -1244,7 +510,7 @@ local function stacked_row_for_hunk_position(
     -- Parse once and index by raw_row to avoid an O(n) re-parse on every
     -- iteration of the loop below (which would make cursor restores O(n²)).
     local parsed_by_row = {}
-    for _, line in ipairs(parse_diff_lines(raw_lines)) do
+    for _, line in ipairs(diff_parser.parse_lines(raw_lines)) do
         parsed_by_row[line.raw_row] = line
     end
 
@@ -1375,7 +641,7 @@ local function mark_split_changes(left_buf, right_buf, diff_lines, groups)
     vim.api.nvim_buf_clear_namespace(left_buf.id, SPLIT_DIFF_NAMESPACE, 0, -1)
     vim.api.nvim_buf_clear_namespace(right_buf.id, SPLIT_DIFF_NAMESPACE, 0, -1)
 
-    for _, line in ipairs(parse_diff_lines(diff_lines)) do
+    for _, line in ipairs(diff_parser.parse_lines(diff_lines)) do
         if line.kind == 'added' then
             mark_split_change(
                 right_buf,
@@ -1859,7 +1125,7 @@ function M.open_commit_diff(self, commit, opts)
     if #lines == 0 then
         diff_lines = { render.line('No diff for commit ' .. commit.hash) }
     else
-        diff_lines = diff_render_lines(lines, self.groups, {
+        diff_lines = diff_render.render_lines(lines, self.groups, {
             show_headers = self.diff_show_headers,
             show_numbers = self.diff_show_numbers,
         })
@@ -2105,7 +1371,7 @@ function M.open_diff(self, entry, section, opts)
         return false
     end
 
-    local hunks = parse_diff_hunks(lines)
+    local hunks = diff_parser.parse_hunks(lines)
     local split_diff, split_err = git.split_diff(entry, section)
 
     if layout == 'split' then
@@ -2148,14 +1414,14 @@ function M.open_diff(self, entry, section, opts)
     if #lines == 0 then
         diff_lines = { render.line('No diff for ' .. entry.path) }
     else
-        diff_lines, raw_rows = diff_render_lines(lines, self.groups, {
+        diff_lines, raw_rows = diff_render.render_lines(lines, self.groups, {
             show_headers = self.diff_show_headers,
             show_numbers = self.diff_show_numbers,
             syntax = syntax,
         })
     end
 
-    assign_stacked_rows(hunks, raw_rows)
+    diff_parser.assign_stacked_rows(hunks, raw_rows)
 
     local ok = show_diff_lines(
         self,
