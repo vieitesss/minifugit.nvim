@@ -13,6 +13,9 @@ local M = {}
 ---@field cursorline boolean
 ---@field winfixwidth boolean
 ---@field winbar string
+---@field diff boolean
+---@field fillchars string
+---@field statuscolumn string
 
 ---@param opts MinifugitStatusOptions
 ---@return integer
@@ -129,6 +132,22 @@ function M.configure_diff_win(win)
 end
 
 ---@param win number
+function M.configure_split_diff_win(win)
+    vim.wo[win].number = true
+    vim.wo[win].relativenumber = false
+    vim.wo[win].signcolumn = 'yes:1'
+    vim.wo[win].foldcolumn = '0'
+    vim.wo[win].statuscolumn = '%l %s '
+    vim.wo[win].wrap = false
+    vim.wo[win].cursorline = false
+    vim.api.nvim_win_call(win, function()
+        local fc = vim.opt_local.fillchars:get()
+        fc.diff = ' '
+        vim.opt_local.fillchars = fc
+    end)
+end
+
+---@param win number
 ---@return GitStatusWindowOptions
 function M.capture_winopts(win)
     return {
@@ -140,6 +159,9 @@ function M.capture_winopts(win)
         cursorline = vim.wo[win].cursorline,
         winfixwidth = vim.wo[win].winfixwidth,
         winbar = vim.wo[win].winbar,
+        diff = vim.wo[win].diff,
+        fillchars = vim.wo[win].fillchars,
+        statuscolumn = vim.wo[win].statuscolumn,
     }
 end
 
@@ -158,6 +180,9 @@ function M.restore_winopts(win, opts)
     vim.wo[win].cursorline = opts.cursorline
     vim.wo[win].winfixwidth = opts.winfixwidth
     vim.wo[win].winbar = opts.winbar
+    vim.wo[win].diff = opts.diff
+    vim.wo[win].fillchars = opts.fillchars
+    vim.wo[win].statuscolumn = opts.statuscolumn
 end
 
 return M

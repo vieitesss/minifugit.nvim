@@ -3,6 +3,7 @@
 A lightweight Git status UI for Neovim, inspired by
 [vim-fugitive](https://github.com/tpope/vim-fugitive).
 
+
 minifugit.nvim focuses on a compact status window for everyday Git operations
 without leaving Neovim.
 
@@ -59,6 +60,12 @@ require('minifugit').setup({
         -- Show git diff metadata rows such as `diff --git`, `index`, `---`,
         -- and `+++`.
         show_metadata = true,
+
+        -- Diff preview layout: 'stacked', 'split', or 'auto'.
+        diff_layout = 'stacked',
+
+        -- Editor width where 'auto' switches from stacked to split.
+        diff_auto_threshold = 120,
     },
     status = {
         -- Fraction of the editor width used by the status window.
@@ -71,7 +78,8 @@ require('minifugit').setup({
 ```
 
 Diff-preview mappings can toggle `preview.wrap`, `preview.show_line_numbers`,
-and `preview.show_metadata` at runtime for the current status session.
+`preview.show_metadata`, and the diff layout at runtime for the current status
+session.
 
 ## Usage
 
@@ -103,6 +111,7 @@ Default status-window mappings:
 | n | `D` | Discard entry without confirmation |
 | n | `c` | Commit staged changes |
 | n | `p` | Push unpushed commits |
+| n | `t` | Toggle stacked/split diff layout |
 | n | `?` | Toggle help |
 
 Default diff-preview mappings:
@@ -116,4 +125,5 @@ Default diff-preview mappings:
 | n | `d` | Discard current unstaged hunk with confirmation |
 | n | `w` | Toggle wrap |
 | n | `l` | Toggle line numbers |
-| n | `m` | Toggle metadata rows |
+| n | `m` | Toggle metadata rows *(stacked only)* |
+| n | `t` | Toggle stacked/split layout |
