@@ -688,11 +688,15 @@ local function add_syntax_span(spans, lines, row, start_col, end_col, group)
     })
 end
 
+local VIM_SYNTAX_MAX_LINES = 2000
+local VIM_SYNTAX_MAX_BYTES = 200000
+
 ---@param buf integer
 ---@param filetype string
 ---@param lines string[]
+---@param rows table<integer, true>?
 ---@return table<integer, MiniFugitSyntaxSpan[]>?
-local function treesitter_syntax_spans(buf, filetype, lines)
+local function treesitter_syntax_spans(buf, filetype, lines, rows)
     if
         vim.treesitter == nil
         or vim.treesitter.get_parser == nil
@@ -735,21 +739,41 @@ local function treesitter_syntax_spans(buf, filetype, lines)
 
     local spans = empty_syntax_spans(lines)
 
+    local start_row = 0
+    local end_row = -1
+
+    if rows ~= nil then
+        for row in pairs(rows) do
+            start_row = start_row == 0 and row - 1
+                or math.min(start_row, row - 1)
+            end_row = math.max(end_row, row)
+        end
+    end
+
     for _, tree in ipairs(trees) do
-        for id, node in query:iter_captures(tree:root(), buf, 0, -1) do
+        for id, node in query:iter_captures(
+            tree:root(),
+            buf,
+            start_row,
+            end_row
+        ) do
             local capture = query.captures[id]
             local group = treesitter_capture_group(capture, lang)
-            local start_row, start_col, end_row, end_col = node:range()
+            local node_start_row, start_col, node_end_row, end_col =
+                node:range()
 
-            for row = start_row + 1, end_row + 1 do
-                add_syntax_span(
-                    spans,
-                    lines,
-                    row,
-                    row == start_row + 1 and start_col or 0,
-                    row == end_row + 1 and end_col or #(lines[row] or ''),
-                    group
-                )
+            for row = node_start_row + 1, node_end_row + 1 do
+                if rows == nil or rows[row] then
+                    add_syntax_span(
+                        spans,
+                        lines,
+                        row,
+                        row == node_start_row + 1 and start_col or 0,
+                        row == node_end_row + 1 and end_col
+                            or #(lines[row] or ''),
+                        group
+                    )
+                end
             end
         end
     end
@@ -757,44 +781,88 @@ local function treesitter_syntax_spans(buf, filetype, lines)
     return has_syntax_spans(spans) and spans or nil
 end
 
+---@param lines string[]
+---@return boolean
+local function vim_syntax_fallback_allowed(lines)
+    if #lines > VIM_SYNTAX_MAX_LINES then
+        return false
+    end
+
+    local bytes = 0
+
+    for _, line in ipairs(lines) do
+        bytes = bytes + #line
+
+        if bytes > VIM_SYNTAX_MAX_BYTES then
+            return false
+        end
+    end
+
+    return true
+end
+
 ---@param buf integer
 ---@param filetype string
 ---@param lines string[]
+---@param rows table<integer, true>?
 ---@return table<integer, MiniFugitSyntaxSpan[]>
-local function vim_syntax_spans(buf, filetype, lines)
+local function vim_syntax_spans(buf, filetype, lines, rows)
     local spans = empty_syntax_spans(lines)
+
+    if not vim_syntax_fallback_allowed(lines) then
+        return spans
+    end
 
     pcall(vim.api.nvim_buf_call, buf, function()
         vim.bo[buf].syntax = filetype
         vim.cmd('syntax sync fromstart')
 
-        for row, text in ipairs(lines) do
-            local current_group
-            local start_col = 0
+        local scan_rows = rows or {}
 
-            for col = 1, #text do
-                local id = vim.fn.synIDtrans(vim.fn.synID(row, col, 1))
-                local group = vim.fn.synIDattr(id, 'name')
-
-                if group == '' then
-                    group = nil
-                end
-
-                if group ~= current_group then
-                    add_syntax_span(
-                        spans,
-                        lines,
-                        row,
-                        start_col,
-                        col - 1,
-                        current_group
-                    )
-                    current_group = group
-                    start_col = col - 1
-                end
+        if rows == nil then
+            for row = 1, #lines do
+                scan_rows[row] = true
             end
+        end
 
-            add_syntax_span(spans, lines, row, start_col, #text, current_group)
+        for row in pairs(scan_rows) do
+            local text = lines[row]
+
+            if text ~= nil then
+                local current_group
+                local start_col = 0
+
+                for col = 1, #text do
+                    local id = vim.fn.synIDtrans(vim.fn.synID(row, col, 1))
+                    local group = vim.fn.synIDattr(id, 'name')
+
+                    if group == '' then
+                        group = nil
+                    end
+
+                    if group ~= current_group then
+                        add_syntax_span(
+                            spans,
+                            lines,
+                            row,
+                            start_col,
+                            col - 1,
+                            current_group
+                        )
+                        current_group = group
+                        start_col = col - 1
+                    end
+                end
+
+                add_syntax_span(
+                    spans,
+                    lines,
+                    row,
+                    start_col,
+                    #text,
+                    current_group
+                )
+            end
         end
     end)
 
@@ -803,9 +871,14 @@ end
 
 ---@param filetype string
 ---@param lines string[]
+---@param rows table<integer, true>?
 ---@return table<integer, MiniFugitSyntaxSpan[]>
-local function syntax_spans_by_line(filetype, lines)
-    if filetype == '' or #lines == 0 then
+local function syntax_spans_by_line(filetype, lines, rows)
+    if
+        filetype == ''
+        or #lines == 0
+        or (rows ~= nil and next(rows) == nil)
+    then
         return empty_syntax_spans(lines)
     end
 
@@ -817,24 +890,57 @@ local function syntax_spans_by_line(filetype, lines)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     vim.bo[buf].filetype = filetype
 
-    local spans = treesitter_syntax_spans(buf, filetype, lines)
-        or vim_syntax_spans(buf, filetype, lines)
+    local spans = treesitter_syntax_spans(buf, filetype, lines, rows)
+        or vim_syntax_spans(buf, filetype, lines, rows)
 
     pcall(vim.api.nvim_buf_delete, buf, { force = true })
 
     return spans
 end
 
+---@param parsed MiniFugitDiffLine[]
+---@return table<'left'|'right', table<integer, true>>
+local function referenced_syntax_rows(parsed)
+    local rows = { left = {}, right = {} }
+
+    for _, diff_line in ipairs(parsed) do
+        if diff_line.kind == 'removed' and diff_line.old_number ~= nil then
+            rows.left[diff_line.old_number] = true
+        elseif diff_line.kind == 'added' and diff_line.new_number ~= nil then
+            rows.right[diff_line.new_number] = true
+        elseif diff_line.kind == 'context' then
+            local source_row = diff_line.new_number or diff_line.old_number
+
+            if source_row ~= nil then
+                rows.right[source_row] = true
+            end
+        end
+    end
+
+    return rows
+end
+
 ---@param source MiniFugitDiffSyntaxSource?
+---@param parsed MiniFugitDiffLine[]
 ---@return table<string, table<integer, MiniFugitSyntaxSpan[]>>?
-local function syntax_spans_for_diff(source)
+local function syntax_spans_for_diff(source, parsed)
     if source == nil or source.filetype == '' then
         return nil
     end
 
+    local rows = referenced_syntax_rows(parsed)
+
     return {
-        left = syntax_spans_by_line(source.filetype, source.left_lines),
-        right = syntax_spans_by_line(source.filetype, source.right_lines),
+        left = syntax_spans_by_line(
+            source.filetype,
+            source.left_lines,
+            rows.left
+        ),
+        right = syntax_spans_by_line(
+            source.filetype,
+            source.right_lines,
+            rows.right
+        ),
     }
 end
 
@@ -883,7 +989,7 @@ local function diff_render_lines(lines, groups, opts)
     local width = diff_number_width(parsed)
     local diff_lines = {}
     local raw_rows = {}
-    local source_spans = syntax_spans_for_diff(opts.syntax)
+    local source_spans = syntax_spans_for_diff(opts.syntax, parsed)
 
     for _, diff_line in ipairs(parsed) do
         if diff_line.kind == 'header' and opts.show_headers == false then
