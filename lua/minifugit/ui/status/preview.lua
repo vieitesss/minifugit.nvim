@@ -386,16 +386,14 @@ end
 
 ---@param self GitStatusWindow
 local function resize_split_preview_windows(self)
-    local status_width = math.max(
-        math.floor(vim.o.columns * self.options.status.width),
-        self.options.status.min_width
-    )
-    local diff_width =
-        math.max(1, math.floor((vim.o.columns - status_width) / 2))
+    -- Split diff uses three vertical windows: status, left diff, and right
+    -- diff. Account for the two vertical separators, then size each content
+    -- window to one third of the usable width.
+    local width = math.max(1, math.floor((vim.o.columns - 2) / 3))
 
-    set_win_width(self.win, status_width)
-    set_win_width(self.diff_left_win, diff_width)
-    set_win_width(self.diff_right_win, diff_width)
+    set_win_width(self.win, width)
+    set_win_width(self.diff_left_win, width)
+    set_win_width(self.diff_right_win, width)
 end
 
 ---@param text string
