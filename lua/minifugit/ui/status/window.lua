@@ -63,8 +63,28 @@ end
 
 ---@param self GitStatusWindow
 ---@param win number?
+---@return boolean
+local function is_usable_target_win(self, win)
+    if not common.is_valid_win(win) or win == self.win then
+        return false
+    end
+
+    local is_current_tab = vim.api.nvim_win_get_tabpage(win)
+        == vim.api.nvim_get_current_tabpage()
+
+    if not is_current_tab then
+        return false
+    end
+
+    local buf = vim.api.nvim_win_get_buf(win)
+
+    return vim.bo[buf].buftype ~= 'quickfix'
+end
+
+---@param self GitStatusWindow
+---@param win number?
 function M.set_target_win(self, win)
-    if common.is_valid_win(win) and win ~= self.win then
+    if is_usable_target_win(self, win) then
         self.target_win = win
     end
 end
@@ -72,17 +92,14 @@ end
 ---@param self GitStatusWindow
 ---@return number?
 function M.find_target_win(self)
-    if
-        common.is_valid_win(self.target_win)
-        and self.target_win ~= self.win
-        and vim.api.nvim_win_get_tabpage(self.target_win)
-            == vim.api.nvim_get_current_tabpage()
-    then
+    if is_usable_target_win(self, self.target_win) then
         return self.target_win
     end
 
+    self.target_win = nil
+
     for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-        if win ~= self.win and vim.api.nvim_win_is_valid(win) then
+        if is_usable_target_win(self, win) then
             self.target_win = win
             return win
         end
