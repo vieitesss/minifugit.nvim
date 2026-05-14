@@ -218,6 +218,13 @@ local function set_goto_code_keymap(self, bufnr)
     })
 end
 
+---@param bufnr integer?
+local function clear_goto_code_keymap(bufnr)
+    if bufnr ~= nil and vim.api.nvim_buf_is_valid(bufnr) then
+        pcall(vim.keymap.del, 'n', '<CR>', { buffer = bufnr })
+    end
+end
+
 ---@param self GitStatusWindow
 ---@param lines string[]?
 ---@param raw_rows integer[]?
@@ -1235,12 +1242,18 @@ function M.open_commit_diff(self, commit, opts)
 
     set_diff_context(self, nil, nil, nil, nil, nil)
 
-    return show_diff_lines(
+    local ok = show_diff_lines(
         self,
         diff_lines,
         preview_key,
         commit_diff_title(commit)
     )
+
+    if ok and self.diff_buf ~= nil then
+        clear_goto_code_keymap(self.diff_buf.id)
+    end
+
+    return ok
 end
 
 ---@param self GitStatusWindow
@@ -1366,8 +1379,6 @@ function M.ensure_diff_buf(self)
         silent = true,
     })
 
-    set_goto_code_keymap(self, self.diff_buf.id)
-
     vim.keymap.set('n', '?', function()
         self:toggle_help()
     end, {
@@ -1466,6 +1477,10 @@ function M.open_diff(self, entry, section, opts)
 
     if ok then
         set_diff_context(self, lines, raw_rows, hunks, section, entry)
+
+        if self.diff_buf ~= nil then
+            set_goto_code_keymap(self, self.diff_buf.id)
+        end
     end
 
     return ok
@@ -1497,6 +1512,7 @@ function M.goto_code(self)
             position = {
                 path = position.path,
                 line = diff_position.old_line_to_new_line(
+                    unstaged_lines,
                     unstaged_hunks,
                     position.line
                 ),
