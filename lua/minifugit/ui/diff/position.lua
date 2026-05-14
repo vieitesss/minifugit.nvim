@@ -235,7 +235,10 @@ end
 ---@param hunks MiniFugitDiffHunk[]?
 ---@param old_line integer
 ---@return integer
-local function old_line_to_new_line(hunks, old_line)
+---@param hunks MiniFugitDiffHunk[]?
+---@param old_line integer
+---@return integer
+function M.old_line_to_new_line(hunks, old_line)
     local delta = 0
 
     for _, hunk in ipairs(hunks or {}) do
@@ -308,7 +311,7 @@ function M.source_line_for_split_row(raw_lines, hunks, side, row)
 
     if hunk == nil then
         if side == 'left' then
-            return old_line_to_new_line(hunks, row)
+            return M.old_line_to_new_line(hunks, row)
         end
 
         return row

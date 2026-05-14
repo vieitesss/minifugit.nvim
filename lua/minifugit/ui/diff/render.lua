@@ -125,11 +125,7 @@ local function add_source_syntax(line, diff_line, source_spans, width, opts)
 
     local text_start = (opts.show_numbers ~= false) and (2 * width + 2) or 0
 
-    add_source_highlights(
-        line,
-        source_spans[side][source_row],
-        text_start + 1
-    )
+    add_source_highlights(line, source_spans[side][source_row], text_start + 1)
 end
 
 ---@param lines string[]
