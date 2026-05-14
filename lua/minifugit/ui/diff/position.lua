@@ -232,13 +232,12 @@ function M.source_line_for_stacked_row(raw_lines, hunks, raw_row)
     return source_line_for_diff_line(by_raw_row, hunk, line)
 end
 
+---@param raw_lines string[]?
 ---@param hunks MiniFugitDiffHunk[]?
 ---@param old_line integer
 ---@return integer
----@param hunks MiniFugitDiffHunk[]?
----@param old_line integer
----@return integer
-function M.old_line_to_new_line(hunks, old_line)
+function M.old_line_to_new_line(raw_lines, hunks, old_line)
+    local lines, by_raw_row = parsed_lines(raw_lines)
     local delta = 0
 
     for _, hunk in ipairs(hunks or {}) do
@@ -247,7 +246,30 @@ function M.old_line_to_new_line(hunks, old_line)
         end
 
         if hunk.old_count > 0 and old_line <= hunk.old_end then
-            return hunk.new_start
+            for _, line in ipairs(lines) do
+                if
+                    line.raw_row >= hunk.raw_start_row
+                    and line.raw_row <= hunk.raw_end_row
+                    and line.kind ~= 'hunk'
+                    and line.old_number == old_line
+                then
+                    if line.new_number ~= nil then
+                        return line.new_number
+                    end
+
+                    return nearest_surviving_new_number(
+                        by_raw_row,
+                        hunk,
+                        line.raw_row
+                    ) or hunk.new_start
+                end
+            end
+
+            return nearest_surviving_new_number(
+                by_raw_row,
+                hunk,
+                hunk.raw_header_row
+            ) or hunk.new_start
         end
 
         delta = delta + hunk.new_count - hunk.old_count
@@ -311,7 +333,7 @@ function M.source_line_for_split_row(raw_lines, hunks, side, row)
 
     if hunk == nil then
         if side == 'left' then
-            return M.old_line_to_new_line(hunks, row)
+            return M.old_line_to_new_line(raw_lines, hunks, row)
         end
 
         return row
