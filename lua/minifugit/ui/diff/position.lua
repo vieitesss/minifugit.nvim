@@ -272,6 +272,10 @@ function M.old_line_to_new_line(raw_lines, hunks, old_line)
             ) or hunk.new_start
         end
 
+        if hunk.old_count == 0 and old_line <= hunk.old_start then
+            return old_line + delta
+        end
+
         delta = delta + hunk.new_count - hunk.old_count
     end
 
