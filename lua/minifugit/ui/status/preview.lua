@@ -1486,6 +1486,24 @@ function M.goto_code(self)
         return false
     end
 
+    -- For staged diffs the computed line number refers to the index version.
+    -- If the file also has unstaged changes, translate through the unstaged
+    -- diff so the cursor lands on the correct worktree line.
+    if self.diff_section == 'staged' and self.diff_entry ~= nil then
+        local unstaged_lines = git.diff(self.diff_entry, 'unstaged')
+
+        if #unstaged_lines > 0 then
+            local unstaged_hunks = diff_parser.parse_hunks(unstaged_lines)
+            position = {
+                path = position.path,
+                line = diff_position.old_line_to_new_line(
+                    unstaged_hunks,
+                    position.line
+                ),
+            }
+        end
+    end
+
     local root = git.root()
     local path = root ~= '' and vim.fs.joinpath(root, position.path)
         or position.path

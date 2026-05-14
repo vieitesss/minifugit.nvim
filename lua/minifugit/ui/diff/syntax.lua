@@ -145,12 +145,9 @@ local function treesitter_spans(buf, filetype, lines, rows)
     end
 
     for _, tree in ipairs(trees) do
-        for id, node in query:iter_captures(
-            tree:root(),
-            buf,
-            start_row or 0,
-            end_row or -1
-        ) do
+        for id, node in
+            query:iter_captures(tree:root(), buf, start_row or 0, end_row or -1)
+        do
             local capture = query.captures[id]
             local group = treesitter_capture_group(capture, lang)
             local node_start_row, start_col, node_end_row, end_col =
@@ -261,11 +258,7 @@ end
 ---@param rows table<integer, true>?
 ---@return table<integer, MiniFugitSyntaxSpan[]>
 local function spans_by_line(filetype, lines, rows)
-    if
-        filetype == ''
-        or #lines == 0
-        or (rows ~= nil and next(rows) == nil)
-    then
+    if filetype == '' or #lines == 0 or (rows ~= nil and next(rows) == nil) then
         return empty_spans(lines)
     end
 
