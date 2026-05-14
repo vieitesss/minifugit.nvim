@@ -5,6 +5,7 @@ vim.opt.runtimepath:prepend('.')
 vim.g.mapleader = ' '
 vim.opt.relativenumber = true
 vim.opt.number = true
+vim.cmd('colorscheme catppuccin')
 
 vim.pack.add({
     { src = vim.env.HOME .. '/personal/minifugit.nvim' },

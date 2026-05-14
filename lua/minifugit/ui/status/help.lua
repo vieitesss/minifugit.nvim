@@ -31,6 +31,7 @@ local sections = {
         title = 'Diff preview mappings',
         rows = {
             { 'q', 'Close diff preview' },
+            { '<CR>', 'Go to code under cursor', status_diff = true },
             { '[h / ]h', 'Jump to previous or next hunk' },
             { 's', 'Stage current unstaged hunk' },
             { 'u', 'Unstage current staged hunk' },
@@ -55,14 +56,17 @@ local function pad(text, width)
     return text .. string.rep(' ', width - #text)
 end
 
+---@param opts { include_status_diff_mappings: boolean }
 ---@return string[]
-local function help_lines()
+local function help_lines(opts)
     local lines = {}
     local key_width = 0
 
     for _, section in ipairs(sections) do
         for _, row in ipairs(section.rows) do
-            key_width = math.max(key_width, #row[1])
+            if opts.include_status_diff_mappings or not row.status_diff then
+                key_width = math.max(key_width, #row[1])
+            end
         end
     end
 
@@ -78,7 +82,9 @@ local function help_lines()
         )
 
         for _, row in ipairs(section.rows) do
-            table.insert(lines, pad(row[1], key_width) .. '  ' .. row[2])
+            if opts.include_status_diff_mappings or not row.status_diff then
+                table.insert(lines, pad(row[1], key_width) .. '  ' .. row[2])
+            end
         end
 
         if section_index < #sections then
@@ -139,7 +145,9 @@ function M.toggle(self)
         return
     end
 
-    local lines = help_lines()
+    local lines = help_lines({
+        include_status_diff_mappings = self.diff_entry ~= nil,
+    })
     local max_width = math.min(vim.o.columns, math.max(24, vim.o.columns - 4))
     local max_height = math.min(vim.o.lines, math.max(6, vim.o.lines - 4))
     local width = math.min(content_width(lines) + 4, max_width)

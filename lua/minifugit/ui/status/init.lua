@@ -31,6 +31,7 @@ local git = require('minifugit.git')
 ---@field diff_raw_rows integer[]?
 ---@field diff_hunks MiniFugitDiffHunk[]?
 ---@field diff_section GitStatusSectionName?
+---@field diff_entry GitStatusEntry?
 ---@field diff_prev_winopts GitStatusWindowOptions?
 ---@field diff_left_prev_winopts GitStatusWindowOptions?
 ---@field diff_right_prev_winopts GitStatusWindowOptions?
