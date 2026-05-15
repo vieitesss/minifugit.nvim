@@ -938,21 +938,31 @@ local function show_diff_lines(self, diff_lines, preview_key, title)
     render.apply(buf.id, diff_lines)
 
     local status_winfixwidth = make_status_win_resizable(self)
-    local target_win = window.find_target_win(self)
+    local target_win
     local created_win = false
 
-    if target_win == nil then
-        target_win =
-            create_preview_split(self, 'rightbelow vsplit', status_winfixwidth)
+    if has_open_stacked_diff(self) then
+        target_win = self.diff_win
+        vim.api.nvim_set_current_win(target_win)
+    else
+        target_win = window.find_target_win(self)
 
         if target_win == nil then
-            return false
-        end
+            target_win = create_preview_split(
+                self,
+                'rightbelow vsplit',
+                status_winfixwidth
+            )
 
-        self.target_win = target_win
-        created_win = true
-    else
-        vim.api.nvim_set_current_win(target_win)
+            if target_win == nil then
+                return false
+            end
+
+            self.target_win = target_win
+            created_win = true
+        else
+            vim.api.nvim_set_current_win(target_win)
+        end
     end
 
     local previous_buf = vim.api.nvim_win_get_buf(target_win)

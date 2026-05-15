@@ -61,6 +61,48 @@ function M.create_status_win(buf, opts)
     return win, prev_winopts
 end
 
+---@param win number
+---@return boolean
+local function has_winfixbuf(win)
+    local ok, value = pcall(function()
+        return vim.wo[win].winfixbuf
+    end)
+
+    return ok and value
+end
+
+---@param win number
+---@return boolean
+local function is_normal_edit_window(win)
+    local config = vim.api.nvim_win_get_config(win)
+
+    if config.relative ~= '' then
+        return false
+    end
+
+    if
+        vim.wo[win].previewwindow
+        or vim.wo[win].winfixwidth
+        or has_winfixbuf(win)
+    then
+        return false
+    end
+
+    local buf = vim.api.nvim_win_get_buf(win)
+    local buftype = vim.bo[buf].buftype
+    local filetype = vim.bo[buf].filetype
+
+    if buftype ~= '' then
+        return false
+    end
+
+    if filetype == 'gitcommit' or filetype == 'gitrebase' then
+        return false
+    end
+
+    return true
+end
+
 ---@param self GitStatusWindow
 ---@param win number?
 ---@return boolean
@@ -76,9 +118,7 @@ local function is_usable_target_win(self, win)
         return false
     end
 
-    local buf = vim.api.nvim_win_get_buf(win)
-
-    return vim.bo[buf].buftype ~= 'quickfix'
+    return is_normal_edit_window(win)
 end
 
 ---@param self GitStatusWindow
