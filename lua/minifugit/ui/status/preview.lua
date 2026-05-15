@@ -206,39 +206,47 @@ local function set_split_line_numbers(win, enabled)
     vim.wo[win].statuscolumn = enabled and '%l %s ' or '%s '
 end
 
+---@class MiniFugitStatusWinState
+---@field winfixwidth boolean
+---@field width integer
+
 ---@param self GitStatusWindow
----@return boolean?
+---@return MiniFugitStatusWinState?
 local function make_status_win_resizable(self)
     if not common.is_valid_win(self.win) then
         return nil
     end
 
-    local winfixwidth = vim.wo[self.win].winfixwidth
+    local state = {
+        winfixwidth = vim.wo[self.win].winfixwidth,
+        width = vim.api.nvim_win_get_width(self.win),
+    }
     vim.wo[self.win].winfixwidth = false
 
-    return winfixwidth
+    return state
 end
 
 ---@param self GitStatusWindow
----@param winfixwidth boolean?
-local function restore_status_winfixwidth(self, winfixwidth)
-    if winfixwidth == nil or not common.is_valid_win(self.win) then
+---@param state MiniFugitStatusWinState?
+local function restore_status_win_state(self, state)
+    if state == nil or not common.is_valid_win(self.win) then
         return
     end
 
-    vim.wo[self.win].winfixwidth = winfixwidth
+    pcall(vim.api.nvim_win_set_width, self.win, state.width)
+    vim.wo[self.win].winfixwidth = state.winfixwidth
 end
 
 ---@param self GitStatusWindow
 ---@param command string
----@param winfixwidth boolean?
+---@param status_win_state MiniFugitStatusWinState?
 ---@return number?
-local function create_preview_split(self, command, winfixwidth)
+local function create_preview_split(self, command, status_win_state)
     local current_win = vim.api.nvim_get_current_win()
     local ok, err = pcall(vim.cmd, command)
 
     if not ok then
-        restore_status_winfixwidth(self, winfixwidth)
+        restore_status_win_state(self, status_win_state)
 
         if common.is_valid_win(current_win) then
             pcall(vim.api.nvim_set_current_win, current_win)
@@ -255,13 +263,13 @@ end
 ---@param win number
 ---@param buf integer
 ---@param created boolean
----@param winfixwidth boolean?
+---@param status_win_state MiniFugitStatusWinState?
 ---@return boolean
-local function set_preview_win_buf(self, win, buf, created, winfixwidth)
+local function set_preview_win_buf(self, win, buf, created, status_win_state)
     vim.wo[win].winfixwidth = false
 
     local ok, err = pcall(vim.api.nvim_win_set_buf, win, buf)
-    restore_status_winfixwidth(self, winfixwidth)
+    restore_status_win_state(self, status_win_state)
 
     if ok then
         return true
