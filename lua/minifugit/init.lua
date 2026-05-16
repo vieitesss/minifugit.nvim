@@ -54,27 +54,6 @@ local function has_valid_status_buffer(gsw)
         and vim.bo[bufnr].filetype == 'minifugit'
 end
 
----@param gsw GitStatusWindow
-local function delete_owned_buffers(gsw)
-    for _, field in ipairs({
-        'buf',
-        'diff_buf',
-        'diff_left_buf',
-        'diff_right_buf',
-        'help_buf',
-    }) do
-        local buf = gsw[field]
-
-        if
-            buf ~= nil
-            and buf.id ~= nil
-            and vim.api.nvim_buf_is_valid(buf.id)
-        then
-            pcall(vim.api.nvim_buf_delete, buf.id, { force = true })
-        end
-    end
-end
-
 function M.reset()
     if M.gsw == nil then
         return
@@ -85,7 +64,6 @@ function M.reset()
     pcall(function()
         gsw:destroy()
     end)
-    delete_owned_buffers(gsw)
     M.gsw = nil
 end
 

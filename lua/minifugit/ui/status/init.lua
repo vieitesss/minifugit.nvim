@@ -61,6 +61,14 @@ GitStatusWindow.__index = GitStatusWindow
 
 local HIGHLIGHT_NAMESPACE = 'GitStatusWindow'
 
+local OWNED_BUFFER_FIELDS = {
+    'buf',
+    'diff_buf',
+    'diff_left_buf',
+    'diff_right_buf',
+    'help_buf',
+}
+
 local DIFF_HEADER_GROUP = 'MiniFugitDiffHeader'
 local DIFF_HUNK_HEADER_GROUP = 'MiniFugitDiffHunkHeader'
 local SPINNER_FRAMES = { '-', '\\', '|', '/' }
@@ -443,6 +451,22 @@ function GitStatusWindow:close()
     self.win_prev_winopts = nil
 end
 
+---@param buf Buffer?
+local function delete_owned_buffer(buf)
+    if buf == nil or buf.id == nil or not vim.api.nvim_buf_is_valid(buf.id) then
+        return
+    end
+
+    pcall(vim.api.nvim_buf_delete, buf.id, { force = true })
+end
+
+function GitStatusWindow:delete_owned_buffers()
+    for _, field in ipairs(OWNED_BUFFER_FIELDS) do
+        delete_owned_buffer(self[field])
+        self[field] = nil
+    end
+end
+
 function GitStatusWindow:destroy()
     if self.autocmd_group ~= nil then
         pcall(vim.api.nvim_del_augroup_by_id, self.autocmd_group)
@@ -450,6 +474,7 @@ function GitStatusWindow:destroy()
     end
 
     self:close()
+    self:delete_owned_buffers()
 end
 
 function GitStatusWindow:filter_entries()
