@@ -80,6 +80,7 @@ function M.reset()
         return
     end
 
+    ---@type GitStatusWindow
     local gsw = M.gsw
     pcall(function()
         gsw:close()
