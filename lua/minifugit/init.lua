@@ -39,8 +39,80 @@ local M = {
 
 local log = require('minifugit.log')
 
+---@param gsw GitStatusWindow?
+---@return boolean
+local function has_valid_status_buffer(gsw)
+    if gsw == nil or gsw.buf == nil or gsw.buf.id == nil then
+        return false
+    end
+
+    local bufnr = gsw.buf.id
+
+    return vim.api.nvim_buf_is_valid(bufnr)
+        and vim.api.nvim_buf_is_loaded(bufnr)
+        and vim.bo[bufnr].buftype == 'nofile'
+        and vim.bo[bufnr].filetype == 'minifugit'
+end
+
+---@param gsw GitStatusWindow
+local function delete_owned_buffers(gsw)
+    for _, field in ipairs({
+        'buf',
+        'diff_buf',
+        'diff_left_buf',
+        'diff_right_buf',
+        'help_buf',
+    }) do
+        local buf = gsw[field]
+
+        if
+            buf ~= nil
+            and buf.id ~= nil
+            and vim.api.nvim_buf_is_valid(buf.id)
+        then
+            pcall(vim.api.nvim_buf_delete, buf.id, { force = true })
+        end
+    end
+end
+
+function M.reset()
+    if M.gsw == nil then
+        return
+    end
+
+    local gsw = M.gsw
+    pcall(function()
+        gsw:close()
+    end)
+    delete_owned_buffers(gsw)
+    M.gsw = nil
+end
+
+---@param gsw GitStatusWindow
+local function attach_status_buffer_autocmd(gsw)
+    vim.api.nvim_create_autocmd('BufWipeout', {
+        buffer = gsw.buf.id,
+        once = true,
+        callback = function()
+            if M.gsw ~= gsw then
+                return
+            end
+
+            vim.schedule(function()
+                if M.gsw == gsw then
+                    M.reset()
+                end
+            end)
+        end,
+    })
+end
+
 function M.status()
     log.info('status command called')
+
+    if M.gsw ~= nil and not has_valid_status_buffer(M.gsw) then
+        M.reset()
+    end
 
     if M.gsw then
         M.gsw:refresh()
@@ -48,6 +120,7 @@ function M.status()
     else
         local GitStatusWindow = require('minifugit.ui.status')
         local gsw = GitStatusWindow.new(M.options)
+        attach_status_buffer_autocmd(gsw)
         M.gsw = gsw
     end
 
