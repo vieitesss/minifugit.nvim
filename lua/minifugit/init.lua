@@ -83,7 +83,7 @@ function M.reset()
     ---@type GitStatusWindow
     local gsw = M.gsw
     pcall(function()
-        gsw:close()
+        gsw:destroy()
     end)
     delete_owned_buffers(gsw)
     M.gsw = nil

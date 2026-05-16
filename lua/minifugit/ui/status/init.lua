@@ -55,6 +55,7 @@ local git = require('minifugit.git')
 ---@field loading_message string?
 ---@field loading_frame integer
 ---@field loading_timer uv.uv_timer_t?
+---@field autocmd_group integer?
 local GitStatusWindow = {}
 GitStatusWindow.__index = GitStatusWindow
 
@@ -247,7 +248,17 @@ end
 
 ---@param self GitStatusWindow
 local function ensure_autocmds(self)
+    if self.autocmd_group ~= nil then
+        pcall(vim.api.nvim_del_augroup_by_id, self.autocmd_group)
+    end
+
+    self.autocmd_group = vim.api.nvim_create_augroup(
+        string.format('minifugit_status_%d', self.buf.id),
+        { clear = true }
+    )
+
     vim.api.nvim_create_autocmd({ 'BufLeave', 'BufHidden' }, {
+        group = self.autocmd_group,
         buffer = self.buf.id,
         callback = function()
             vim.schedule(function()
@@ -259,12 +270,14 @@ local function ensure_autocmds(self)
     })
 
     vim.api.nvim_create_autocmd('ColorScheme', {
+        group = self.autocmd_group,
         callback = function()
             refresh_highlights(self)
         end,
     })
 
     vim.api.nvim_create_autocmd('OptionSet', {
+        group = self.autocmd_group,
         pattern = 'background',
         callback = function()
             refresh_highlights(self)
@@ -428,6 +441,15 @@ function GitStatusWindow:close()
 
     self.win = nil
     self.win_prev_winopts = nil
+end
+
+function GitStatusWindow:destroy()
+    if self.autocmd_group ~= nil then
+        pcall(vim.api.nvim_del_augroup_by_id, self.autocmd_group)
+        self.autocmd_group = nil
+    end
+
+    self:close()
 end
 
 function GitStatusWindow:filter_entries()
