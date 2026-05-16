@@ -69,7 +69,8 @@ end
 
 ---@param gsw GitStatusWindow
 local function attach_status_buffer_autocmd(gsw)
-    vim.api.nvim_create_autocmd('BufWipeout', {
+    vim.api.nvim_create_autocmd({ 'BufDelete', 'BufUnload', 'BufWipeout' }, {
+        group = gsw.autocmd_group,
         buffer = gsw.buf.id,
         once = true,
         callback = function()

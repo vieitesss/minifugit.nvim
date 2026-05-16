@@ -423,6 +423,7 @@ function GitStatusWindow:toggle_help()
     help.toggle(self)
 end
 
+---@return boolean closed
 function GitStatusWindow:close()
     self:stop_loading()
     help.close(self)
@@ -436,19 +437,21 @@ function GitStatusWindow:close()
 
         if #vim.api.nvim_tabpage_list_wins(0) <= 1 then
             common.notify_warn('Cannot close the last window')
-            return
+            return false
         end
 
         local ok = pcall(vim.api.nvim_win_close, self.win, true)
 
         if not ok then
             common.notify_warn('Cannot close status window')
-            return
+            return false
         end
     end
 
     self.win = nil
     self.win_prev_winopts = nil
+
+    return true
 end
 
 ---@param buf Buffer?
@@ -473,7 +476,10 @@ function GitStatusWindow:destroy()
         self.autocmd_group = nil
     end
 
-    self:close()
+    if not self:close() then
+        return
+    end
+
     self:delete_owned_buffers()
 end
 
