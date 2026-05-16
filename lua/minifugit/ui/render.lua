@@ -48,6 +48,24 @@ function M.text_lines(lines)
     end, lines)
 end
 
+---@param line MiniFugitRenderLine
+---@param start_col integer
+---@param end_col integer
+---@return integer?
+---@return integer?
+local function clamp_highlight_range(line, start_col, end_col)
+    local line_len = #(line.text or '')
+
+    start_col = math.max(0, start_col)
+    end_col = math.min(line_len, math.max(0, end_col))
+
+    if start_col >= line_len or end_col <= start_col then
+        return nil, nil
+    end
+
+    return start_col, end_col
+end
+
 ---@param buf integer
 ---@param lines MiniFugitRenderLine[]
 function M.apply(buf, lines)
@@ -66,18 +84,23 @@ function M.apply(buf, lines)
         end
 
         for _, range in ipairs(line.highlights) do
-            vim.api.nvim_buf_set_extmark(
-                buf,
-                namespace,
-                index - 1,
-                range.start_col,
-                {
-                    end_col = range.end_col,
-                    hl_group = range.group,
-                    hl_mode = 'combine',
-                    priority = 200,
-                }
-            )
+            local start_col, end_col =
+                clamp_highlight_range(line, range.start_col, range.end_col)
+
+            if start_col ~= nil and end_col ~= nil then
+                vim.api.nvim_buf_set_extmark(
+                    buf,
+                    namespace,
+                    index - 1,
+                    start_col,
+                    {
+                        end_col = end_col,
+                        hl_group = range.group,
+                        hl_mode = 'combine',
+                        priority = 200,
+                    }
+                )
+            end
         end
     end
 end

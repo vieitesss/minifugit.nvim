@@ -206,6 +206,91 @@ local function set_split_line_numbers(win, enabled)
     vim.wo[win].statuscolumn = enabled and '%l %s ' or '%s '
 end
 
+---@class MiniFugitStatusWinState
+---@field winfixwidth boolean
+---@field width integer
+
+---@param self GitStatusWindow
+---@return MiniFugitStatusWinState?
+local function make_status_win_resizable(self)
+    if not common.is_valid_win(self.win) then
+        return nil
+    end
+
+    local state = {
+        winfixwidth = vim.wo[self.win].winfixwidth,
+        width = vim.api.nvim_win_get_width(self.win),
+    }
+    vim.wo[self.win].winfixwidth = false
+
+    return state
+end
+
+---@param self GitStatusWindow
+---@param state MiniFugitStatusWinState?
+local function restore_status_win_state(self, state)
+    if state == nil or not common.is_valid_win(self.win) then
+        return
+    end
+
+    pcall(vim.api.nvim_win_set_width, self.win, state.width)
+    vim.wo[self.win].winfixwidth = state.winfixwidth
+end
+
+---@param self GitStatusWindow
+---@param command string
+---@param status_win_state MiniFugitStatusWinState?
+---@return number?
+local function create_preview_split(self, command, status_win_state)
+    local current_win = vim.api.nvim_get_current_win()
+    local ok, err = pcall(vim.cmd, command)
+
+    if not ok then
+        restore_status_win_state(self, status_win_state)
+
+        if common.is_valid_win(current_win) then
+            pcall(vim.api.nvim_set_current_win, current_win)
+        end
+
+        common.notify_error(tostring(err), 'Cannot open diff preview')
+        return nil
+    end
+
+    return vim.api.nvim_get_current_win()
+end
+
+---@param self GitStatusWindow
+---@param win number
+---@param buf integer
+---@param created boolean
+---@param status_win_state MiniFugitStatusWinState?
+---@return boolean
+local function set_preview_win_buf(self, win, buf, created, status_win_state)
+    vim.wo[win].winfixwidth = false
+
+    local ok, err = pcall(vim.api.nvim_win_set_buf, win, buf)
+    restore_status_win_state(self, status_win_state)
+
+    if ok then
+        return true
+    end
+
+    if
+        created
+        and common.is_valid_win(win)
+        and #vim.api.nvim_tabpage_list_wins(0) > 1
+    then
+        pcall(vim.api.nvim_win_close, win, true)
+    end
+
+    if self.win ~= nil and common.is_valid_win(self.win) then
+        pcall(vim.api.nvim_set_current_win, self.win)
+    end
+
+    common.notify_error(tostring(err), 'Cannot open diff preview')
+    return false
+end
+
 ---@param self GitStatusWindow
 ---@param bufnr integer
 local function set_goto_code_keymap(self, bufnr)
@@ -860,16 +945,32 @@ local function show_diff_lines(self, diff_lines, preview_key, title)
     vim.bo[buf.id].modifiable = false
     render.apply(buf.id, diff_lines)
 
-    local target_win = window.find_target_win(self)
+    local status_winfixwidth = make_status_win_resizable(self)
+    local target_win
     local created_win = false
 
-    if target_win == nil then
-        vim.cmd('leftabove vsplit')
-        target_win = vim.api.nvim_get_current_win()
-        self.target_win = target_win
-        created_win = true
-    else
+    if has_open_stacked_diff(self) then
+        target_win = self.diff_win
         vim.api.nvim_set_current_win(target_win)
+    else
+        target_win = window.find_target_win(self)
+
+        if target_win == nil then
+            target_win = create_preview_split(
+                self,
+                'rightbelow vsplit',
+                status_winfixwidth
+            )
+
+            if target_win == nil then
+                return false
+            end
+
+            self.target_win = target_win
+            created_win = true
+        else
+            vim.api.nvim_set_current_win(target_win)
+        end
     end
 
     local previous_buf = vim.api.nvim_win_get_buf(target_win)
@@ -882,7 +983,18 @@ local function show_diff_lines(self, diff_lines, preview_key, title)
         self.diff_created_win = created_win
     end
 
-    vim.api.nvim_win_set_buf(target_win, buf.id)
+    if
+        not set_preview_win_buf(
+            self,
+            target_win,
+            buf.id,
+            created_win,
+            status_winfixwidth
+        )
+    then
+        return false
+    end
+
     window.configure_diff_win(target_win)
     vim.wo[target_win].wrap = self.diff_wrap
     vim.wo[target_win].winbar = title
@@ -923,6 +1035,7 @@ local function show_split_diff(self, split_diff, diff_lines, preview_key, title)
         vim.bo[right_buf.id].filetype = split_diff.filetype
     end
 
+    local status_winfixwidth = make_status_win_resizable(self)
     local target_win
     local left_created = false
 
@@ -937,8 +1050,16 @@ local function show_split_diff(self, split_diff, diff_lines, preview_key, title)
         target_win = window.find_target_win(self)
 
         if target_win == nil then
-            vim.cmd('leftabove vsplit')
-            target_win = vim.api.nvim_get_current_win()
+            target_win = create_preview_split(
+                self,
+                'rightbelow vsplit',
+                status_winfixwidth
+            )
+
+            if target_win == nil then
+                return false
+            end
+
             self.target_win = target_win
             left_created = true
         else
@@ -955,7 +1076,18 @@ local function show_split_diff(self, split_diff, diff_lines, preview_key, title)
         self.diff_left_created_win = left_created
     end
 
-    vim.api.nvim_win_set_buf(target_win, left_buf.id)
+    if
+        not set_preview_win_buf(
+            self,
+            target_win,
+            left_buf.id,
+            left_created,
+            status_winfixwidth
+        )
+    then
+        return false
+    end
+
     window.configure_split_diff_win(target_win)
     set_split_line_numbers(target_win, self.diff_show_numbers)
     vim.wo[target_win].wrap = self.diff_wrap
@@ -964,11 +1096,21 @@ local function show_split_diff(self, split_diff, diff_lines, preview_key, title)
     self.diff_left_win = target_win
 
     local right_win = self.diff_right_win
+    local right_status_winfixwidth = make_status_win_resizable(self)
     local right_created = false
 
     if not common.is_valid_win(right_win) then
-        vim.cmd('rightbelow vsplit')
-        right_win = vim.api.nvim_get_current_win()
+        right_win = create_preview_split(
+            self,
+            'rightbelow vsplit',
+            right_status_winfixwidth
+        )
+
+        if right_win == nil then
+            M.close_diff(self)
+            return false
+        end
+
         right_created = true
     else
         vim.api.nvim_set_current_win(right_win)
@@ -983,7 +1125,19 @@ local function show_split_diff(self, split_diff, diff_lines, preview_key, title)
         self.diff_right_created_win = right_created
     end
 
-    vim.api.nvim_win_set_buf(right_win, right_buf.id)
+    if
+        not set_preview_win_buf(
+            self,
+            right_win,
+            right_buf.id,
+            right_created,
+            right_status_winfixwidth
+        )
+    then
+        M.close_diff(self)
+        return false
+    end
+
     window.configure_split_diff_win(right_win)
     set_split_line_numbers(right_win, self.diff_show_numbers)
     vim.wo[right_win].wrap = self.diff_wrap
