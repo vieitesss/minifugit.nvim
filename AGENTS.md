@@ -21,7 +21,7 @@ This is a Neovim plugin, written in Lua, that provides a lightweight Git status 
 - There should be:
     - Functional tests: only for functions that are part of each module's API. Do NOT create tests for local functions
     - UI tests: check whether windows are created/deleted correctly, ensuring the UI is shown as expected during and after the execution of the plugin.
-- Use temporal directories as git repositories for testing, do not use real repositories.
+- Use temporary directories as git repositories for testing, do not use real repositories.
 
 ## Formatting
 

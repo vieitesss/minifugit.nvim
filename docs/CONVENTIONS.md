@@ -1,6 +1,6 @@
 # Conventions
 
-ALWAYS follow these instructions.
+These conventions apply to all project changes.
 
 ## Project shape
 
