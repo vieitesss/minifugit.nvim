@@ -259,6 +259,36 @@ describe('minifugit status UI', function()
     end)
 
     it(
+        'opens an already visible modified entry without re-editing it',
+        function()
+            helpers.write_file(
+                vim.fs.joinpath(repo, 'tracked.txt'),
+                { 'one', 'two' }
+            )
+            vim.cmd.edit(
+                vim.fn.fnameescape(vim.fs.joinpath(repo, 'tracked.txt'))
+            )
+            local file_win = vim.api.nvim_get_current_win()
+            local file_buf = vim.api.nvim_get_current_buf()
+            vim.api.nvim_buf_set_lines(file_buf, 0, -1, false, { 'unsaved' })
+            assert.is_true(vim.bo[file_buf].modified)
+
+            minifugit.status()
+            vim.api.nvim_set_current_win(minifugit.gsw.win)
+            vim.api.nvim_win_set_cursor(
+                minifugit.gsw.win,
+                { row_containing(minifugit.gsw.buf.id, 'tracked.txt'), 0 }
+            )
+
+            assert.is_true(minifugit.gsw:enter_entry())
+
+            assert.are.equal(file_win, vim.api.nvim_get_current_win())
+            assert.are.equal(file_buf, vim.api.nvim_get_current_buf())
+            assert.is_true(vim.bo[file_buf].modified)
+        end
+    )
+
+    it(
         'keeps a real file window options unchanged after focusing status',
         function()
             vim.cmd.edit(
