@@ -90,6 +90,19 @@ local function attach_status_buffer_autocmd(gsw)
     })
 end
 
+---@param path string?
+---@return GitFileChangeCounts
+---@return string?
+function M.file_change_counts(path)
+    return require('minifugit.git').file_change_counts(path)
+end
+
+---@return GitFileChangeCounts
+---@return string?
+function M.current_file_change_counts()
+    return require('minifugit.git').current_file_change_counts()
+end
+
 function M.status()
     log.info('status command called')
 

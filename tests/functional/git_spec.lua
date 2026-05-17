@@ -149,6 +149,30 @@ describe('minifugit.git', function()
         end
     )
 
+    it('counts added, modified, and deleted lines for a file', function()
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'one changed', 'two', 'four' }
+        )
+
+        local counts, err = git.file_change_counts('tracked.txt')
+
+        assert.is_nil(err)
+        assert.are.same({ added = 2, modified = 1, deleted = 0 }, counts)
+    end)
+
+    it('counts untracked file lines as added', function()
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'untracked.txt'),
+            { 'one', 'two' }
+        )
+
+        local counts, err = git.file_change_counts('untracked.txt')
+
+        assert.is_nil(err)
+        assert.are.same({ added = 2, modified = 0, deleted = 0 }, counts)
+    end)
+
     it('reports useful push errors for edge cases', function()
         local ok, message = git.push()
 
