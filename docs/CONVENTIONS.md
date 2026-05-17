@@ -1,5 +1,7 @@
 # Conventions
 
+These conventions apply to all project changes.
+
 ## Project shape
 
 - Keep the public `minifugit` entrypoints thin and move behavior into focused modules.
