@@ -12,6 +12,7 @@ local preview_hunks = require('minifugit.ui.status.preview.hunks')
 local preview_buffers = require('minifugit.ui.status.preview.buffers')
 local display = require('minifugit.ui.status.preview.display')
 local window_state = require('minifugit.ui.status.preview.window_state')
+local preview_util = require('minifugit.ui.status.preview.util')
 
 local M = {}
 
@@ -120,16 +121,12 @@ end
 ---@field buf_field string
 ---@field split boolean?
 
----@param text string
----@return string
-local function winbar_text(text)
-    return (text:gsub('%%', '%%%%'))
-end
-
 ---@param commit GitCommit
 ---@return string
 local function commit_diff_title(commit)
-    return winbar_text('commit: ' .. commit.hash .. ' ' .. commit.message)
+    return preview_util.winbar_text(
+        'commit: ' .. commit.hash .. ' ' .. commit.message
+    )
 end
 
 ---@param entry GitStatusEntry
@@ -141,7 +138,7 @@ local function diff_title(entry, section)
             and (entry.orig_path .. ' -> ' .. entry.path)
         or entry.path
 
-    return winbar_text(prefix .. ': ' .. path)
+    return preview_util.winbar_text(prefix .. ': ' .. path)
 end
 
 ---@param self GitStatusWindow

@@ -1,17 +1,9 @@
 local Buffer = require('minifugit.ui.buffer')
 local common = require('minifugit.ui.status.common')
 local window = require('minifugit.ui.status.window')
+local preview_util = require('minifugit.ui.status.preview.util')
 
 local M = {}
-
----@param win number?
-local function diffoff(win)
-    if common.is_valid_win(win) then
-        pcall(vim.api.nvim_win_call, win, function()
-            vim.cmd('diffoff')
-        end)
-    end
-end
 
 ---@param buf Buffer?
 ---@param win number?
@@ -160,7 +152,7 @@ function M.restore_replaced_diff_window(self, buf)
     end
 
     if state.split then
-        diffoff(win)
+        preview_util.diffoff(win)
     end
 
     window.restore_winopts(win, self[state.prev_winopts_field])
@@ -232,7 +224,7 @@ function M.restore_or_close_diff_window(self, state, keep_win)
     end
 
     if state.split then
-        diffoff(win)
+        preview_util.diffoff(win)
     end
 
     if keep_win then

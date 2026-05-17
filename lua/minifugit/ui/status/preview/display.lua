@@ -4,26 +4,12 @@ local render = require('minifugit.ui.render')
 local window = require('minifugit.ui.status.window')
 local buffers = require('minifugit.ui.status.preview.buffers')
 local window_state = require('minifugit.ui.status.preview.window_state')
+local preview_util = require('minifugit.ui.status.preview.util')
 
 local M = {}
 
 local SPLIT_DIFF_NAMESPACE =
     vim.api.nvim_create_namespace('minifugit.ui.split_diff')
-
----@param text string
----@return string
-local function winbar_text(text)
-    return (text:gsub('%%', '%%%%'))
-end
-
----@param win number?
-local function diffoff(win)
-    if common.is_valid_win(win) then
-        pcall(vim.api.nvim_win_call, win, function()
-            vim.cmd('diffoff')
-        end)
-    end
-end
 
 ---@param win number?
 ---@param enabled boolean
@@ -419,7 +405,7 @@ function M.show_split(self, split_diff, diff_lines, preview_key, title, actions)
     vim.wo[target_win].wrap = self.diff_wrap
     vim.wo[target_win].winbar = title
         .. ' [1/2] '
-        .. winbar_text(split_diff.left.title)
+        .. preview_util.winbar_text(split_diff.left.title)
     self.diff_left_win = target_win
 
     local right_win = self.diff_right_win
@@ -472,12 +458,12 @@ function M.show_split(self, split_diff, diff_lines, preview_key, title, actions)
     vim.wo[right_win].wrap = self.diff_wrap
     vim.wo[right_win].winbar = title
         .. ' [2/2] '
-        .. winbar_text(split_diff.right.title)
+        .. preview_util.winbar_text(split_diff.right.title)
     self.diff_right_win = right_win
     resize_split_preview_windows(self)
 
-    diffoff(self.diff_left_win)
-    diffoff(self.diff_right_win)
+    preview_util.diffoff(self.diff_left_win)
+    preview_util.diffoff(self.diff_right_win)
     vim.api.nvim_win_call(self.diff_left_win, function()
         vim.cmd('diffthis')
     end)
