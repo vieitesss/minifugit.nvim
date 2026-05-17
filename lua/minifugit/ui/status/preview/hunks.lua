@@ -1,3 +1,5 @@
+require('minifugit.ui.status.preview.types')
+
 local common = require('minifugit.ui.status.common')
 local diff_position = require('minifugit.ui.diff.position')
 local git = require('minifugit.git')

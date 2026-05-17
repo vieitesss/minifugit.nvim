@@ -1,25 +1,8 @@
+require('minifugit.ui.status.preview.types')
+
 local Buffer = require('minifugit.ui.buffer')
 
 local M = {}
-
----@class MiniFugitPreviewBufferActions
----@field close_diff fun()
----@field jump_hunk fun(delta: integer)
----@field toggle_wrap fun()
----@field toggle_numbers fun()
----@field toggle_headers fun()
----@field toggle_split_numbers fun()
----@field stage_current_hunk fun()
----@field unstage_current_hunk fun()
----@field discard_current_hunk fun()
----@field toggle_layout fun()
----@field goto_code fun()
----@field toggle_help fun()
-
----@class MiniFugitPreviewActions : MiniFugitPreviewBufferActions
----@field has_open_diff fun(): boolean
----@field focus_open_diff fun()
----@field refresh fun(state: GitStatusCursorState?)
 
 ---@param bufnr integer
 ---@param actions MiniFugitPreviewBufferActions
@@ -139,12 +122,11 @@ function M.ensure_stacked(self, actions)
     return self.diff_buf
 end
 
----@param self GitStatusWindow
 ---@param buf_name string
 ---@param existing Buffer?
 ---@param actions MiniFugitPreviewBufferActions
 ---@return Buffer
-function M.ensure_split(self, buf_name, existing, actions)
+function M.ensure_split(_, buf_name, existing, actions)
     if existing ~= nil and existing:is_valid() then
         return existing
     end

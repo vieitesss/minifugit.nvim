@@ -1,3 +1,5 @@
+require('minifugit.ui.status.preview.types')
+
 local diff_parser = require('minifugit.ui.diff.parser')
 local diff_position = require('minifugit.ui.diff.position')
 local diff_render = require('minifugit.ui.diff.render')
@@ -5,9 +7,9 @@ local render = require('minifugit.ui.render')
 local git = require('minifugit.git')
 local common = require('minifugit.ui.status.common')
 local selection = require('minifugit.ui.status.selection')
-local cursor = require('minifugit.ui.status.preview.cursor')
-local hunks = require('minifugit.ui.status.preview.hunks')
-local buffers = require('minifugit.ui.status.preview.buffers')
+local preview_cursor = require('minifugit.ui.status.preview.cursor')
+local preview_hunks = require('minifugit.ui.status.preview.hunks')
+local preview_buffers = require('minifugit.ui.status.preview.buffers')
 local display = require('minifugit.ui.status.preview.display')
 local window_state = require('minifugit.ui.status.preview.window_state')
 
@@ -159,13 +161,20 @@ end
 ---@param self GitStatusWindow
 ---@param lines string[]?
 ---@param raw_rows integer[]?
----@param hunks MiniFugitDiffHunk[]?
+---@param diff_hunks MiniFugitDiffHunk[]?
 ---@param section GitStatusSectionName?
 ---@param entry GitStatusEntry?
-local function set_diff_context(self, lines, raw_rows, hunks, section, entry)
+local function set_diff_context(
+    self,
+    lines,
+    raw_rows,
+    diff_hunks,
+    section,
+    entry
+)
     self.diff_raw_lines = lines
     self.diff_raw_rows = raw_rows
-    self.diff_hunks = hunks
+    self.diff_hunks = diff_hunks
     self.diff_section = section
     self.diff_context_entry = entry
 end
@@ -237,9 +246,9 @@ function M.jump_hunk(self, delta)
     end
 
     local win = assert(self.diff_win)
-    local cursor = vim.api.nvim_win_get_cursor(win)[1]
+    local cursor_row = vim.api.nvim_win_get_cursor(win)[1]
     local lines = vim.api.nvim_buf_get_lines(self.diff_buf.id, 0, -1, false)
-    local start = delta > 0 and cursor + 1 or cursor - 1
+    local start = delta > 0 and cursor_row + 1 or cursor_row - 1
     local stop = delta > 0 and #lines or 1
 
     for row = start, stop, delta do
@@ -304,11 +313,11 @@ function M.toggle_layout(self)
         return true
     end
 
-    local position = cursor.current_hunk_position(self)
+    local position = preview_cursor.current_hunk_position(self)
     local ok = M.set_layout(self, next_layout)
 
     if ok then
-        cursor.restore_hunk_position(self, position)
+        preview_cursor.restore_hunk_position(self, position)
     end
 
     return ok
@@ -401,7 +410,7 @@ function M.open_commit_diff(self, commit, opts)
     )
 
     if ok and self.diff_buf ~= nil then
-        buffers.clear_goto_code_keymap(self.diff_buf.id)
+        preview_buffers.clear_goto_code_keymap(self.diff_buf.id)
     end
 
     return ok
@@ -442,7 +451,7 @@ end
 ---@param self GitStatusWindow
 ---@return Buffer
 function M.ensure_diff_buf(self)
-    return buffers.ensure_stacked(self, preview_actions(self))
+    return preview_buffers.ensure_stacked(self, preview_actions(self))
 end
 
 ---@param self GitStatusWindow
@@ -478,7 +487,7 @@ function M.open_diff(self, entry, section, opts)
         return false
     end
 
-    local hunks = diff_parser.parse_hunks(lines)
+    local parsed_hunks = diff_parser.parse_hunks(lines)
     local split_diff, split_err = git.split_diff(entry, section)
 
     if layout == 'split' then
@@ -493,7 +502,7 @@ function M.open_diff(self, entry, section, opts)
             )
 
             if ok then
-                set_diff_context(self, lines, nil, hunks, section, entry)
+                set_diff_context(self, lines, nil, parsed_hunks, section, entry)
             end
 
             return ok
@@ -526,7 +535,7 @@ function M.open_diff(self, entry, section, opts)
         })
     end
 
-    diff_parser.assign_stacked_rows(hunks, raw_rows)
+    diff_parser.assign_stacked_rows(parsed_hunks, raw_rows)
 
     local ok = display.show_stacked(
         self,
@@ -537,10 +546,10 @@ function M.open_diff(self, entry, section, opts)
     )
 
     if ok then
-        set_diff_context(self, lines, raw_rows, hunks, section, entry)
+        set_diff_context(self, lines, raw_rows, parsed_hunks, section, entry)
 
         if self.diff_buf ~= nil then
-            buffers.set_goto_code_keymap(
+            preview_buffers.set_goto_code_keymap(
                 self.diff_buf.id,
                 preview_actions(self)
             )
@@ -558,7 +567,7 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.goto_code(self)
-    local position = cursor.current_source_position(self)
+    local position = preview_cursor.current_source_position(self)
 
     if position == nil then
         common.notify_warn('No source line under cursor')
@@ -572,12 +581,13 @@ function M.goto_code(self)
         local unstaged_lines = git.diff(self.diff_context_entry, 'unstaged')
 
         if #unstaged_lines > 0 then
-            local unstaged_hunks = diff_parser.parse_hunks(unstaged_lines)
+            local parsed_unstaged_hunks =
+                diff_parser.parse_hunks(unstaged_lines)
             position = {
                 path = position.path,
                 line = diff_position.old_line_to_new_line(
                     unstaged_lines,
-                    unstaged_hunks,
+                    parsed_unstaged_hunks,
                     position.line
                 ),
             }
@@ -601,15 +611,15 @@ function M.goto_code(self)
         return false
     end
 
-    local buffers, code_win =
+    local diff_buffers, code_win =
         window_state.close_diff_windows_for_code(self, state)
 
     vim.api.nvim_set_current_win(code_win)
     edit_without_jumplist(path)
-    cursor.set_cursor_row(code_win, position.line)
+    preview_cursor.set_cursor_row(code_win, position.line)
     self.target_win = code_win
 
-    window_state.delete_diff_buffers(buffers)
+    window_state.delete_diff_buffers(diff_buffers)
 
     return true
 end
@@ -617,19 +627,31 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.stage_current_hunk(self)
-    return hunks.apply_current_hunk(self, 'stage', preview_actions(self))
+    return preview_hunks.apply_current_hunk(
+        self,
+        'stage',
+        preview_actions(self)
+    )
 end
 
 ---@param self GitStatusWindow
 ---@return boolean
 function M.unstage_current_hunk(self)
-    return hunks.apply_current_hunk(self, 'unstage', preview_actions(self))
+    return preview_hunks.apply_current_hunk(
+        self,
+        'unstage',
+        preview_actions(self)
+    )
 end
 
 ---@param self GitStatusWindow
 ---@return boolean
 function M.discard_current_hunk(self)
-    return hunks.apply_current_hunk(self, 'discard', preview_actions(self))
+    return preview_hunks.apply_current_hunk(
+        self,
+        'discard',
+        preview_actions(self)
+    )
 end
 
 ---@param self GitStatusWindow
