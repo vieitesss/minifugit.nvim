@@ -60,6 +60,7 @@ describe('minifugit.git', function()
         assert.are.same({}, snapshot.entries)
         assert.are.equal('Not inside a git repository', snapshot.error)
 
+        vim.cmd.cd(vim.fn.fnameescape(repo))
         vim.fn.delete(not_repo, 'rf')
     end)
 
