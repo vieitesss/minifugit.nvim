@@ -10,6 +10,8 @@ local selection = require('minifugit.ui.status.selection')
 
 local M = {}
 
+local attach_diff_buffer_autocmds
+
 local SPLIT_DIFF_NAMESPACE =
     vim.api.nvim_create_namespace('minifugit.ui.split_diff')
 
@@ -960,6 +962,7 @@ local function show_diff_lines(self, diff_lines, preview_key, title)
     end
 
     local buf = M.ensure_diff_buf(self)
+    attach_diff_buffer_autocmds(self, buf.id)
 
     vim.bo[buf.id].modifiable = true
     buf:set_lines(render.text_lines(diff_lines))
@@ -1047,6 +1050,8 @@ local function show_split_diff(self, split_diff, diff_lines, preview_key, title)
 
     self.diff_left_buf = left_buf
     self.diff_right_buf = right_buf
+    attach_diff_buffer_autocmds(self, left_buf.id)
+    attach_diff_buffer_autocmds(self, right_buf.id)
     set_plain_lines(left_buf, split_diff.left.lines)
     set_plain_lines(right_buf, split_diff.right.lines)
     mark_split_changes(left_buf, right_buf, diff_lines, self.groups)
@@ -1223,6 +1228,21 @@ local SPLIT_DIFF_CLOSE_STATES = {
 }
 
 ---@param self GitStatusWindow
+---@param buf integer
+---@return MiniFugitDiffWindowState?
+local function diff_window_state_for_buf(self, buf)
+    for _, state in ipairs(DIFF_WINDOW_STATES) do
+        local diff_buf = self[state.buf_field]
+
+        if diff_buf ~= nil and diff_buf.id == buf then
+            return state
+        end
+    end
+
+    return nil
+end
+
+---@param self GitStatusWindow
 ---@param win number
 ---@return MiniFugitDiffWindowState?
 local function diff_window_state_for_win(self, win)
@@ -1251,6 +1271,52 @@ local function clear_missing_diff_window_states(self)
             clear_diff_window_state(self, state)
         end
     end
+end
+
+---@param self GitStatusWindow
+---@param buf integer
+local function restore_replaced_diff_window(self, buf)
+    local state = diff_window_state_for_buf(self, buf)
+
+    if state == nil then
+        return
+    end
+
+    local win = self[state.win_field]
+
+    if not common.is_valid_win(win) then
+        clear_diff_window_state(self, state)
+        return
+    end
+
+    if vim.api.nvim_win_get_buf(win) == buf then
+        return
+    end
+
+    if state.split then
+        diffoff(win)
+    end
+
+    window.restore_winopts(win, self[state.prev_winopts_field])
+    clear_diff_window_state(self, state)
+end
+
+---@param self GitStatusWindow
+---@param buf integer
+attach_diff_buffer_autocmds = function(self, buf)
+    if self.autocmd_group == nil then
+        return
+    end
+
+    vim.api.nvim_create_autocmd({ 'BufLeave', 'BufHidden' }, {
+        group = self.autocmd_group,
+        buffer = buf,
+        callback = function(args)
+            vim.schedule(function()
+                restore_replaced_diff_window(self, args.buf)
+            end)
+        end,
+    })
 end
 
 ---@param self GitStatusWindow

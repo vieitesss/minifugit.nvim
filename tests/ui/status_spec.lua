@@ -493,6 +493,78 @@ describe('minifugit status UI', function()
     )
 
     it(
+        'restores file options when a file replaces a stacked diff buffer',
+        function()
+            helpers.write_file(
+                vim.fs.joinpath(repo, 'tracked.txt'),
+                { 'one', 'two' }
+            )
+            helpers.write_file(vim.fs.joinpath(repo, 'other.txt'), { 'other' })
+            vim.cmd.edit(
+                vim.fn.fnameescape(vim.fs.joinpath(repo, 'tracked.txt'))
+            )
+            local file_win = vim.api.nvim_get_current_win()
+            vim.wo[file_win].number = true
+            vim.wo[file_win].relativenumber = true
+            vim.wo[file_win].signcolumn = 'yes:2'
+            vim.wo[file_win].foldcolumn = '2'
+            vim.wo[file_win].wrap = true
+            local file_opts = capture_winopts(file_win)
+
+            minifugit.options.preview.diff_layout = 'stacked'
+            minifugit.status()
+            vim.api.nvim_win_set_cursor(
+                assert(minifugit.gsw.win),
+                { row_containing(minifugit.gsw.buf.id, 'tracked.txt'), 0 }
+            )
+            minifugit.gsw:diff_entry()
+
+            vim.api.nvim_set_current_win(file_win)
+            vim.cmd.edit(vim.fn.fnameescape(vim.fs.joinpath(repo, 'other.txt')))
+            assert.is_true(vim.wait(1000, function()
+                return winopts_match(capture_winopts(file_win), file_opts)
+            end))
+            assert_winopts(capture_winopts(file_win), file_opts)
+        end
+    )
+
+    it(
+        'restores file options when a file replaces a split diff buffer',
+        function()
+            helpers.write_file(
+                vim.fs.joinpath(repo, 'tracked.txt'),
+                { 'one', 'two' }
+            )
+            helpers.write_file(vim.fs.joinpath(repo, 'other.txt'), { 'other' })
+            vim.cmd.edit(
+                vim.fn.fnameescape(vim.fs.joinpath(repo, 'tracked.txt'))
+            )
+            local file_win = vim.api.nvim_get_current_win()
+            vim.wo[file_win].number = true
+            vim.wo[file_win].relativenumber = true
+            vim.wo[file_win].signcolumn = 'yes:2'
+            vim.wo[file_win].foldcolumn = '2'
+            vim.wo[file_win].wrap = true
+            local file_opts = capture_winopts(file_win)
+
+            minifugit.options.preview.diff_layout = 'split'
+            minifugit.status()
+            vim.api.nvim_win_set_cursor(
+                assert(minifugit.gsw.win),
+                { row_containing(minifugit.gsw.buf.id, 'tracked.txt'), 0 }
+            )
+            minifugit.gsw:diff_entry()
+
+            vim.api.nvim_set_current_win(file_win)
+            vim.cmd.edit(vim.fn.fnameescape(vim.fs.joinpath(repo, 'other.txt')))
+            assert.is_true(vim.wait(1000, function()
+                return winopts_match(capture_winopts(file_win), file_opts)
+            end))
+            assert_winopts(capture_winopts(file_win), file_opts)
+        end
+    )
+
+    it(
         'restores file options when Ctrl-O leaves a split diff buffer',
         function()
             helpers.write_file(
