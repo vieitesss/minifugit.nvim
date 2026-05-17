@@ -61,10 +61,13 @@ function M.reset()
 
     ---@type GitStatusWindow
     local gsw = M.gsw
-    pcall(function()
-        gsw:destroy()
+    local ok, destroyed = pcall(function()
+        return gsw:destroy()
     end)
-    M.gsw = nil
+
+    if ok and destroyed then
+        M.gsw = nil
+    end
 end
 
 ---@param gsw GitStatusWindow

@@ -435,7 +435,9 @@ function GitStatusWindow:close()
     if self.win ~= nil and common.is_valid_win(self.win) then
         window.restore_winopts(self.win, self.win_prev_winopts)
 
-        if #vim.api.nvim_tabpage_list_wins(0) <= 1 then
+        local tabpage = vim.api.nvim_win_get_tabpage(self.win)
+
+        if #vim.api.nvim_tabpage_list_wins(tabpage) <= 1 then
             common.notify_warn('Cannot close the last window')
             return false
         end
@@ -470,6 +472,7 @@ function GitStatusWindow:delete_owned_buffers()
     end
 end
 
+---@return boolean destroyed
 function GitStatusWindow:destroy()
     if self.autocmd_group ~= nil then
         pcall(vim.api.nvim_del_augroup_by_id, self.autocmd_group)
@@ -477,10 +480,12 @@ function GitStatusWindow:destroy()
     end
 
     if not self:close() then
-        return
+        return false
     end
 
     self:delete_owned_buffers()
+
+    return true
 end
 
 function GitStatusWindow:filter_entries()
