@@ -417,8 +417,9 @@ function M.show_split(self, split_diff, diff_lines, preview_key, title, actions)
     window.configure_split_diff_win(target_win)
     M.set_split_line_numbers(target_win, self.diff_show_numbers)
     vim.wo[target_win].wrap = self.diff_wrap
-    vim.wo[target_win].winbar =
-        winbar_text(title .. ' [1/2] ' .. split_diff.left.title)
+    vim.wo[target_win].winbar = title
+        .. ' [1/2] '
+        .. winbar_text(split_diff.left.title)
     self.diff_left_win = target_win
 
     local right_win = self.diff_right_win
@@ -469,8 +470,9 @@ function M.show_split(self, split_diff, diff_lines, preview_key, title, actions)
     window.configure_split_diff_win(right_win)
     M.set_split_line_numbers(right_win, self.diff_show_numbers)
     vim.wo[right_win].wrap = self.diff_wrap
-    vim.wo[right_win].winbar =
-        winbar_text(title .. ' [2/2] ' .. split_diff.right.title)
+    vim.wo[right_win].winbar = title
+        .. ' [2/2] '
+        .. winbar_text(split_diff.right.title)
     self.diff_right_win = right_win
     resize_split_preview_windows(self)
 
