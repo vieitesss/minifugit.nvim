@@ -83,6 +83,35 @@ local function normal_keys(keys)
     )
 end
 
+---@param actual table<string, any>
+---@param expected table<string, any>
+---@return boolean
+local function winopts_match(actual, expected)
+    for key, value in pairs(expected) do
+        if actual[key] ~= value then
+            return false
+        end
+    end
+
+    return true
+end
+
+---@param buf integer
+---@param expected_opts? table<string, any>
+local function wait_for_current_buf(buf, expected_opts)
+    assert.is_true(vim.wait(1000, function()
+        if vim.api.nvim_get_current_buf() ~= buf then
+            return false
+        end
+
+        return expected_opts == nil
+            or winopts_match(
+                capture_winopts(vim.api.nvim_get_current_win()),
+                expected_opts
+            )
+    end))
+end
+
 describe('minifugit status UI', function()
     ---@type string
     local original_cwd
@@ -367,14 +396,14 @@ describe('minifugit status UI', function()
 
         vim.api.nvim_set_current_win(status_win)
         normal_keys('<C-O>')
-        vim.wait(50)
+        wait_for_current_buf(file_buf, file_opts)
 
         local current_win = vim.api.nvim_get_current_win()
         assert.are.equal(file_buf, vim.api.nvim_get_current_buf())
         assert_winopts(capture_winopts(current_win), file_opts)
 
         normal_keys('<C-I>')
-        vim.wait(50)
+        wait_for_current_buf(status_buf, status_opts)
 
         assert.are.equal(status_buf, vim.api.nvim_get_current_buf())
         assert_winopts(
@@ -417,7 +446,7 @@ describe('minifugit status UI', function()
             local diff_opts = capture_winopts(diff_win)
             vim.api.nvim_set_current_win(diff_win)
             normal_keys('<C-O>')
-            vim.wait(50)
+            wait_for_current_buf(file_buf, file_opts)
 
             assert.are.equal(file_buf, vim.api.nvim_get_current_buf())
             assert_winopts(
@@ -426,7 +455,7 @@ describe('minifugit status UI', function()
             )
 
             normal_keys('<C-I>')
-            vim.wait(50)
+            wait_for_current_buf(diff_buf, diff_opts)
 
             assert.are.equal(diff_buf, vim.api.nvim_get_current_buf())
             assert_winopts(
@@ -470,7 +499,7 @@ describe('minifugit status UI', function()
             local diff_opts = capture_winopts(diff_win)
             vim.api.nvim_set_current_win(diff_win)
             normal_keys('<C-O>')
-            vim.wait(50)
+            wait_for_current_buf(file_buf, file_opts)
 
             assert.are.equal(file_buf, vim.api.nvim_get_current_buf())
             assert_winopts(
@@ -479,7 +508,7 @@ describe('minifugit status UI', function()
             )
 
             normal_keys('<C-I>')
-            vim.wait(50)
+            wait_for_current_buf(diff_buf, diff_opts)
 
             assert.are.equal(diff_buf, vim.api.nvim_get_current_buf())
             assert_winopts(
