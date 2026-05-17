@@ -773,6 +773,25 @@ local function normalize_path(path, root)
 end
 
 ---@param path string
+---@return boolean
+local function is_absolute_path(path)
+    return path:sub(1, 1) == '/' or path:match('^%a:[/\\]') ~= nil
+end
+
+---@param path string
+---@param root string
+---@return uv.fs_stat.result?
+local function fs_stat_path(path, root)
+    local full_path = path
+
+    if not is_absolute_path(path) then
+        full_path = vim.fs.joinpath(root, path)
+    end
+
+    return vim.uv.fs_stat(vim.fs.normalize(full_path))
+end
+
+---@param path string
 ---@return string[]
 ---@return string?
 local function read_worktree_lines(path)
@@ -948,7 +967,9 @@ end
 ---@return GitFileChangeCounts
 ---@return string?
 function git.file_change_counts(path)
-    ensure_git()
+    if not ensure_git() then
+        return empty_change_counts(), '`git` is not executable'
+    end
 
     path = path or vim.api.nvim_buf_get_name(0)
 
@@ -964,8 +985,15 @@ function git.file_change_counts(path)
         return empty_change_counts(), 'No file path provided'
     end
 
+    local stat = fs_stat_path(relative_path, root)
+
+    if stat ~= nil and stat.type == 'directory' then
+        return empty_change_counts(),
+            'File change counts are not available for directories'
+    end
+
     local status_out = git.run(
-        { 'status', '--porcelain=v1', '--', relative_path },
+        { 'status', '--porcelain=v1', '-z', '--', relative_path },
         { cwd = root, ignore_error = true }
     )
 
@@ -973,7 +1001,13 @@ function git.file_change_counts(path)
         return empty_change_counts(), return_result(status_out)
     end
 
-    if status_out.output:sub(1, 2) == '??' then
+    local status_entries = parse_status(status_out.output)
+
+    if #status_entries > 1 then
+        return empty_change_counts(), 'Expected a file path, got multiple files'
+    end
+
+    if #status_entries == 1 and status_entries[1].unstaged == '?' then
         local lines, err = read_worktree_lines(relative_path)
 
         if err ~= nil then
@@ -984,7 +1018,7 @@ function git.file_change_counts(path)
     end
 
     local out = git.run(
-        { 'diff', '--no-ext-diff', '--', relative_path },
+        { 'diff', '--no-ext-diff', '--unified=0', '--', relative_path },
         { cwd = root, ignore_error = true }
     )
 

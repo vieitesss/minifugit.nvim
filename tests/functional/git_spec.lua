@@ -173,6 +173,38 @@ describe('minifugit.git', function()
         assert.are.same({ added = 2, modified = 0, deleted = 0 }, counts)
     end)
 
+    it('counts deleted lines for a file', function()
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'one', 'two', 'three' }
+        )
+        helpers.run({ 'git', 'add', 'tracked.txt' }, repo)
+        helpers.run({ 'git', 'commit', '-m', 'track multiple lines' }, repo)
+        helpers.write_file(vim.fs.joinpath(repo, 'tracked.txt'), { 'one' })
+
+        local counts, err = git.file_change_counts('tracked.txt')
+
+        assert.is_nil(err)
+        assert.are.same({ added = 0, modified = 0, deleted = 2 }, counts)
+    end)
+
+    it('rejects directories for file change counts', function()
+        vim.fn.mkdir(vim.fs.joinpath(repo, 'tracked-dir'), 'p')
+        helpers.write_file(vim.fs.joinpath(repo, 'tracked-dir/file.txt'), {
+            'one',
+        })
+        helpers.run({ 'git', 'add', 'tracked-dir/file.txt' }, repo)
+        helpers.run({ 'git', 'commit', '-m', 'track directory' }, repo)
+
+        local counts, err = git.file_change_counts('tracked-dir')
+
+        assert.are.equal(
+            'File change counts are not available for directories',
+            err
+        )
+        assert.are.same({ added = 0, modified = 0, deleted = 0 }, counts)
+    end)
+
     it('reports useful push errors for edge cases', function()
         local ok, message = git.push()
 
