@@ -180,7 +180,13 @@ function M.open_entry(self, entry)
         vim.api.nvim_set_current_win(target_win)
     end
 
-    vim.cmd('edit ' .. vim.fn.fnameescape(path))
+    local current_path = vim.fs.normalize(
+        vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(target_win))
+    )
+
+    if current_path ~= path then
+        vim.cmd('edit ' .. vim.fn.fnameescape(path))
+    end
 
     return true
 end
