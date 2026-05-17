@@ -1318,6 +1318,10 @@ attach_diff_buffer_autocmds = function(self, buf)
         return
     end
 
+    vim.api.nvim_clear_autocmds({
+        group = self.autocmd_group,
+        buffer = buf,
+    })
     vim.api.nvim_create_autocmd({ 'BufLeave', 'BufHidden' }, {
         group = self.autocmd_group,
         buffer = buf,
