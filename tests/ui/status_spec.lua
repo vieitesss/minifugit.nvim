@@ -334,6 +334,33 @@ describe('minifugit status UI', function()
         end
     )
 
+    it(
+        'focuses an already open diff when showing the same entry diff',
+        function()
+            helpers.write_file(
+                vim.fs.joinpath(repo, 'tracked.txt'),
+                { 'one', 'two' }
+            )
+
+            minifugit.options.preview.diff_layout = 'stacked'
+            minifugit.status()
+            vim.api.nvim_set_current_win(minifugit.gsw.win)
+            vim.api.nvim_win_set_cursor(
+                minifugit.gsw.win,
+                { row_containing(minifugit.gsw.buf.id, 'tracked.txt'), 0 }
+            )
+
+            assert.is_true(minifugit.gsw:diff_entry())
+            vim.api.nvim_set_current_win(minifugit.gsw.win)
+            assert.is_true(minifugit.gsw:diff_entry())
+
+            assert.are.equal(
+                minifugit.gsw.diff_win,
+                vim.api.nvim_get_current_win()
+            )
+        end
+    )
+
     it('restores real file window options after closing split diff', function()
         helpers.write_file(
             vim.fs.joinpath(repo, 'tracked.txt'),

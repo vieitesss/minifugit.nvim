@@ -321,7 +321,7 @@ local function set_diff_context(self, lines, raw_rows, hunks, section, entry)
     self.diff_raw_rows = raw_rows
     self.diff_hunks = hunks
     self.diff_section = section
-    self.diff_entry = entry
+    self.diff_context_entry = entry
 end
 
 ---@param self GitStatusWindow
@@ -499,7 +499,7 @@ end
 ---@param self GitStatusWindow
 ---@return MiniFugitDiffSourcePosition?
 local function current_source_position(self)
-    local entry = self.diff_entry
+    local entry = self.diff_context_entry
 
     if entry == nil then
         return nil
@@ -793,6 +793,27 @@ local function apply_current_hunk(self, kind)
     end
 
     return true
+end
+
+---@param self GitStatusWindow
+---@return boolean
+local function focus_open_diff(self)
+    if common.is_valid_win(self.diff_win) then
+        vim.api.nvim_set_current_win(self.diff_win)
+        return true
+    end
+
+    if common.is_valid_win(self.diff_right_win) then
+        vim.api.nvim_set_current_win(self.diff_right_win)
+        return true
+    end
+
+    if common.is_valid_win(self.diff_left_win) then
+        vim.api.nvim_set_current_win(self.diff_left_win)
+        return true
+    end
+
+    return false
 end
 
 ---@param self GitStatusWindow
@@ -1547,7 +1568,7 @@ end
 ---@param self GitStatusWindow
 ---@param entry GitStatusEntry
 ---@param section GitStatusSectionName?
----@param opts? { force: boolean? }
+---@param opts? { force: boolean?, focus: boolean? }
 ---@return boolean
 function M.open_diff(self, entry, section, opts)
     opts = opts or {}
@@ -1558,12 +1579,14 @@ function M.open_diff(self, entry, section, opts)
     local has_open_preview = (layout == 'split' and has_open_split_diff(self))
         or (layout ~= 'split' and has_open_stacked_diff(self))
 
-    if
-        not opts.force
-        and has_open_preview
-        and self.diff_preview_key == preview_key
-    then
-        return true
+    if has_open_preview and self.diff_preview_key == preview_key then
+        if opts.focus then
+            return focus_open_diff(self)
+        end
+
+        if not opts.force then
+            return true
+        end
     end
 
     local lines, err = git.diff(entry, section)
@@ -1658,8 +1681,8 @@ function M.goto_code(self)
     -- For staged diffs the computed line number refers to the index version.
     -- If the file also has unstaged changes, translate through the unstaged
     -- diff so the cursor lands on the correct worktree line.
-    if self.diff_section == 'staged' and self.diff_entry ~= nil then
-        local unstaged_lines = git.diff(self.diff_entry, 'unstaged')
+    if self.diff_section == 'staged' and self.diff_context_entry ~= nil then
+        local unstaged_lines = git.diff(self.diff_context_entry, 'unstaged')
 
         if #unstaged_lines > 0 then
             local unstaged_hunks = diff_parser.parse_hunks(unstaged_lines)
@@ -1722,7 +1745,7 @@ function M.discard_current_hunk(self)
 end
 
 ---@param self GitStatusWindow
----@param opts? { force: boolean?, notify: boolean? }
+---@param opts? { force: boolean?, notify: boolean?, focus: boolean? }
 ---@return boolean
 function M.preview_current_entry(self, opts)
     opts = opts or {}
@@ -1739,6 +1762,7 @@ function M.preview_current_entry(self, opts)
 
     return M.open_diff(self, item.entry, item.section, {
         force = opts.force,
+        focus = opts.focus,
     })
 end
 
