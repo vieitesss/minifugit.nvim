@@ -35,6 +35,17 @@ local function entry_path(entry)
     return vim.fs.normalize(vim.fs.joinpath(root, entry.path))
 end
 
+---@param win number
+function M.configure_status_win(win)
+    vim.wo[win].number = false
+    vim.wo[win].relativenumber = false
+    vim.wo[win].signcolumn = 'no'
+    vim.wo[win].foldcolumn = '0'
+    vim.wo[win].wrap = false
+    vim.wo[win].cursorline = true
+    vim.wo[win].winfixwidth = true
+end
+
 ---@param buf Buffer
 ---@param opts MinifugitStatusOptions
 ---@return number, GitStatusWindowOptions
@@ -48,13 +59,7 @@ function M.create_status_win(buf, opts)
 
     vim.api.nvim_win_set_buf(win, buf.id)
     vim.api.nvim_set_current_win(win)
-    vim.wo[win].number = false
-    vim.wo[win].relativenumber = false
-    vim.wo[win].signcolumn = 'no'
-    vim.wo[win].foldcolumn = '0'
-    vim.wo[win].wrap = false
-    vim.wo[win].cursorline = true
-    vim.wo[win].winfixwidth = true
+    M.configure_status_win(win)
 
     log.info(string.format('created status window win=%d buf=%d', win, buf.id))
 
@@ -107,18 +112,20 @@ end
 ---@param win number?
 ---@return boolean
 local function is_usable_target_win(self, win)
-    if not common.is_valid_win(win) or win == self.win then
+    if win == nil or not common.is_valid_win(win) or win == self.win then
         return false
     end
 
-    local is_current_tab = vim.api.nvim_win_get_tabpage(win)
+    ---@type integer
+    local target_win = win
+    local is_current_tab = vim.api.nvim_win_get_tabpage(target_win)
         == vim.api.nvim_get_current_tabpage()
 
     if not is_current_tab then
         return false
     end
 
-    return is_normal_edit_window(win)
+    return is_normal_edit_window(target_win)
 end
 
 ---@param self GitStatusWindow

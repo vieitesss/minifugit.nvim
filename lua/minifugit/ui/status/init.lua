@@ -265,6 +265,21 @@ local function ensure_autocmds(self)
         { clear = true }
     )
 
+    vim.api.nvim_create_autocmd('BufEnter', {
+        group = self.autocmd_group,
+        buffer = self.buf.id,
+        callback = function()
+            local win = vim.api.nvim_get_current_win()
+
+            if self.win ~= win then
+                self.win = win
+                self.win_prev_winopts = window.capture_winopts(win)
+            end
+
+            window.configure_status_win(win)
+        end,
+    })
+
     vim.api.nvim_create_autocmd({ 'BufLeave', 'BufHidden' }, {
         group = self.autocmd_group,
         buffer = self.buf.id,
