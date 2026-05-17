@@ -171,7 +171,7 @@ local function set_diff_context(self, lines, raw_rows, hunks, section, entry)
 end
 
 ---@param self GitStatusWindow
----@return MiniFugitPreviewBufferActions|table
+---@return MiniFugitPreviewActions
 local function preview_actions(self)
     return {
         close_diff = function()

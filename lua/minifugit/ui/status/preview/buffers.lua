@@ -16,6 +16,11 @@ local M = {}
 ---@field goto_code fun()
 ---@field toggle_help fun()
 
+---@class MiniFugitPreviewActions : MiniFugitPreviewBufferActions
+---@field has_open_diff fun(): boolean
+---@field focus_open_diff fun()
+---@field refresh fun(state: GitStatusCursorState?)
+
 ---@param bufnr integer
 ---@param actions MiniFugitPreviewBufferActions
 function M.set_goto_code_keymap(bufnr, actions)

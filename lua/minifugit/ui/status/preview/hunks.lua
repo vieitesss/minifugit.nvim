@@ -49,6 +49,7 @@ function M.hunk_patch(self, hunk)
 end
 
 ---@param self GitStatusWindow
+---@param callbacks MiniFugitPreviewActions
 ---@return string[]?
 function M.current_hunk_patch(self, callbacks)
     if not callbacks.has_open_diff() or self.diff_raw_lines == nil then
@@ -76,7 +77,7 @@ end
 
 ---@param self GitStatusWindow
 ---@param kind 'stage'|'unstage'|'discard'
----@param callbacks { has_open_diff: fun(): boolean, focus_open_diff: fun(), refresh: fun(state: GitStatusCursorState) }
+---@param callbacks MiniFugitPreviewActions
 ---@return boolean
 function M.apply_current_hunk(self, kind, callbacks)
     local section = self.diff_section
