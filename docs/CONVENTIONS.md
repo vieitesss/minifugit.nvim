@@ -1,5 +1,7 @@
 # Conventions
 
+ALWAYS follow these instructions.
+
 ## Project shape
 
 - Keep the public `minifugit` entrypoints thin and move behavior into focused modules.
