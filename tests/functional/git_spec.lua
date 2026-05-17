@@ -1,22 +1,8 @@
 ---@diagnostic disable: undefined-field
 ---@type table
 local git = require('minifugit.git')
-
----@param args string[]
----@param cwd string
----@return string
-local function run(args, cwd)
-    local result = vim.system(args, { text = true, cwd = cwd }):wait()
-    assert.are.equal(0, result.code, result.stderr)
-    return result.stdout or ''
-end
-
----@param path string
----@param lines string[]
-local function write_file(path, lines)
-    vim.fn.mkdir(vim.fs.dirname(path), 'p')
-    vim.fn.writefile(lines, path)
-end
+---@type MinifugitTestHelpers
+local helpers = dofile(vim.fn.getcwd() .. '/tests/helpers.lua')
 
 ---@param entries GitStatusEntry[]
 ---@param path string
@@ -40,13 +26,16 @@ describe('minifugit.git', function()
         repo = vim.fn.tempname()
         vim.fn.mkdir(repo, 'p')
 
-        run({ 'git', 'init', '-b', 'main' }, repo)
-        run({ 'git', 'config', 'user.name', 'Minifugit Test' }, repo)
-        run({ 'git', 'config', 'user.email', 'minifugit@example.test' }, repo)
+        helpers.run({ 'git', 'init', '-b', 'main' }, repo)
+        helpers.run({ 'git', 'config', 'user.name', 'Minifugit Test' }, repo)
+        helpers.run(
+            { 'git', 'config', 'user.email', 'minifugit@example.test' },
+            repo
+        )
 
-        write_file(vim.fs.joinpath(repo, 'tracked.txt'), { 'one' })
-        run({ 'git', 'add', 'tracked.txt' }, repo)
-        run({ 'git', 'commit', '-m', 'initial commit' }, repo)
+        helpers.write_file(vim.fs.joinpath(repo, 'tracked.txt'), { 'one' })
+        helpers.run({ 'git', 'add', 'tracked.txt' }, repo)
+        helpers.run({ 'git', 'commit', '-m', 'initial commit' }, repo)
 
         vim.cmd.cd(vim.fn.fnameescape(repo))
     end)
@@ -75,10 +64,16 @@ describe('minifugit.git', function()
     end)
 
     it('collects branch, root, and porcelain status entries', function()
-        write_file(vim.fs.joinpath(repo, 'tracked.txt'), { 'one', 'two' })
-        write_file(vim.fs.joinpath(repo, 'staged.txt'), { 'staged' })
-        write_file(vim.fs.joinpath(repo, 'untracked.txt'), { 'untracked' })
-        run({ 'git', 'add', 'staged.txt' }, repo)
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'one', 'two' }
+        )
+        helpers.write_file(vim.fs.joinpath(repo, 'staged.txt'), { 'staged' })
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'untracked.txt'),
+            { 'untracked' }
+        )
+        helpers.run({ 'git', 'add', 'staged.txt' }, repo)
 
         ---@type GitStatusSnapshot
         local snapshot = git.status_snapshot()
@@ -111,8 +106,14 @@ describe('minifugit.git', function()
     it(
         'stages, unstages, and discards files through public API calls',
         function()
-            write_file(vim.fs.joinpath(repo, 'tracked.txt'), { 'changed' })
-            write_file(vim.fs.joinpath(repo, 'untracked.txt'), { 'untracked' })
+            helpers.write_file(
+                vim.fs.joinpath(repo, 'tracked.txt'),
+                { 'changed' }
+            )
+            helpers.write_file(
+                vim.fs.joinpath(repo, 'untracked.txt'),
+                { 'untracked' }
+            )
 
             ---@type GitStatusEntry?
             local tracked = entry_by_path(git.status(), 'tracked.txt')
@@ -153,7 +154,7 @@ describe('minifugit.git', function()
             message
         )
 
-        run({ 'git', 'checkout', '--detach' }, repo)
+        helpers.run({ 'git', 'checkout', '--detach' }, repo)
         ok, message = git.push()
 
         assert.is_false(ok)

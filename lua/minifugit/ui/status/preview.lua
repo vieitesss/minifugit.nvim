@@ -121,7 +121,7 @@ end
 ---@param text string
 ---@return string
 local function winbar_text(text)
-    return text:gsub('%%', '%%%%')
+    return (text:gsub('%%', '%%%%'))
 end
 
 ---@param commit GitCommit
