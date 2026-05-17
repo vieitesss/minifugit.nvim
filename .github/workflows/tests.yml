@@ -32,17 +32,4 @@ jobs:
 
       - name: Run tests
         shell: bash
-        run: |
-          set +e
-          just test 2>&1 | tee "$RUNNER_TEMP/test-output.log"
-          status=${PIPESTATUS[0]}
-
-          {
-            echo '## Test output'
-            echo
-            echo '```text'
-            cat "$RUNNER_TEMP/test-output.log"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          exit "$status"
+        run: just test
