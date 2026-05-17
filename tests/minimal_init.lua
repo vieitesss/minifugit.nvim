@@ -1,5 +1,9 @@
-vim.opt.runtimepath:prepend(vim.fn.getcwd())
-vim.opt.runtimepath:prepend(vim.fn.getcwd() .. '/plenary.nvim')
+local source = debug.getinfo(1, 'S').source:sub(2)
+local tests_dir = vim.fs.dirname(vim.fn.fnamemodify(source, ':p'))
+local project_root = vim.fs.dirname(tests_dir)
+
+vim.opt.runtimepath:prepend(project_root)
+vim.opt.runtimepath:prepend(project_root .. '/plenary.nvim')
 
 vim.g.mapleader = ' '
 

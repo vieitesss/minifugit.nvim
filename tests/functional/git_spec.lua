@@ -1,8 +1,11 @@
 ---@diagnostic disable: undefined-field
 ---@type table
 local git = require('minifugit.git')
+local spec_dir = vim.fs.dirname(
+    vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p')
+)
 ---@type MinifugitTestHelpers
-local helpers = dofile(vim.fn.getcwd() .. '/tests/helpers.lua')
+local helpers = dofile(vim.fs.joinpath(vim.fs.dirname(spec_dir), 'helpers.lua'))
 
 ---@param entries GitStatusEntry[]
 ---@param path string

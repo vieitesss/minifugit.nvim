@@ -1,6 +1,9 @@
 ---@diagnostic disable: undefined-field
+local spec_dir = vim.fs.dirname(
+    vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p')
+)
 ---@type MinifugitTestHelpers
-local helpers = dofile(vim.fn.getcwd() .. '/tests/helpers.lua')
+local helpers = dofile(vim.fs.joinpath(vim.fs.dirname(spec_dir), 'helpers.lua'))
 
 ---@param buf integer
 ---@return string[]
