@@ -155,17 +155,19 @@ local function resolved_layout(self)
             or 'stacked'
     end
 
-    return layout
+    return layout == 'split' and 'split' or 'stacked'
 end
 
 ---@param buf Buffer?
 ---@param win number?
 ---@return boolean
 local function has_diff_side(buf, win)
-    return buf ~= nil
-        and buf:is_valid()
-        and common.is_valid_win(win)
-        and vim.api.nvim_win_get_buf(win) == buf.id
+    if buf == nil or not buf:is_valid() or not common.is_valid_win(win) then
+        return false
+    end
+
+    win = assert(win)
+    return vim.api.nvim_win_get_buf(win) == buf.id
 end
 
 ---@param self GitStatusWindow
@@ -245,7 +247,9 @@ end
 ---@return number?
 local function create_preview_split(self, command, status_win_state)
     local current_win = vim.api.nvim_get_current_win()
-    local ok, err = pcall(vim.cmd, command)
+    local ok, err = pcall(function()
+        vim.cmd(command)
+    end)
 
     if not ok then
         restore_status_win_state(self, status_win_state)
@@ -605,8 +609,9 @@ local function restore_hunk_position(self, position)
             position.offset
         )
 
-        vim.api.nvim_set_current_win(self.diff_win)
-        set_cursor_row(self.diff_win, row)
+        local win = assert(self.diff_win)
+        vim.api.nvim_set_current_win(win)
+        set_cursor_row(win, row)
 
         return
     end
@@ -614,7 +619,8 @@ local function restore_hunk_position(self, position)
     local side, row = diff_position.split_row_for_hunk_position(hunk, position)
     local win = side == 'left' and self.diff_left_win or self.diff_right_win
 
-    if common.is_valid_win(win) then
+    if common.is_valid_win(win) and row ~= nil then
+        win = assert(win)
         vim.api.nvim_set_current_win(win)
         set_cursor_row(win, row)
     end
@@ -832,7 +838,7 @@ function M.jump_hunk(self, delta)
         return false
     end
 
-    local win = self.diff_win
+    local win = assert(self.diff_win)
     local cursor = vim.api.nvim_win_get_cursor(win)[1]
     local lines = vim.api.nvim_buf_get_lines(self.diff_buf.id, 0, -1, false)
     local start = delta > 0 and cursor + 1 or cursor - 1
@@ -974,7 +980,7 @@ local function show_diff_lines(self, diff_lines, preview_key, title)
     local created_win = false
 
     if has_open_stacked_diff(self) then
-        target_win = self.diff_win
+        target_win = assert(self.diff_win)
         vim.api.nvim_set_current_win(target_win)
     else
         target_win = window.find_target_win(self)
@@ -997,6 +1003,7 @@ local function show_diff_lines(self, diff_lines, preview_key, title)
         end
     end
 
+    target_win = assert(target_win)
     local previous_buf = vim.api.nvim_win_get_buf(target_win)
     local was_diff_preview = previous_buf == buf.id
         and self.diff_win == target_win
@@ -1070,7 +1077,7 @@ local function show_split_diff(self, split_diff, diff_lines, preview_key, title)
         -- return diff_right_win if the user last focused it (self.target_win ==
         -- diff_right_win), which would make diff_left_win and diff_right_win
         -- point at the same window and corrupt the two-window layout.
-        target_win = self.diff_left_win
+        target_win = assert(self.diff_left_win)
         vim.api.nvim_set_current_win(target_win)
     else
         target_win = window.find_target_win(self)
@@ -1093,6 +1100,7 @@ local function show_split_diff(self, split_diff, diff_lines, preview_key, title)
         end
     end
 
+    target_win = assert(target_win)
     local was_left_preview = target_win == self.diff_left_win
         and vim.api.nvim_win_get_buf(target_win) == left_buf.id
 
@@ -1139,9 +1147,11 @@ local function show_split_diff(self, split_diff, diff_lines, preview_key, title)
 
         right_created = true
     else
+        right_win = assert(right_win)
         vim.api.nvim_set_current_win(right_win)
     end
 
+    right_win = assert(right_win)
     local was_right_preview = vim.api.nvim_win_get_buf(right_win)
         == right_buf.id
 
@@ -1634,7 +1644,7 @@ end
 ---@param self GitStatusWindow
 ---@param entry GitStatusEntry
 ---@param section GitStatusSectionName?
----@param opts? { force: boolean?, focus: boolean? }
+---@param opts? { force: boolean?, notify: boolean?, focus: boolean? }
 ---@return boolean
 function M.open_diff(self, entry, section, opts)
     opts = opts or {}
