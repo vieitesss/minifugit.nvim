@@ -55,10 +55,19 @@ local git = require('minifugit.git')
 ---@field loading_message string?
 ---@field loading_frame integer
 ---@field loading_timer uv.uv_timer_t?
+---@field autocmd_group integer?
 local GitStatusWindow = {}
 GitStatusWindow.__index = GitStatusWindow
 
 local HIGHLIGHT_NAMESPACE = 'GitStatusWindow'
+
+local OWNED_BUFFER_FIELDS = {
+    'buf',
+    'diff_buf',
+    'diff_left_buf',
+    'diff_right_buf',
+    'help_buf',
+}
 
 local DIFF_HEADER_GROUP = 'MiniFugitDiffHeader'
 local DIFF_HUNK_HEADER_GROUP = 'MiniFugitDiffHunkHeader'
@@ -247,7 +256,17 @@ end
 
 ---@param self GitStatusWindow
 local function ensure_autocmds(self)
+    if self.autocmd_group ~= nil then
+        pcall(vim.api.nvim_del_augroup_by_id, self.autocmd_group)
+    end
+
+    self.autocmd_group = vim.api.nvim_create_augroup(
+        string.format('minifugit_status_%d', self.buf.id),
+        { clear = true }
+    )
+
     vim.api.nvim_create_autocmd({ 'BufLeave', 'BufHidden' }, {
+        group = self.autocmd_group,
         buffer = self.buf.id,
         callback = function()
             vim.schedule(function()
@@ -259,12 +278,14 @@ local function ensure_autocmds(self)
     })
 
     vim.api.nvim_create_autocmd('ColorScheme', {
+        group = self.autocmd_group,
         callback = function()
             refresh_highlights(self)
         end,
     })
 
     vim.api.nvim_create_autocmd('OptionSet', {
+        group = self.autocmd_group,
         pattern = 'background',
         callback = function()
             refresh_highlights(self)
@@ -402,6 +423,7 @@ function GitStatusWindow:toggle_help()
     help.toggle(self)
 end
 
+---@return boolean closed
 function GitStatusWindow:close()
     self:stop_loading()
     help.close(self)
@@ -413,21 +435,57 @@ function GitStatusWindow:close()
     if self.win ~= nil and common.is_valid_win(self.win) then
         window.restore_winopts(self.win, self.win_prev_winopts)
 
-        if #vim.api.nvim_tabpage_list_wins(0) <= 1 then
+        local tabpage = vim.api.nvim_win_get_tabpage(self.win)
+
+        if #vim.api.nvim_tabpage_list_wins(tabpage) <= 1 then
             common.notify_warn('Cannot close the last window')
-            return
+            return false
         end
 
         local ok = pcall(vim.api.nvim_win_close, self.win, true)
 
         if not ok then
             common.notify_warn('Cannot close status window')
-            return
+            return false
         end
     end
 
     self.win = nil
     self.win_prev_winopts = nil
+
+    return true
+end
+
+---@param buf Buffer?
+local function delete_owned_buffer(buf)
+    if buf == nil or buf.id == nil or not vim.api.nvim_buf_is_valid(buf.id) then
+        return
+    end
+
+    pcall(vim.api.nvim_buf_delete, buf.id, { force = true })
+end
+
+function GitStatusWindow:delete_owned_buffers()
+    for _, field in ipairs(OWNED_BUFFER_FIELDS) do
+        delete_owned_buffer(self[field])
+        self[field] = nil
+    end
+end
+
+---@return boolean destroyed
+function GitStatusWindow:destroy()
+    if self.autocmd_group ~= nil then
+        pcall(vim.api.nvim_del_augroup_by_id, self.autocmd_group)
+        self.autocmd_group = nil
+    end
+
+    if not self:close() then
+        return false
+    end
+
+    self:delete_owned_buffers()
+
+    return true
 end
 
 function GitStatusWindow:filter_entries()
