@@ -760,7 +760,7 @@ local function normalize_path(path, root)
     local normalized_root = vim.fs.normalize(root)
 
     if absolute == normalized_root then
-        return nil
+        return '.'
     end
 
     local root_prefix = normalized_root .. '/'
@@ -792,10 +792,12 @@ local function fs_stat_path(path, root)
 end
 
 ---@param path string
+---@param root string?
 ---@return string[]
 ---@return string?
-local function read_worktree_lines(path)
-    local root = git.root()
+local function read_worktree_lines(path, root)
+    root = root or git.root()
+
     local full_path = root ~= '' and vim.fs.joinpath(root, path) or path
     local stat = vim.uv.fs_stat(full_path)
 
@@ -1008,7 +1010,7 @@ function git.file_change_counts(path)
     end
 
     if #status_entries == 1 and status_entries[1].unstaged == '?' then
-        local lines, err = read_worktree_lines(relative_path)
+        local lines, err = read_worktree_lines(relative_path, root)
 
         if err ~= nil then
             return empty_change_counts(), err

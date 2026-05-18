@@ -205,6 +205,16 @@ describe('minifugit.git', function()
         assert.are.same({ added = 0, modified = 0, deleted = 0 }, counts)
     end)
 
+    it('rejects the repository root for file change counts', function()
+        local counts, err = git.file_change_counts(repo)
+
+        assert.are.equal(
+            'File change counts are not available for directories',
+            err
+        )
+        assert.are.same({ added = 0, modified = 0, deleted = 0 }, counts)
+    end)
+
     it('reports useful push errors for edge cases', function()
         local ok, message = git.push()
 
