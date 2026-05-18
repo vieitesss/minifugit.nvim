@@ -763,10 +763,15 @@ local function normalize_path(path, root)
         return '.'
     end
 
-    local root_prefix = normalized_root .. '/'
+    local relative = vim.fs.relpath(normalized_root, absolute)
 
-    if absolute:sub(1, #root_prefix) == root_prefix then
-        return vim.fs.relpath(normalized_root, absolute)
+    if
+        relative ~= nil
+        and relative ~= '..'
+        and relative:sub(1, 3) ~= '../'
+        and relative:sub(1, 3) ~= '..\\'
+    then
+        return relative
     end
 
     return path
@@ -775,7 +780,9 @@ end
 ---@param path string
 ---@return boolean
 local function is_absolute_path(path)
-    return path:sub(1, 1) == '/' or path:match('^%a:[/\\]') ~= nil
+    return path:sub(1, 1) == '/'
+        or path:sub(1, 1) == '\\'
+        or path:match('^%a:[/\\]') ~= nil
 end
 
 ---@param path string
