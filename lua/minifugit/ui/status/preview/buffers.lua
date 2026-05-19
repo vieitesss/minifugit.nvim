@@ -69,19 +69,19 @@ function M.ensure_stacked(self, actions)
         silent = true,
     })
 
-    vim.keymap.set('n', 'w', actions.toggle_wrap, {
+    vim.keymap.set('n', 'aw', actions.toggle_wrap, {
         buffer = self.diff_buf.id,
         desc = 'Toggle git diff preview wrap',
         silent = true,
     })
 
-    vim.keymap.set('n', 'l', actions.toggle_numbers, {
+    vim.keymap.set('n', 'an', actions.toggle_numbers, {
         buffer = self.diff_buf.id,
         desc = 'Toggle git diff preview line numbers',
         silent = true,
     })
 
-    vim.keymap.set('n', 'm', actions.toggle_headers, {
+    vim.keymap.set('n', 'am', actions.toggle_headers, {
         buffer = self.diff_buf.id,
         desc = 'Toggle git diff preview metadata',
         silent = true,
@@ -105,7 +105,7 @@ function M.ensure_stacked(self, actions)
         silent = true,
     })
 
-    vim.keymap.set('n', 't', actions.toggle_layout, {
+    vim.keymap.set('n', 'al', actions.toggle_layout, {
         buffer = self.diff_buf.id,
         desc = 'Toggle stacked/split git diff preview layout',
         silent = true,
@@ -147,7 +147,7 @@ function M.ensure_split(_, buf_name, existing, actions)
         silent = true,
     })
 
-    vim.keymap.set('n', 'w', actions.toggle_wrap, {
+    vim.keymap.set('n', 'aw', actions.toggle_wrap, {
         buffer = buf.id,
         desc = 'Toggle git diff preview wrap',
         silent = true,
@@ -169,7 +169,7 @@ function M.ensure_split(_, buf_name, existing, actions)
         silent = true,
     })
 
-    vim.keymap.set('n', 'l', actions.toggle_split_numbers, {
+    vim.keymap.set('n', 'an', actions.toggle_split_numbers, {
         buffer = buf.id,
         desc = 'Toggle git diff preview line numbers',
         silent = true,
@@ -193,7 +193,7 @@ function M.ensure_split(_, buf_name, existing, actions)
         silent = true,
     })
 
-    vim.keymap.set('n', 't', actions.toggle_layout, {
+    vim.keymap.set('n', 'al', actions.toggle_layout, {
         buffer = buf.id,
         desc = 'Toggle stacked/split git diff preview layout',
         silent = true,
