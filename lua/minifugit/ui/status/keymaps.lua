@@ -135,7 +135,7 @@ function M.attach(self)
         silent = true,
     })
 
-    vim.keymap.set('n', 't', function()
+    vim.keymap.set('n', 'al', function()
         preview.toggle_layout(self)
     end, {
         buffer = self.buf.id,
