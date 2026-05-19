@@ -1,11 +1,13 @@
 plenary_ref := "74b06c6c75e4eeb3108ec01852001636d85a932b"
 plenary_url := "https://github.com/nvim-lua/plenary.nvim"
 
+
 _default:
 	just -l
 
 test:
 	#!/usr/bin/env bash
+	# Some comment
 	plenary_path="{{ justfile_directory() }}/plenary.nvim"
 
 	if ! test -d "${plenary_path}"; then
