@@ -162,6 +162,12 @@ function M.attach(self)
     vim.api.nvim_create_autocmd('CursorMoved', {
         buffer = self.buf.id,
         callback = function()
+            local mode = vim.fn.mode()
+
+            if mode == 'v' or mode == 'V' or mode == '\22' then
+                return
+            end
+
             if preview.has_open_diff(self) then
                 local opts = { force = false, notify = false }
 
