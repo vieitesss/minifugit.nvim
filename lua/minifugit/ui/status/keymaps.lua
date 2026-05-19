@@ -11,7 +11,7 @@ function M.attach(self)
         self:enter_entry()
     end, {
         buffer = self.buf.id,
-        desc = 'Open git status entry',
+        desc = 'Open file or commit under cursor',
         silent = true,
     })
 
@@ -19,7 +19,7 @@ function M.attach(self)
         self:enter_entry()
     end, {
         buffer = self.buf.id,
-        desc = 'Open git status entry',
+        desc = 'Open file or commit under cursor',
         silent = true,
     })
 
@@ -27,7 +27,7 @@ function M.attach(self)
         self:diff_entry()
     end, {
         buffer = self.buf.id,
-        desc = 'Show git status entry diff',
+        desc = 'Preview diff for entry under cursor',
         silent = true,
     })
 
@@ -35,7 +35,7 @@ function M.attach(self)
         self:close()
     end, {
         buffer = self.buf.id,
-        desc = 'Close git status window',
+        desc = 'Close Minifugit status window',
         silent = true,
     })
 
@@ -43,7 +43,7 @@ function M.attach(self)
         self:filter_entries()
     end, {
         buffer = self.buf.id,
-        desc = 'Filter git status entries',
+        desc = 'Filter status entries by path or summary',
         silent = true,
     })
 
@@ -51,7 +51,7 @@ function M.attach(self)
         self:clear_filter()
     end, {
         buffer = self.buf.id,
-        desc = 'Clear git status filter',
+        desc = 'Clear active status filter',
         silent = true,
     })
 
@@ -59,7 +59,7 @@ function M.attach(self)
         self:refresh()
     end, {
         buffer = self.buf.id,
-        desc = 'Refresh git status',
+        desc = 'Refresh Git status data',
         silent = true,
     })
 
@@ -67,7 +67,7 @@ function M.attach(self)
         self:stage_entry()
     end, {
         buffer = self.buf.id,
-        desc = 'Stage git status entry',
+        desc = 'Stage entry, or unstage it if already staged',
         silent = true,
     })
 
@@ -75,7 +75,7 @@ function M.attach(self)
         self:unstage_entry()
     end, {
         buffer = self.buf.id,
-        desc = 'Unstage git status entry',
+        desc = 'Unstage entry under cursor',
         silent = true,
     })
 
@@ -83,7 +83,7 @@ function M.attach(self)
         self:stage_all_entries()
     end, {
         buffer = self.buf.id,
-        desc = 'Stage all git status entries',
+        desc = 'Stage all visible status entries',
         silent = true,
     })
 
@@ -91,7 +91,7 @@ function M.attach(self)
         self:unstage_all_entries()
     end, {
         buffer = self.buf.id,
-        desc = 'Unstage all git status entries',
+        desc = 'Unstage all visible status entries',
         silent = true,
     })
 
@@ -99,7 +99,7 @@ function M.attach(self)
         self:discard_entry(false)
     end, {
         buffer = self.buf.id,
-        desc = 'Discard git status entry',
+        desc = 'Discard entry with confirmation',
         silent = true,
     })
 
@@ -107,7 +107,7 @@ function M.attach(self)
         self:discard_entry(true)
     end, {
         buffer = self.buf.id,
-        desc = 'Discard git status entry without confirmation',
+        desc = 'Discard entry without confirmation',
         silent = true,
     })
 
@@ -131,7 +131,7 @@ function M.attach(self)
         self:toggle_help()
     end, {
         buffer = self.buf.id,
-        desc = 'Toggle git status mappings',
+        desc = 'Toggle Minifugit mappings help',
         silent = true,
     })
 
@@ -139,7 +139,7 @@ function M.attach(self)
         preview.toggle_layout(self)
     end, {
         buffer = self.buf.id,
-        desc = 'Toggle stacked/split diff preview layout',
+        desc = 'Alternate diff preview between stacked and split layout',
         silent = true,
     })
 
@@ -147,7 +147,7 @@ function M.attach(self)
         self:stage_selected_entries()
     end, {
         buffer = self.buf.id,
-        desc = 'Stage selected git status entries',
+        desc = 'Stage selected status entries',
         silent = true,
     })
 
@@ -155,7 +155,7 @@ function M.attach(self)
         self:unstage_selected_entries()
     end, {
         buffer = self.buf.id,
-        desc = 'Unstage selected git status entries',
+        desc = 'Unstage selected status entries',
         silent = true,
     })
 
