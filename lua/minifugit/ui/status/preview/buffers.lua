@@ -9,7 +9,7 @@ local M = {}
 function M.set_goto_code_keymap(bufnr, actions)
     vim.keymap.set('n', '<CR>', actions.goto_code, {
         buffer = bufnr,
-        desc = 'Go to code under git diff cursor',
+        desc = 'Open file at diff line under cursor',
         silent = true,
     })
 end
@@ -49,7 +49,7 @@ function M.ensure_stacked(self, actions)
 
     vim.keymap.set('n', 'q', actions.close_diff, {
         buffer = self.diff_buf.id,
-        desc = 'Close git diff preview',
+        desc = 'Close Minifugit diff preview',
         silent = true,
     })
 
@@ -57,7 +57,7 @@ function M.ensure_stacked(self, actions)
         actions.jump_hunk(1)
     end, {
         buffer = self.diff_buf.id,
-        desc = 'Jump to next git diff hunk',
+        desc = 'Jump to next diff hunk',
         silent = true,
     })
 
@@ -65,49 +65,49 @@ function M.ensure_stacked(self, actions)
         actions.jump_hunk(-1)
     end, {
         buffer = self.diff_buf.id,
-        desc = 'Jump to previous git diff hunk',
+        desc = 'Jump to previous diff hunk',
         silent = true,
     })
 
     vim.keymap.set('n', 'aw', actions.toggle_wrap, {
         buffer = self.diff_buf.id,
-        desc = 'Toggle git diff preview wrap',
+        desc = 'Alternate diff preview line wrapping',
         silent = true,
     })
 
     vim.keymap.set('n', 'an', actions.toggle_numbers, {
         buffer = self.diff_buf.id,
-        desc = 'Toggle git diff preview line numbers',
+        desc = 'Alternate diff preview line numbers',
         silent = true,
     })
 
     vim.keymap.set('n', 'am', actions.toggle_headers, {
         buffer = self.diff_buf.id,
-        desc = 'Toggle git diff preview metadata',
+        desc = 'Alternate stacked diff metadata rows',
         silent = true,
     })
 
     vim.keymap.set('n', 's', actions.stage_current_hunk, {
         buffer = self.diff_buf.id,
-        desc = 'Stage current git diff hunk',
+        desc = 'Stage hunk under cursor',
         silent = true,
     })
 
     vim.keymap.set('n', 'u', actions.unstage_current_hunk, {
         buffer = self.diff_buf.id,
-        desc = 'Unstage current git diff hunk',
+        desc = 'Unstage hunk under cursor',
         silent = true,
     })
 
     vim.keymap.set('n', 'd', actions.discard_current_hunk, {
         buffer = self.diff_buf.id,
-        desc = 'Discard current git diff hunk',
+        desc = 'Discard hunk under cursor with confirmation',
         silent = true,
     })
 
     vim.keymap.set('n', 'al', actions.toggle_layout, {
         buffer = self.diff_buf.id,
-        desc = 'Toggle stacked/split git diff preview layout',
+        desc = 'Alternate diff preview between stacked and split layout',
         silent = true,
     })
 
@@ -115,7 +115,7 @@ function M.ensure_stacked(self, actions)
 
     vim.keymap.set('n', '?', actions.toggle_help, {
         buffer = self.diff_buf.id,
-        desc = 'Toggle git mappings help',
+        desc = 'Toggle Minifugit mappings help',
         silent = true,
     })
 
@@ -143,13 +143,13 @@ function M.ensure_split(_, buf_name, existing, actions)
 
     vim.keymap.set('n', 'q', actions.close_diff, {
         buffer = buf.id,
-        desc = 'Close git diff preview',
+        desc = 'Close Minifugit diff preview',
         silent = true,
     })
 
     vim.keymap.set('n', 'aw', actions.toggle_wrap, {
         buffer = buf.id,
-        desc = 'Toggle git diff preview wrap',
+        desc = 'Alternate diff preview line wrapping',
         silent = true,
     })
 
@@ -157,7 +157,7 @@ function M.ensure_split(_, buf_name, existing, actions)
         vim.cmd('normal! ]c')
     end, {
         buffer = buf.id,
-        desc = 'Jump to next git diff hunk',
+        desc = 'Jump to next diff hunk',
         silent = true,
     })
 
@@ -165,37 +165,37 @@ function M.ensure_split(_, buf_name, existing, actions)
         vim.cmd('normal! [c')
     end, {
         buffer = buf.id,
-        desc = 'Jump to previous git diff hunk',
+        desc = 'Jump to previous diff hunk',
         silent = true,
     })
 
     vim.keymap.set('n', 'an', actions.toggle_split_numbers, {
         buffer = buf.id,
-        desc = 'Toggle git diff preview line numbers',
+        desc = 'Alternate diff preview line numbers',
         silent = true,
     })
 
     vim.keymap.set('n', 's', actions.stage_current_hunk, {
         buffer = buf.id,
-        desc = 'Stage current git diff hunk',
+        desc = 'Stage hunk under cursor',
         silent = true,
     })
 
     vim.keymap.set('n', 'u', actions.unstage_current_hunk, {
         buffer = buf.id,
-        desc = 'Unstage current git diff hunk',
+        desc = 'Unstage hunk under cursor',
         silent = true,
     })
 
     vim.keymap.set('n', 'd', actions.discard_current_hunk, {
         buffer = buf.id,
-        desc = 'Discard current git diff hunk',
+        desc = 'Discard hunk under cursor with confirmation',
         silent = true,
     })
 
     vim.keymap.set('n', 'al', actions.toggle_layout, {
         buffer = buf.id,
-        desc = 'Toggle stacked/split git diff preview layout',
+        desc = 'Alternate diff preview between stacked and split layout',
         silent = true,
     })
 
@@ -203,7 +203,7 @@ function M.ensure_split(_, buf_name, existing, actions)
 
     vim.keymap.set('n', '?', actions.toggle_help, {
         buffer = buf.id,
-        desc = 'Toggle git mappings help',
+        desc = 'Toggle Minifugit mappings help',
         silent = true,
     })
 

@@ -100,33 +100,36 @@ Default status-window mappings:
 
 | Mode | Key | Action |
 | --- | --- | --- |
-| n | `<CR>` / `o` | Open entry |
-| n | `=` | Preview diff |
-| n | `q` | Close status window |
-| n | `/` | Filter entries |
-| n | `<BS>` | Clear filter |
-| n | `r` | Refresh status |
-| n,v | `s` | Stage/Unstage entry |
-| n,v | `u` | Unstage entry |
-| n | `S` | Stage all entries |
-| n | `U` | Unstage all entries |
-| n | `d` | Discard entry with confirmation |
-| n | `D` | Discard entry without confirmation |
+| n | `<CR>` / `o` | Open the file or commit under the cursor |
+| n | `=` | Preview the diff for the entry under the cursor |
+| n | `q` | Close the status window |
+| n | `/` | Filter entries by path or summary |
+| n | `<BS>` | Clear the active filter |
+| n | `r` | Refresh Git status data |
+| n | `s` | Stage entry, or unstage it if already staged |
+| v | `s` | Stage the selected entries |
+| n,v | `u` | Unstage the entry or selected entries |
+| n | `S` | Stage all visible entries |
+| n | `U` | Unstage all visible entries |
+| n | `d` | Discard the entry with confirmation |
+| n | `D` | Discard the entry without confirmation |
 | n | `c` | Commit staged changes |
 | n | `p` | Push unpushed commits |
-| n | `as` | Alternate stacked/split diff layout |
-| n | `?` | Toggle help |
+| n | `al` | Alternate diff preview stacked/split layout |
+| n | `?` | Toggle mappings help |
 
 Default diff-preview mappings:
 
 | Mode | Key | Action |
 | --- | --- | --- |
-| n | `q` | Close diff preview |
-| n | `[h` / `]h` | Jump to previous/next hunk |
-| n | `s` | Stage current unstaged hunk |
-| n | `u` | Unstage current staged hunk |
-| n | `d` | Discard current unstaged hunk with confirmation |
-| n | `aw` | Alternate wrap |
-| n | `al` | Alternate line numbers |
+| n | `q` | Close the diff preview |
+| n | `<CR>` | Open the file at the diff line under the cursor |
+| n | `[h` / `]h` | Jump to the previous/next hunk |
+| n | `s` | Stage the hunk under the cursor |
+| n | `u` | Unstage the hunk under the cursor |
+| n | `d` | Discard the hunk under the cursor with confirmation |
+| n | `aw` | Alternate line wrapping |
+| n | `an` | Alternate line numbers |
 | n | `am` | Alternate metadata rows *(stacked only)* |
-| n | `as` | Alternate stacked/split layout |
+| n | `al` | Alternate stacked/split layout |
+| n | `?` | Toggle mappings help |
