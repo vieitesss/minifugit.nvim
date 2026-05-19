@@ -229,8 +229,31 @@ end
 ---@param actions MiniFugitPreviewBufferActions
 ---@return boolean
 function M.show_stacked(self, diff_lines, preview_key, title, actions)
+    local transition_win
+    local transition_prev_buf
+    local transition_prev_winopts
+    local transition_created_win = false
+
     if window_state.has_any_split_diff(self) then
-        actions.close_diff()
+        if common.is_valid_win(self.diff_right_win) then
+            window_state.restore_or_close_diff_window(
+                self,
+                window_state.SPLIT_RIGHT_DIFF_STATE,
+                false
+            )
+        end
+
+        if common.is_valid_win(self.diff_left_win) then
+            preview_util.diffoff(self.diff_left_win)
+            transition_win = self.diff_left_win
+            transition_prev_buf = self.diff_left_prev_buf
+            transition_prev_winopts = self.diff_left_prev_winopts
+            transition_created_win = self.diff_left_created_win == true
+            window_state.clear_diff_window_state(
+                self,
+                window_state.SPLIT_LEFT_DIFF_STATE
+            )
+        end
     end
 
     local buf = buffers.ensure_stacked(self, actions)
@@ -245,7 +268,10 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
     local target_win
     local created_win = false
 
-    if window_state.has_open_stacked_diff(self) then
+    if transition_win ~= nil and common.is_valid_win(transition_win) then
+        target_win = transition_win
+        vim.api.nvim_set_current_win(target_win)
+    elseif window_state.has_open_stacked_diff(self) then
         target_win = assert(self.diff_win)
         vim.api.nvim_set_current_win(target_win)
     else
@@ -274,7 +300,12 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
     local was_diff_preview = previous_buf == buf.id
         and self.diff_win == target_win
 
-    if not was_diff_preview then
+    if transition_win == target_win then
+        self.diff_prev_buf = transition_prev_buf or previous_buf
+        self.diff_prev_winopts = transition_prev_winopts
+            or window.capture_winopts(target_win)
+        self.diff_created_win = transition_created_win
+    elseif not was_diff_preview then
         self.diff_prev_buf = previous_buf
         self.diff_prev_winopts = window.capture_winopts(target_win)
         self.diff_created_win = created_win
@@ -313,11 +344,23 @@ end
 ---@param actions MiniFugitPreviewBufferActions
 ---@return boolean
 function M.show_split(self, split_diff, diff_lines, preview_key, title, actions)
+    local transition_win
+    local transition_prev_buf
+    local transition_prev_winopts
+    local transition_created_win = false
+
     if
         window_state.has_open_diff(self)
         and not window_state.has_open_split_diff(self)
     then
-        actions.close_diff()
+        transition_win = self.diff_win
+        transition_prev_buf = self.diff_prev_buf
+        transition_prev_winopts = self.diff_prev_winopts
+        transition_created_win = self.diff_created_win == true
+        window_state.clear_diff_window_state(
+            self,
+            window_state.STACKED_DIFF_STATE
+        )
     end
 
     local left_buf = buffers.ensure_split(
@@ -350,7 +393,10 @@ function M.show_split(self, split_diff, diff_lines, preview_key, title, actions)
     local target_win
     local left_created = false
 
-    if window_state.has_open_split_diff(self) then
+    if transition_win ~= nil and common.is_valid_win(transition_win) then
+        target_win = transition_win
+        vim.api.nvim_set_current_win(target_win)
+    elseif window_state.has_open_split_diff(self) then
         -- Reuse the existing left window directly. find_target_win(self) could
         -- return diff_right_win if the user last focused it (self.target_win ==
         -- diff_right_win), which would make diff_left_win and diff_right_win
@@ -382,7 +428,13 @@ function M.show_split(self, split_diff, diff_lines, preview_key, title, actions)
     local was_left_preview = target_win == self.diff_left_win
         and vim.api.nvim_win_get_buf(target_win) == left_buf.id
 
-    if not was_left_preview then
+    if transition_win == target_win then
+        self.diff_left_prev_buf = transition_prev_buf
+            or vim.api.nvim_win_get_buf(target_win)
+        self.diff_left_prev_winopts = transition_prev_winopts
+            or window.capture_winopts(target_win)
+        self.diff_left_created_win = transition_created_win
+    elseif not was_left_preview then
         self.diff_left_prev_buf = vim.api.nvim_win_get_buf(target_win)
         self.diff_left_prev_winopts = window.capture_winopts(target_win)
         self.diff_left_created_win = left_created

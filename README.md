@@ -13,11 +13,11 @@ without leaving Neovim.
 - Discard unstaged changes or delete untracked paths, with confirmation by
   default.
 - Stage and unstage files from the status window (visual mode as well).
-- Preview diffs for the entry under the cursor.
+- Preview diffs for the entry under the cursor in stacked or split view.
 - Stage and unstage hunks from the diff window.
 - Create commits.
 - Animated loading spinner while pushing your commits.
-- View unpushed commits in the status window.
+- View unpushed commits in the status window and preview the diffs.
 - Run `:checkhealth minifugit` to verify Neovim and Git requirements.
 
 ## Requirements
@@ -32,6 +32,8 @@ without leaving Neovim.
 ```lua
 vim.pack.add({
     'https://github.com/vieitesss/minifugit.nvim',
+    version = vim.version.range("*") -- stable version
+    -- version = "nightly"
 })
 ```
 
@@ -110,7 +112,7 @@ Default status-window mappings:
 | n | `D` | Discard entry without confirmation |
 | n | `c` | Commit staged changes |
 | n | `p` | Push unpushed commits |
-| n | `t` | Toggle stacked/split diff layout |
+| n | `as` | Alternate stacked/split diff layout |
 | n | `?` | Toggle help |
 
 Default diff-preview mappings:
@@ -122,7 +124,7 @@ Default diff-preview mappings:
 | n | `s` | Stage current unstaged hunk |
 | n | `u` | Unstage current staged hunk |
 | n | `d` | Discard current unstaged hunk with confirmation |
-| n | `w` | Toggle wrap |
-| n | `l` | Toggle line numbers |
-| n | `m` | Toggle metadata rows *(stacked only)* |
-| n | `t` | Toggle stacked/split layout |
+| n | `aw` | Alternate wrap |
+| n | `al` | Alternate line numbers |
+| n | `am` | Alternate metadata rows *(stacked only)* |
+| n | `as` | Alternate stacked/split layout |

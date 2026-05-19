@@ -1,10 +1,22 @@
+plenary_ref := "74b06c6c75e4eeb3108ec01852001636d85a932b"
+plenary_url := "https://github.com/nvim-lua/plenary.nvim"
+
+
+_default:
+	just -l
+
 test:
 	#!/usr/bin/env bash
-	PLENARY_REF=74b06c6c75e4eeb3108ec01852001636d85a932b
-	if ! test -d plenary.nvim; then
-		git clone https://github.com/nvim-lua/plenary.nvim plenary.nvim
+	# Some comment
+	plenary_path="{{ justfile_directory() }}/plenary.nvim"
+
+	if ! test -d "${plenary_path}"; then
+		git clone {{ plenary_url }} "${plenary_path}"
 	fi
-	git -C plenary.nvim checkout "$PLENARY_REF"
+
+	git -C "${plenary_path}" checkout "{{ plenary_ref }}"
+
+	minimal_init="{{ justfile_directory() }}/tests/minimal_init.lua"
 	nvim --headless --noplugin \
-		-u tests/minimal_init.lua \
-		-c "lua require('plenary.test_harness').test_directory('tests', { minimal_init = './tests/minimal_init.lua' })"
+		-u "${minimal_init}" \
+		-c "lua require('plenary.test_harness').test_directory('tests', { minimal_init = '${minimal_init}' })"
