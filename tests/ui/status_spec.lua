@@ -285,6 +285,39 @@ describe('minifugit status UI', function()
         end
     end)
 
+    it('returns to status when closing the commit window', function()
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'one', 'two' }
+        )
+        helpers.run({ 'git', 'add', 'tracked.txt' }, repo)
+        minifugit.status()
+
+        ---@type GitStatusWindow
+        local gsw = minifugit.gsw
+        local status_buf = gsw.buf.id
+        local original_status_win = assert(gsw.win)
+
+        assert.is_true(gsw:commit())
+        local commit_win = vim.api.nvim_get_current_win()
+        local commit_buf = vim.api.nvim_get_current_buf()
+        assert.are.equal(original_status_win, commit_win)
+        assert.are.equal('gitcommit', vim.bo[commit_buf].filetype)
+
+        vim.cmd.quit()
+
+        assert.is_true(vim.wait(1000, function()
+            return gsw.win ~= nil
+                and vim.api.nvim_win_is_valid(gsw.win)
+                and vim.api.nvim_win_get_buf(gsw.win) == status_buf
+                and vim.api.nvim_get_current_buf() == status_buf
+        end))
+        assert.is_false(vim.api.nvim_win_is_valid(commit_win))
+        assert.is_false(vim.api.nvim_buf_is_valid(commit_buf))
+        assert_has_line(buffer_lines(status_buf), 'Staged (1)')
+        assert_has_line(buffer_lines(status_buf), 'M  tracked.txt')
+    end)
+
     it('renders a helpful message outside a git repository', function()
         local not_repo = vim.fn.tempname()
         vim.fn.mkdir(not_repo, 'p')

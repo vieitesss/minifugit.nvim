@@ -266,6 +266,50 @@ function M.discard_entry(self, force)
 end
 
 ---@param self GitStatusWindow
+---@param buf integer
+---@param path string
+---@return fun()
+local function return_to_status_on_commit_close(self, buf, path)
+    local win = vim.api.nvim_get_current_win()
+    local enabled = true
+
+    local autocmd = vim.api.nvim_create_autocmd('WinClosed', {
+        group = self.autocmd_group,
+        pattern = tostring(win),
+        once = true,
+        callback = function()
+            if not enabled then
+                return
+            end
+
+            autocmd = nil
+            vim.schedule(function()
+                if self.buf == nil or not self.buf:is_valid() then
+                    return
+                end
+
+                if vim.api.nvim_buf_is_valid(buf) then
+                    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+                end
+
+                vim.fn.delete(path)
+                self:show()
+                self:refresh()
+            end)
+        end,
+    })
+
+    return function()
+        enabled = false
+
+        if autocmd ~= nil then
+            pcall(vim.api.nvim_del_autocmd, autocmd)
+            autocmd = nil
+        end
+    end
+end
+
+---@param self GitStatusWindow
 ---@return boolean
 function M.commit(self)
     if self.win == nil or not common.is_valid_win(self.win) then
@@ -290,10 +334,13 @@ function M.commit(self)
 
     vim.api.nvim_set_current_win(self.win)
     vim.cmd('edit ' .. vim.fn.fnameescape(path))
+    local buf = vim.api.nvim_get_current_buf()
     vim.bo.filetype = 'gitcommit'
+    local stop_return_on_close =
+        return_to_status_on_commit_close(self, buf, path)
 
     vim.api.nvim_create_autocmd('BufWritePost', {
-        buffer = vim.api.nvim_get_current_buf(),
+        buffer = buf,
         callback = function(args)
             local ok, output = git.commit_file(path)
             local level = ok and vim.log.levels.INFO or vim.log.levels.ERROR
@@ -303,6 +350,8 @@ function M.commit(self)
             if not ok then
                 return false
             end
+
+            stop_return_on_close()
 
             vim.schedule(function()
                 self:refresh()
