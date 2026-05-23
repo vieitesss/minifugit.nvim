@@ -244,6 +244,47 @@ describe('minifugit status UI', function()
         assert.is_nil(gsw.win)
     end)
 
+    it('does not open the commit window without staged files', function()
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'one', 'two' }
+        )
+        minifugit.status()
+
+        ---@type GitStatusWindow
+        local gsw = minifugit.gsw
+        local status_win = assert(gsw.win)
+        local status_buf = gsw.buf.id
+        local notifications = {}
+        local original_notify = vim.notify
+
+        vim.notify = function(message, level)
+            table.insert(notifications, { message = message, level = level })
+        end
+
+        local commit_call_ok, ok = pcall(function()
+            return gsw:commit()
+        end)
+        vim.notify = original_notify
+
+        assert.is_true(commit_call_ok)
+        assert.is_false(ok)
+        assert.are.equal(status_win, vim.api.nvim_get_current_win())
+        assert.are.equal(status_buf, vim.api.nvim_get_current_buf())
+        assert.are.same({
+            {
+                message = '[minifugit] No staged files to commit',
+                level = vim.log.levels.WARN,
+            },
+        }, notifications)
+
+        for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+            if vim.api.nvim_buf_is_valid(buf) then
+                assert.are_not.equal('gitcommit', vim.bo[buf].filetype)
+            end
+        end
+    end)
+
     it('renders a helpful message outside a git repository', function()
         local not_repo = vim.fn.tempname()
         vim.fn.mkdir(not_repo, 'p')

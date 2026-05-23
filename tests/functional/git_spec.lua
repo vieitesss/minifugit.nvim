@@ -149,6 +149,27 @@ describe('minifugit.git', function()
         end
     )
 
+    it('reports whether the index has staged changes', function()
+        local has_changes, err = git.has_staged_changes()
+        assert.is_false(has_changes)
+        assert.is_nil(err)
+
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'one', 'two' }
+        )
+
+        has_changes, err = git.has_staged_changes()
+        assert.is_false(has_changes)
+        assert.is_nil(err)
+
+        helpers.run({ 'git', 'add', 'tracked.txt' }, repo)
+
+        has_changes, err = git.has_staged_changes()
+        assert.is_true(has_changes)
+        assert.is_nil(err)
+    end)
+
     it('counts added, modified, and deleted lines for a file', function()
         helpers.write_file(
             vim.fs.joinpath(repo, 'tracked.txt'),

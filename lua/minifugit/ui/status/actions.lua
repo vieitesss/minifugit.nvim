@@ -273,6 +273,18 @@ function M.commit(self)
         return false
     end
 
+    local has_staged_changes, err = git.has_staged_changes()
+
+    if err ~= nil then
+        common.notify_error(err, 'Cannot inspect staged changes')
+        return false
+    end
+
+    if not has_staged_changes then
+        common.notify_warn('No staged files to commit')
+        return false
+    end
+
     local path = vim.fn.tempname() .. '.gitcommit'
     vim.fn.writefile(git.commit_template(), path)
 
