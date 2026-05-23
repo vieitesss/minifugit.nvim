@@ -23,6 +23,11 @@ This is a Neovim plugin, written in Lua, that provides a lightweight Git status 
     - UI tests: check whether windows are created/deleted correctly, ensuring the UI is shown as expected during and after the execution of the plugin.
 - Use temporary directories as git repositories for testing, do not use real repositories.
 
+## Releases
+
+- When creating a new release, do not create a new branch, do it from main.
+- If you are not in the main branch, ask the user for confirmation.
+
 ## Formatting
 
 Use `stylua` for formatting.
