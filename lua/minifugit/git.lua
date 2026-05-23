@@ -653,6 +653,27 @@ function git.apply_hunk(patch, kind)
     return out.exit_code == 0, return_result(out)
 end
 
+---@return boolean
+---@return string?
+function git.has_staged_changes()
+    if not ensure_git() then
+        return false, '`git` is not executable'
+    end
+
+    local out =
+        git.run({ 'diff', '--cached', '--quiet', '--exit-code' }, root_opts())
+
+    if out.exit_code == 1 then
+        return true, nil
+    end
+
+    if out.exit_code == 0 then
+        return false, nil
+    end
+
+    return false, return_result(out)
+end
+
 ---@param file string
 ---@return boolean
 ---@return string
