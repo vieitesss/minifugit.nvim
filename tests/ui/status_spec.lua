@@ -262,9 +262,12 @@ describe('minifugit status UI', function()
             table.insert(notifications, { message = message, level = level })
         end
 
-        local ok = gsw:commit()
+        local commit_call_ok, ok = pcall(function()
+            return gsw:commit()
+        end)
         vim.notify = original_notify
 
+        assert.is_true(commit_call_ok)
         assert.is_false(ok)
         assert.are.equal(status_win, vim.api.nvim_get_current_win())
         assert.are.equal(status_buf, vim.api.nvim_get_current_buf())
