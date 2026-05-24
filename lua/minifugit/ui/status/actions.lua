@@ -331,17 +331,28 @@ local function return_to_status_on_commit_close(self, win, buf, path)
 end
 
 ---@param buf integer
-local function install_commit_close_abbrevs(buf)
-    -- :quit closes the window by default. Route interactive :q/:quit through
-    -- a buffer-local command so the status buffer can reuse this window.
-    vim.api.nvim_buf_call(buf, function()
-        vim.cmd(
-            [[cnoreabbrev <buffer> <expr> q getcmdtype() ==# ':' && getcmdline() ==# 'q' ? 'silent MinifugitCommitClose' : 'q']]
-        )
-        vim.cmd(
-            [[cnoreabbrev <buffer> <expr> quit getcmdtype() ==# ':' && getcmdline() ==# 'quit' ? 'silent MinifugitCommitClose' : 'quit']]
-        )
-    end)
+---@param close fun()
+local function install_commit_close_mapping(buf, close)
+    -- :quit closes the window by default. Intercept command-line Enter
+    -- instead of expanding :q, so no replacement command is echoed.
+    vim.keymap.set('c', '<CR>', function()
+        local cmdline = vim.fn.getcmdline()
+
+        if
+            vim.fn.getcmdtype() == ':'
+            and (
+                cmdline == 'q'
+                or cmdline == 'quit'
+                or cmdline == 'q!'
+                or cmdline == 'quit!'
+            )
+        then
+            vim.schedule(close)
+            return '<C-c>'
+        end
+
+        return '<CR>'
+    end, { buffer = buf, expr = true, replace_keycodes = true })
 end
 
 ---@param self GitStatusWindow
@@ -377,11 +388,18 @@ function M.commit(self)
     local stop_return_on_close =
         return_to_status_on_commit_close(self, win, buf, path)
 
-    vim.api.nvim_buf_create_user_command(buf, 'MinifugitCommitClose', function()
+    local close_commit = function()
         stop_return_on_close()
         return_to_status_from_commit(self, win, buf, path)
-    end, { bang = true })
-    install_commit_close_abbrevs(buf)
+    end
+
+    vim.api.nvim_buf_create_user_command(
+        buf,
+        'MinifugitCommitClose',
+        close_commit,
+        { bang = true }
+    )
+    install_commit_close_mapping(buf, close_commit)
 
     vim.api.nvim_create_autocmd('BufWritePost', {
         buffer = buf,
