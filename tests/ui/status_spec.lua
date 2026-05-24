@@ -306,7 +306,7 @@ describe('minifugit status UI', function()
         assert.are.equal('gitcommit', vim.bo[commit_buf].filetype)
 
         vim.api.nvim_feedkeys(
-            vim.api.nvim_replace_termcodes(':q<CR>', true, false, true),
+            vim.api.nvim_replace_termcodes(':q   <CR>', true, false, true),
             'xt',
             false
         )

@@ -336,7 +336,7 @@ local function install_commit_close_mapping(buf, close)
     -- :quit closes the window by default. Intercept command-line Enter
     -- instead of expanding :q, so no replacement command is echoed.
     vim.keymap.set('c', '<CR>', function()
-        local cmdline = vim.fn.getcmdline()
+        local cmdline = vim.trim(vim.fn.getcmdline())
 
         if
             vim.fn.getcmdtype() == ':'
