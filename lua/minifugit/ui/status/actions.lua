@@ -354,27 +354,88 @@ local function return_to_status_on_commit_close(self, win, buf, path)
     end
 end
 
+---@class CommitCloseCommand
+---@field kind 'close'|'write'|'write_modified'
+---@field force boolean
+
+---@param cmdline string
+---@return CommitCloseCommand?
+local function parse_commit_close_command(cmdline)
+    local ok, parsed = pcall(vim.api.nvim_parse_cmd, cmdline, {})
+
+    if not ok or parsed.nextcmd ~= '' then
+        return nil
+    end
+
+    if parsed.cmd == 'quit' then
+        return { kind = 'close', force = parsed.bang }
+    end
+
+    if #parsed.args > 0 then
+        return nil
+    end
+
+    if parsed.cmd == 'wq' then
+        return { kind = 'write', force = parsed.bang }
+    end
+
+    if parsed.cmd == 'xit' or parsed.cmd == 'exit' then
+        return { kind = 'write_modified', force = parsed.bang }
+    end
+
+    return nil
+end
+
+---@param buf integer
+---@param force boolean
+local function write_commit_buffer(buf, force)
+    if not vim.api.nvim_buf_is_valid(buf) then
+        return
+    end
+
+    local ok, err = pcall(vim.cmd, force and 'write!' or 'write')
+
+    if not ok then
+        common.notify_error(err, 'Cannot write commit message')
+    end
+end
+
+---@param buf integer
+---@param command CommitCloseCommand
+---@param close fun(force: boolean)
+local function run_commit_close_command(buf, command, close)
+    if command.kind == 'close' then
+        close(command.force)
+        return
+    end
+
+    if
+        command.kind == 'write_modified'
+        and vim.api.nvim_buf_is_valid(buf)
+        and not vim.bo[buf].modified
+    then
+        close(command.force)
+        return
+    end
+
+    write_commit_buffer(buf, command.force)
+end
+
 ---@param buf integer
 ---@param close fun(force: boolean)
 local function install_commit_close_mapping(buf, close)
-    -- :quit closes the window by default. Intercept command-line Enter
-    -- instead of expanding :q, so no replacement command is echoed.
+    -- Quit-like commands close the window by default. Intercept command-line
+    -- Enter instead of expanding :q, so no replacement command is echoed.
     vim.keymap.set('c', '<CR>', function()
-        local cmdline = vim.trim(vim.fn.getcmdline())
+        if vim.fn.getcmdtype() ~= ':' then
+            return '<CR>'
+        end
 
-        if
-            vim.fn.getcmdtype() == ':'
-            and (
-                cmdline == 'q'
-                or cmdline == 'quit'
-                or cmdline == 'q!'
-                or cmdline == 'quit!'
-            )
-        then
-            local force = cmdline == 'q!' or cmdline == 'quit!'
+        local command = parse_commit_close_command(vim.fn.getcmdline())
 
+        if command ~= nil then
             vim.schedule(function()
-                close(force)
+                run_commit_close_command(buf, command, close)
             end)
             return '<C-c>'
         end
