@@ -275,14 +275,36 @@ local function delete_commit_resources(buf, path)
     vim.fn.delete(path)
 end
 
+---@param buf integer
+---@param force boolean
+---@return boolean
+local function can_close_commit_buffer(buf, force)
+    if
+        force
+        or not vim.api.nvim_buf_is_valid(buf)
+        or not vim.bo[buf].modified
+    then
+        return true
+    end
+
+    common.notify_warn('No write since last change (add ! to override)')
+    return false
+end
+
 ---@param self GitStatusWindow
 ---@param win integer
 ---@param buf integer
 ---@param path string
-local function return_to_status_from_commit(self, win, buf, path)
+---@param force boolean
+---@return boolean
+local function return_to_status_from_commit(self, win, buf, path, force)
+    if not can_close_commit_buffer(buf, force) then
+        return false
+    end
+
     if self.buf == nil or not self.buf:is_valid() then
         delete_commit_resources(buf, path)
-        return
+        return true
     end
 
     if common.is_valid_win(win) then
@@ -294,6 +316,8 @@ local function return_to_status_from_commit(self, win, buf, path)
 
     self:refresh()
     delete_commit_resources(buf, path)
+
+    return true
 end
 
 ---@param self GitStatusWindow
@@ -315,7 +339,7 @@ local function return_to_status_on_commit_close(self, win, buf, path)
 
             autocmd = nil
             vim.schedule(function()
-                return_to_status_from_commit(self, win, buf, path)
+                return_to_status_from_commit(self, win, buf, path, false)
             end)
         end,
     })
@@ -331,7 +355,7 @@ local function return_to_status_on_commit_close(self, win, buf, path)
 end
 
 ---@param buf integer
----@param close fun()
+---@param close fun(force: boolean)
 local function install_commit_close_mapping(buf, close)
     -- :quit closes the window by default. Intercept command-line Enter
     -- instead of expanding :q, so no replacement command is echoed.
@@ -347,7 +371,11 @@ local function install_commit_close_mapping(buf, close)
                 or cmdline == 'quit!'
             )
         then
-            vim.schedule(close)
+            local force = cmdline == 'q!' or cmdline == 'quit!'
+
+            vim.schedule(function()
+                close(force)
+            end)
             return '<C-c>'
         end
 
@@ -388,15 +416,21 @@ function M.commit(self)
     local stop_return_on_close =
         return_to_status_on_commit_close(self, win, buf, path)
 
-    local close_commit = function()
+    ---@param force boolean
+    local close_commit = function(force)
+        if not return_to_status_from_commit(self, win, buf, path, force) then
+            return
+        end
+
         stop_return_on_close()
-        return_to_status_from_commit(self, win, buf, path)
     end
 
     vim.api.nvim_buf_create_user_command(
         buf,
         'MinifugitCommitClose',
-        close_commit,
+        function(opts)
+            close_commit(opts.bang)
+        end,
         { bang = true }
     )
     install_commit_close_mapping(buf, close_commit)
@@ -416,7 +450,7 @@ function M.commit(self)
             stop_return_on_close()
 
             vim.schedule(function()
-                return_to_status_from_commit(self, win, buf, path)
+                return_to_status_from_commit(self, win, buf, path, true)
             end)
 
             return true

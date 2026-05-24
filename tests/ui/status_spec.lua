@@ -323,6 +323,66 @@ describe('minifugit status UI', function()
         assert_has_line(buffer_lines(status_buf), 'M  tracked.txt')
     end)
 
+    it('keeps modified commit buffers open without :q!', function()
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'one', 'two' }
+        )
+        helpers.run({ 'git', 'add', 'tracked.txt' }, repo)
+        minifugit.status()
+
+        ---@type GitStatusWindow
+        local gsw = minifugit.gsw
+        local status_buf = gsw.buf.id
+        local status_win = assert(gsw.win)
+        local notifications = {}
+        local original_notify = vim.notify
+
+        assert.is_true(gsw:commit())
+        local commit_win = vim.api.nvim_get_current_win()
+        local commit_buf = vim.api.nvim_get_current_buf()
+        vim.api.nvim_buf_set_lines(commit_buf, 0, 0, false, { 'message' })
+        assert.is_true(vim.bo[commit_buf].modified)
+
+        vim.notify = function(message, level)
+            table.insert(notifications, { message = message, level = level })
+        end
+        vim.api.nvim_feedkeys(
+            vim.api.nvim_replace_termcodes(':q   <CR>', true, false, true),
+            'xt',
+            false
+        )
+
+        assert.is_true(vim.wait(1000, function()
+            return #notifications > 0
+        end))
+        vim.notify = original_notify
+        assert.are.same({
+            {
+                message = '[minifugit] No write since last change (add ! to override)',
+                level = vim.log.levels.WARN,
+            },
+        }, notifications)
+        assert.are.equal(commit_win, vim.api.nvim_get_current_win())
+        assert.are.equal(commit_buf, vim.api.nvim_get_current_buf())
+        assert.are.equal(status_win, commit_win)
+        assert.are.equal(commit_buf, vim.api.nvim_win_get_buf(commit_win))
+
+        vim.api.nvim_feedkeys(
+            vim.api.nvim_replace_termcodes(':q!   <CR>', true, false, true),
+            'xt',
+            false
+        )
+
+        assert.is_true(vim.wait(1000, function()
+            return gsw.win == commit_win
+                and vim.api.nvim_win_is_valid(commit_win)
+                and vim.api.nvim_win_get_buf(commit_win) == status_buf
+                and vim.api.nvim_get_current_buf() == status_buf
+        end))
+        assert.is_false(vim.api.nvim_buf_is_valid(commit_buf))
+    end)
+
     it('does not show an inherited winbar in the commit window', function()
         helpers.write_file(
             vim.fs.joinpath(repo, 'tracked.txt'),
