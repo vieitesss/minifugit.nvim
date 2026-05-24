@@ -265,12 +265,43 @@ function M.discard_entry(self, force)
     return true
 end
 
+---@param buf integer
+---@param path string
+local function delete_commit_resources(buf, path)
+    if vim.api.nvim_buf_is_valid(buf) then
+        pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    end
+
+    vim.fn.delete(path)
+end
+
 ---@param self GitStatusWindow
+---@param win integer
+---@param buf integer
+---@param path string
+local function return_to_status_from_commit(self, win, buf, path)
+    if self.buf == nil or not self.buf:is_valid() then
+        delete_commit_resources(buf, path)
+        return
+    end
+
+    if common.is_valid_win(win) then
+        vim.api.nvim_set_current_win(win)
+        vim.api.nvim_win_set_buf(win, self.buf.id)
+    else
+        self:show()
+    end
+
+    self:refresh()
+    delete_commit_resources(buf, path)
+end
+
+---@param self GitStatusWindow
+---@param win integer
 ---@param buf integer
 ---@param path string
 ---@return fun()
-local function return_to_status_on_commit_close(self, buf, path)
-    local win = vim.api.nvim_get_current_win()
+local function return_to_status_on_commit_close(self, win, buf, path)
     local enabled = true
 
     local autocmd = vim.api.nvim_create_autocmd('WinClosed', {
@@ -284,17 +315,7 @@ local function return_to_status_on_commit_close(self, buf, path)
 
             autocmd = nil
             vim.schedule(function()
-                if self.buf == nil or not self.buf:is_valid() then
-                    return
-                end
-
-                if vim.api.nvim_buf_is_valid(buf) then
-                    pcall(vim.api.nvim_buf_delete, buf, { force = true })
-                end
-
-                vim.fn.delete(path)
-                self:show()
-                self:refresh()
+                return_to_status_from_commit(self, win, buf, path)
             end)
         end,
     })
@@ -307,6 +328,20 @@ local function return_to_status_on_commit_close(self, buf, path)
             autocmd = nil
         end
     end
+end
+
+---@param buf integer
+local function install_commit_close_abbrevs(buf)
+    -- :quit closes the window by default. Route interactive :q/:quit through
+    -- a buffer-local command so the status buffer can reuse this window.
+    vim.api.nvim_buf_call(buf, function()
+        vim.cmd(
+            [[cnoreabbrev <buffer> <expr> q getcmdtype() ==# ':' && getcmdline() ==# 'q' ? 'silent MinifugitCommitClose' : 'q']]
+        )
+        vim.cmd(
+            [[cnoreabbrev <buffer> <expr> quit getcmdtype() ==# ':' && getcmdline() ==# 'quit' ? 'silent MinifugitCommitClose' : 'quit']]
+        )
+    end)
 end
 
 ---@param self GitStatusWindow
@@ -335,15 +370,22 @@ function M.commit(self)
     vim.api.nvim_set_current_win(self.win)
     vim.wo[self.win].winbar = ''
     vim.cmd('edit ' .. vim.fn.fnameescape(path))
+    local win = vim.api.nvim_get_current_win()
     local buf = vim.api.nvim_get_current_buf()
     vim.bo.filetype = 'gitcommit'
     vim.wo.winbar = ''
     local stop_return_on_close =
-        return_to_status_on_commit_close(self, buf, path)
+        return_to_status_on_commit_close(self, win, buf, path)
+
+    vim.api.nvim_buf_create_user_command(buf, 'MinifugitCommitClose', function()
+        stop_return_on_close()
+        return_to_status_from_commit(self, win, buf, path)
+    end, { bang = true })
+    install_commit_close_abbrevs(buf)
 
     vim.api.nvim_create_autocmd('BufWritePost', {
         buffer = buf,
-        callback = function(args)
+        callback = function()
             local ok, output = git.commit_file(path)
             local level = ok and vim.log.levels.INFO or vim.log.levels.ERROR
 
@@ -356,20 +398,7 @@ function M.commit(self)
             stop_return_on_close()
 
             vim.schedule(function()
-                self:refresh()
-
-                if self.win ~= nil and common.is_valid_win(self.win) then
-                    vim.api.nvim_set_current_win(self.win)
-                    vim.api.nvim_win_set_buf(self.win, self.buf.id)
-                else
-                    self:show()
-                end
-
-                if vim.api.nvim_buf_is_valid(args.buf) then
-                    vim.api.nvim_buf_delete(args.buf, { force = true })
-                end
-
-                vim.fn.delete(path)
+                return_to_status_from_commit(self, win, buf, path)
             end)
 
             return true
