@@ -265,12 +265,67 @@ function M.discard_entry(self, force)
     return true
 end
 
+---@param buf integer
+---@param path string
+local function delete_commit_resources(buf, path)
+    if vim.api.nvim_buf_is_valid(buf) then
+        pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    end
+
+    vim.fn.delete(path)
+end
+
+---@param buf integer
+---@param force boolean
+---@return boolean
+local function can_close_commit_buffer(buf, force)
+    if
+        force
+        or not vim.api.nvim_buf_is_valid(buf)
+        or not vim.bo[buf].modified
+    then
+        return true
+    end
+
+    common.notify_warn('No write since last change (add ! to override)')
+    return false
+end
+
 ---@param self GitStatusWindow
+---@param win integer
+---@param buf integer
+---@param path string
+---@param force boolean
+---@return boolean
+local function return_to_status_from_commit(self, win, buf, path, force)
+    if not can_close_commit_buffer(buf, force) then
+        return false
+    end
+
+    if self.buf == nil or not self.buf:is_valid() then
+        delete_commit_resources(buf, path)
+        return true
+    end
+
+    if common.is_valid_win(win) then
+        vim.api.nvim_set_current_win(win)
+        vim.api.nvim_win_set_buf(win, self.buf.id)
+    else
+        self:show()
+    end
+
+    self:refresh()
+    delete_commit_resources(buf, path)
+
+    return true
+end
+
+---@param self GitStatusWindow
+---@param win integer
 ---@param buf integer
 ---@param path string
 ---@return fun()
-local function return_to_status_on_commit_close(self, buf, path)
-    local win = vim.api.nvim_get_current_win()
+local function return_to_status_on_commit_close(self, win, buf, path)
     local enabled = true
 
     local autocmd = vim.api.nvim_create_autocmd('WinClosed', {
@@ -284,17 +339,7 @@ local function return_to_status_on_commit_close(self, buf, path)
 
             autocmd = nil
             vim.schedule(function()
-                if self.buf == nil or not self.buf:is_valid() then
-                    return
-                end
-
-                if vim.api.nvim_buf_is_valid(buf) then
-                    pcall(vim.api.nvim_buf_delete, buf, { force = true })
-                end
-
-                vim.fn.delete(path)
-                self:show()
-                self:refresh()
+                return_to_status_from_commit(self, win, buf, path, true)
             end)
         end,
     })
@@ -307,6 +352,98 @@ local function return_to_status_on_commit_close(self, buf, path)
             autocmd = nil
         end
     end
+end
+
+---@class CommitCloseCommand
+---@field kind 'close'|'write'|'write_modified'
+---@field force boolean
+
+---@param cmdline string
+---@return CommitCloseCommand?
+local function parse_commit_close_command(cmdline)
+    local ok, parsed = pcall(vim.api.nvim_parse_cmd, cmdline, {})
+
+    if not ok or parsed.nextcmd ~= '' then
+        return nil
+    end
+
+    if parsed.cmd == 'quit' then
+        return { kind = 'close', force = parsed.bang }
+    end
+
+    if #parsed.args > 0 then
+        return nil
+    end
+
+    if parsed.cmd == 'wq' then
+        return { kind = 'write', force = parsed.bang }
+    end
+
+    if parsed.cmd == 'xit' or parsed.cmd == 'exit' then
+        return { kind = 'write_modified', force = parsed.bang }
+    end
+
+    return nil
+end
+
+---@param buf integer
+---@param force boolean
+local function write_commit_buffer(buf, force)
+    if not vim.api.nvim_buf_is_valid(buf) then
+        return
+    end
+
+    local ok, err = pcall(vim.api.nvim_buf_call, buf, function()
+        vim.cmd(force and 'write!' or 'write')
+    end)
+
+    if not ok then
+        common.notify_error(err, 'Cannot write commit message')
+    end
+end
+
+---@param buf integer
+---@param command CommitCloseCommand
+---@param close fun(force: boolean)
+local function run_commit_close_command(buf, command, close)
+    if command.kind == 'close' then
+        close(command.force)
+        return
+    end
+
+    if
+        command.kind == 'write_modified'
+        and vim.api.nvim_buf_is_valid(buf)
+        and not vim.bo[buf].modified
+    then
+        close(command.force)
+        return
+    end
+
+    write_commit_buffer(buf, command.force)
+end
+
+---@param buf integer
+---@param close fun(force: boolean)
+local function install_commit_close_mapping(buf, close)
+    -- Quit-like commands close the window by default. Intercept command-line
+    -- Enter instead of expanding :q, so no replacement command is echoed.
+    vim.keymap.set('c', '<CR>', function()
+        if vim.fn.getcmdtype() ~= ':' then
+            return '<CR>'
+        end
+
+        local command = parse_commit_close_command(vim.fn.getcmdline())
+
+        if command ~= nil then
+            vim.schedule(function()
+                run_commit_close_command(buf, command, close)
+            end)
+            return '<C-c>'
+        end
+
+        return '<CR>'
+    end, { buffer = buf, expr = true, replace_keycodes = true })
 end
 
 ---@param self GitStatusWindow
@@ -335,15 +472,27 @@ function M.commit(self)
     vim.api.nvim_set_current_win(self.win)
     vim.wo[self.win].winbar = ''
     vim.cmd('edit ' .. vim.fn.fnameescape(path))
+    local win = vim.api.nvim_get_current_win()
     local buf = vim.api.nvim_get_current_buf()
     vim.bo.filetype = 'gitcommit'
     vim.wo.winbar = ''
     local stop_return_on_close =
-        return_to_status_on_commit_close(self, buf, path)
+        return_to_status_on_commit_close(self, win, buf, path)
+
+    ---@param force boolean
+    local close_commit = function(force)
+        if not return_to_status_from_commit(self, win, buf, path, force) then
+            return
+        end
+
+        stop_return_on_close()
+    end
+
+    install_commit_close_mapping(buf, close_commit)
 
     vim.api.nvim_create_autocmd('BufWritePost', {
         buffer = buf,
-        callback = function(args)
+        callback = function()
             local ok, output = git.commit_file(path)
             local level = ok and vim.log.levels.INFO or vim.log.levels.ERROR
 
@@ -356,20 +505,7 @@ function M.commit(self)
             stop_return_on_close()
 
             vim.schedule(function()
-                self:refresh()
-
-                if self.win ~= nil and common.is_valid_win(self.win) then
-                    vim.api.nvim_set_current_win(self.win)
-                    vim.api.nvim_win_set_buf(self.win, self.buf.id)
-                else
-                    self:show()
-                end
-
-                if vim.api.nvim_buf_is_valid(args.buf) then
-                    vim.api.nvim_buf_delete(args.buf, { force = true })
-                end
-
-                vim.fn.delete(path)
+                return_to_status_from_commit(self, win, buf, path, true)
             end)
 
             return true
