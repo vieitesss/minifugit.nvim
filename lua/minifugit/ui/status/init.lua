@@ -217,6 +217,24 @@ local function ensure_highlights(self)
     end
 end
 
+---@param win integer
+---@param opts GitStatusWindowOptions?
+---@return GitStatusWindowOptions?
+local function release_winopts(win, opts)
+    if opts == nil then
+        return nil
+    end
+
+    local buf = vim.api.nvim_win_get_buf(win)
+    local filetype = vim.bo[buf].filetype
+
+    if filetype ~= 'gitcommit' and filetype ~= 'gitrebase' then
+        return opts
+    end
+
+    return vim.tbl_extend('force', opts, { winbar = '' })
+end
+
 ---@param self GitStatusWindow
 local function release_status_win(self)
     if self.win == nil then
@@ -230,7 +248,7 @@ local function release_status_win(self)
             return
         end
 
-        window.restore_winopts(win, self.win_prev_winopts)
+        window.restore_winopts(win, release_winopts(win, self.win_prev_winopts))
     end
 
     self.win = nil

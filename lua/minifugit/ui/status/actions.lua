@@ -333,9 +333,11 @@ function M.commit(self)
     vim.fn.writefile(git.commit_template(), path)
 
     vim.api.nvim_set_current_win(self.win)
+    vim.wo[self.win].winbar = ''
     vim.cmd('edit ' .. vim.fn.fnameescape(path))
     local buf = vim.api.nvim_get_current_buf()
     vim.bo.filetype = 'gitcommit'
+    vim.wo.winbar = ''
     local stop_return_on_close =
         return_to_status_on_commit_close(self, buf, path)
 
