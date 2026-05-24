@@ -318,6 +318,33 @@ describe('minifugit status UI', function()
         assert_has_line(buffer_lines(status_buf), 'M  tracked.txt')
     end)
 
+    it('does not show an inherited winbar in the commit window', function()
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'one', 'two' }
+        )
+        helpers.run({ 'git', 'add', 'tracked.txt' }, repo)
+        vim.cmd.edit(vim.fn.fnameescape(vim.fs.joinpath(repo, 'tracked.txt')))
+        vim.wo.winbar = 'real file winbar'
+        minifugit.status()
+
+        ---@type GitStatusWindow
+        local gsw = minifugit.gsw
+
+        assert.is_true(gsw:commit())
+        local commit_win = vim.api.nvim_get_current_win()
+        local commit_buf = vim.api.nvim_get_current_buf()
+        assert.are.equal('gitcommit', vim.bo[commit_buf].filetype)
+        assert.are.equal('', vim.wo[commit_win].winbar)
+
+        assert.is_true(vim.wait(1000, function()
+            return gsw.win == nil
+        end))
+        assert.are.equal('', vim.wo[commit_win].winbar)
+
+        vim.cmd.quit()
+    end)
+
     it('renders a helpful message outside a git repository', function()
         local not_repo = vim.fn.tempname()
         vim.fn.mkdir(not_repo, 'p')

@@ -44,6 +44,7 @@ function M.configure_status_win(win)
     vim.wo[win].wrap = false
     vim.wo[win].cursorline = true
     vim.wo[win].winfixwidth = true
+    vim.wo[win].winbar = ''
 end
 
 ---@param buf Buffer
