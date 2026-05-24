@@ -450,6 +450,44 @@ describe('minifugit status UI', function()
         assert.is_false(vim.api.nvim_buf_is_valid(commit_buf))
     end)
 
+    it(
+        'cleans up modified commit buffers after a forced window close',
+        function()
+            helpers.write_file(
+                vim.fs.joinpath(repo, 'tracked.txt'),
+                { 'one', 'two' }
+            )
+            helpers.run({ 'git', 'add', 'tracked.txt' }, repo)
+            minifugit.status()
+
+            ---@type GitStatusWindow
+            local gsw = minifugit.gsw
+            local status_buf = gsw.buf.id
+            local window_count = #vim.api.nvim_tabpage_list_wins(0)
+
+            assert.is_true(gsw:commit())
+            local commit_win = vim.api.nvim_get_current_win()
+            local commit_buf = vim.api.nvim_get_current_buf()
+            local commit_path = vim.api.nvim_buf_get_name(commit_buf)
+            vim.api.nvim_buf_set_lines(commit_buf, 0, 0, false, { 'message' })
+            assert.is_true(vim.bo[commit_buf].modified)
+
+            vim.api.nvim_win_close(commit_win, true)
+
+            assert.is_true(vim.wait(1000, function()
+                return gsw.win ~= nil
+                    and vim.api.nvim_win_is_valid(gsw.win)
+                    and vim.api.nvim_win_get_buf(gsw.win) == status_buf
+                    and vim.api.nvim_get_current_buf() == status_buf
+                    and not vim.api.nvim_buf_is_valid(commit_buf)
+            end))
+            assert.are.equal(window_count, #vim.api.nvim_tabpage_list_wins(0))
+            assert.is_nil(vim.uv.fs_stat(commit_path))
+            assert_has_line(buffer_lines(status_buf), 'Staged (1)')
+            assert_has_line(buffer_lines(status_buf), 'M  tracked.txt')
+        end
+    )
+
     it('does not show an inherited winbar in the commit window', function()
         helpers.write_file(
             vim.fs.joinpath(repo, 'tracked.txt'),

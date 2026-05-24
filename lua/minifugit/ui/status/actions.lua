@@ -339,7 +339,7 @@ local function return_to_status_on_commit_close(self, win, buf, path)
 
             autocmd = nil
             vim.schedule(function()
-                return_to_status_from_commit(self, win, buf, path, false)
+                return_to_status_from_commit(self, win, buf, path, true)
             end)
         end,
     })
@@ -488,14 +488,6 @@ function M.commit(self)
         stop_return_on_close()
     end
 
-    vim.api.nvim_buf_create_user_command(
-        buf,
-        'MinifugitCommitClose',
-        function(opts)
-            close_commit(opts.bang)
-        end,
-        { bang = true }
-    )
     install_commit_close_mapping(buf, close_commit)
 
     vim.api.nvim_create_autocmd('BufWritePost', {
