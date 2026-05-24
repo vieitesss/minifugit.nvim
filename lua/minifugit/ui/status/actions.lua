@@ -393,7 +393,9 @@ local function write_commit_buffer(buf, force)
         return
     end
 
-    local ok, err = pcall(vim.cmd, force and 'write!' or 'write')
+    local ok, err = pcall(vim.api.nvim_buf_call, buf, function()
+        vim.cmd(force and 'write!' or 'write')
+    end)
 
     if not ok then
         common.notify_error(err, 'Cannot write commit message')

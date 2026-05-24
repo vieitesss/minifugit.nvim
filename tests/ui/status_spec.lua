@@ -410,16 +410,20 @@ describe('minifugit status UI', function()
         vim.notify = function(message, level)
             table.insert(notifications, { message = message, level = level })
         end
-        vim.api.nvim_feedkeys(
-            vim.api.nvim_replace_termcodes(':q   <CR>', true, false, true),
-            'xt',
-            false
-        )
 
-        assert.is_true(vim.wait(1000, function()
-            return #notifications > 0
-        end))
+        local notify_call_ok, notify_err = pcall(function()
+            vim.api.nvim_feedkeys(
+                vim.api.nvim_replace_termcodes(':q   <CR>', true, false, true),
+                'xt',
+                false
+            )
+
+            assert.is_true(vim.wait(1000, function()
+                return #notifications > 0
+            end))
+        end)
         vim.notify = original_notify
+        assert(notify_call_ok, notify_err)
         assert.are.same({
             {
                 message = '[minifugit] No write since last change (add ! to override)',
