@@ -20,6 +20,7 @@ local mf = require('minifugit').setup({
     status = {
         width = 0.4,
         min_width = 20,
+        open_in_tab = true,
     },
 })
 local log = require('minifugit.log')

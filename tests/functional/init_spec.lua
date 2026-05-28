@@ -12,13 +12,14 @@ describe('minifugit', function()
         assert.are.equal(false, minifugit.options.preview.wrap)
         assert.are.equal('stacked', minifugit.options.preview.diff_layout)
         assert.are.equal(0.4, minifugit.options.status.width)
+        assert.are.equal(false, minifugit.options.status.open_in_tab)
     end)
 
     it('merges valid options without losing defaults', function()
         ---@type Minifugit
         local minifugit = require('minifugit').setup({
             preview = { show_metadata = false, diff_layout = 'split' },
-            status = { min_width = 30 },
+            status = { min_width = 30, open_in_tab = true },
         })
 
         assert.are.equal(false, minifugit.options.preview.show_metadata)
@@ -26,6 +27,7 @@ describe('minifugit', function()
         assert.are.equal(false, minifugit.options.preview.wrap)
         assert.are.equal(30, minifugit.options.status.min_width)
         assert.are.equal(0.4, minifugit.options.status.width)
+        assert.are.equal(true, minifugit.options.status.open_in_tab)
     end)
 
     it('rejects invalid setup options', function()

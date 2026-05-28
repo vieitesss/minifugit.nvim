@@ -9,6 +9,7 @@ local common = require('minifugit.ui.status.common')
 local keymaps = require('minifugit.ui.status.keymaps')
 local preview = require('minifugit.ui.status.preview')
 local selection = require('minifugit.ui.status.selection')
+local status_tab = require('minifugit.ui.status.tab')
 local window = require('minifugit.ui.status.window')
 local git = require('minifugit.git')
 
@@ -46,6 +47,12 @@ local git = require('minifugit.git')
 ---@field win number?
 ---@field win_prev_winopts GitStatusWindowOptions?
 ---@field target_win number?
+---@field tabpage number?
+---@field tab_placeholder_buf number?
+---@field tab_related_buffers table<number, boolean>?
+---@field tab_foreign_buffer boolean
+---@field tab_suppress_foreign integer
+---@field tab_closing boolean
 ---@field options MinifugitOptions
 ---@field groups table<string, string>
 ---@field highlights table<string, { ensure: fun() }>
@@ -272,6 +279,26 @@ local function refresh_highlights(self)
     end
 end
 
+---@param bufnr number?
+function GitStatusWindow:mark_related_buffer(bufnr)
+    status_tab.mark_related_buffer(self, bufnr)
+end
+
+---@return fun(bufnr: number?)
+function GitStatusWindow:begin_related_buffer_open()
+    return status_tab.begin_related_buffer_open(self)
+end
+
+---@return boolean
+function GitStatusWindow:close_owned_tab()
+    return status_tab.close_owned_tab(self)
+end
+
+---@return boolean
+function GitStatusWindow:maybe_close_owned_tab()
+    return status_tab.maybe_close(self)
+end
+
 ---@param self GitStatusWindow
 local function ensure_autocmds(self)
     if self.autocmd_group ~= nil then
@@ -324,6 +351,8 @@ local function ensure_autocmds(self)
             refresh_highlights(self)
         end,
     })
+
+    status_tab.install_autocmds(self)
 end
 
 function GitStatusWindow:show()
@@ -340,15 +369,20 @@ function GitStatusWindow:show()
         release_status_win(self)
     end
 
-    window.set_target_win(self, vim.api.nvim_get_current_win())
+    if not status_tab.uses(self) then
+        window.set_target_win(self, vim.api.nvim_get_current_win())
+    end
 
     if self.win and vim.api.nvim_win_is_valid(self.win) then
         vim.api.nvim_set_current_win(self.win)
         return
     end
 
-    self.win, self.win_prev_winopts =
+    local target_win
+    local placeholder_buf
+    self.win, self.win_prev_winopts, target_win, placeholder_buf =
         window.create_status_win(self.buf, self.options.status)
+    status_tab.attach(self, target_win, placeholder_buf)
     selection.move_to_first_entry(self)
 end
 
@@ -472,6 +506,12 @@ function GitStatusWindow:close()
         local tabpage = vim.api.nvim_win_get_tabpage(self.win)
 
         if #vim.api.nvim_tabpage_list_wins(tabpage) <= 1 then
+            if tabpage == self.tabpage and self:close_owned_tab() then
+                self.win = nil
+                self.win_prev_winopts = nil
+                return true
+            end
+
             common.notify_warn('Cannot close the last window')
             return false
         end
@@ -486,6 +526,7 @@ function GitStatusWindow:close()
 
     self.win = nil
     self.win_prev_winopts = nil
+    self:maybe_close_owned_tab()
 
     return true
 end
@@ -644,6 +685,7 @@ function GitStatusWindow.new(opts)
     self.filter = ''
     self.loading_frame = 1
     self.target_win = vim.api.nvim_get_current_win()
+    status_tab.setup_state(self)
 
     ensure_highlights(self)
 
@@ -658,8 +700,11 @@ function GitStatusWindow.new(opts)
     keymaps.attach(self)
     self:render()
 
-    self.win, self.win_prev_winopts =
+    local target_win
+    local placeholder_buf
+    self.win, self.win_prev_winopts, target_win, placeholder_buf =
         window.create_status_win(self.buf, self.options.status)
+    status_tab.attach(self, target_win, placeholder_buf)
     selection.move_to_first_entry(self)
     ensure_autocmds(self)
 
