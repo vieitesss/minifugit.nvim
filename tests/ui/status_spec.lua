@@ -112,6 +112,18 @@ local function wait_for_current_buf(buf, expected_opts)
     end))
 end
 
+---@param tabpage integer
+---@return boolean
+local function tabpage_is_valid(tabpage)
+    for _, existing in ipairs(vim.api.nvim_list_tabpages()) do
+        if existing == tabpage then
+            return true
+        end
+    end
+
+    return false
+end
+
 describe('minifugit status UI', function()
     ---@type string
     local original_cwd
@@ -149,6 +161,7 @@ describe('minifugit status UI', function()
             minifugit.reset()
         end
 
+        vim.cmd('silent! tabonly!')
         vim.cmd.only({ mods = { emsg_silent = true } })
         vim.cmd('%bwipeout!')
         vim.cmd.cd(vim.fn.fnameescape(original_cwd))
@@ -242,6 +255,110 @@ describe('minifugit status UI', function()
         assert.is_false(vim.api.nvim_win_is_valid(win))
         assert.is_true(vim.api.nvim_buf_is_valid(buf))
         assert.is_nil(gsw.win)
+    end)
+
+    it('opens the status workflow in a new tab when configured', function()
+        minifugit = require('minifugit').setup({
+            status = { width = 0.5, min_width = 20, open_in_tab = true },
+        })
+        local original_tab = vim.api.nvim_get_current_tabpage()
+        local tab_count = #vim.api.nvim_list_tabpages()
+
+        minifugit.status()
+
+        ---@type GitStatusWindow
+        local gsw = minifugit.gsw
+        assert.is_not_nil(gsw)
+        assert.are_not.equal(original_tab, vim.api.nvim_get_current_tabpage())
+        assert.are.equal(tab_count + 1, #vim.api.nvim_list_tabpages())
+        assert.are.equal(
+            vim.api.nvim_get_current_tabpage(),
+            vim.api.nvim_win_get_tabpage(gsw.win)
+        )
+        assert.are.equal(gsw.buf.id, vim.api.nvim_win_get_buf(gsw.win))
+        assert.are.equal(2, #vim.api.nvim_tabpage_list_wins(0))
+    end)
+
+    it(
+        'auto-closes the status tab when only minifugit buffers remain',
+        function()
+            minifugit = require('minifugit').setup({
+                status = { width = 0.5, min_width = 20, open_in_tab = true },
+            })
+            local tab_count = #vim.api.nvim_list_tabpages()
+
+            minifugit.status()
+
+            ---@type GitStatusWindow
+            local gsw = minifugit.gsw
+            local tabpage = vim.api.nvim_get_current_tabpage()
+            vim.api.nvim_set_current_win(gsw.win)
+            vim.cmd.normal('q')
+
+            assert.is_true(vim.wait(1000, function()
+                return not tabpage_is_valid(tabpage)
+            end))
+            assert.are.equal(tab_count, #vim.api.nvim_list_tabpages())
+        end
+    )
+
+    it('keeps the status tab after a foreign buffer is opened', function()
+        minifugit = require('minifugit').setup({
+            status = { width = 0.5, min_width = 20, open_in_tab = true },
+        })
+        local tab_count = #vim.api.nvim_list_tabpages()
+
+        minifugit.status()
+
+        ---@type GitStatusWindow
+        local gsw = minifugit.gsw
+        local tabpage = vim.api.nvim_get_current_tabpage()
+        local target_win = assert(gsw.target_win)
+        assert.is_true(vim.api.nvim_win_is_valid(target_win))
+        local foreign_path = vim.fs.joinpath(repo, 'foreign.txt')
+        helpers.write_file(foreign_path, { 'foreign' })
+        vim.api.nvim_set_current_win(target_win)
+        vim.cmd.edit(vim.fn.fnameescape(foreign_path))
+        assert.is_true(vim.wait(1000, function()
+            return gsw.tab_foreign_buffer == true
+        end))
+
+        vim.api.nvim_set_current_win(gsw.win)
+        vim.cmd.normal('q')
+
+        assert.is_true(vim.wait(1000, function()
+            return tabpage_is_valid(tabpage)
+                and #vim.api.nvim_list_tabpages() == tab_count + 1
+        end))
+    end)
+
+    it('opens status entries in the status tab as workflow buffers', function()
+        minifugit = require('minifugit').setup({
+            status = { width = 0.5, min_width = 20, open_in_tab = true },
+        })
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'one', 'two' }
+        )
+
+        minifugit.status()
+
+        ---@type GitStatusWindow
+        local gsw = minifugit.gsw
+        local tabpage = vim.api.nvim_get_current_tabpage()
+        vim.api.nvim_win_set_cursor(
+            gsw.win,
+            { row_containing(gsw.buf.id, 'tracked.txt'), 0 }
+        )
+
+        assert.is_true(gsw:enter_entry())
+
+        assert.are.equal(tabpage, vim.api.nvim_get_current_tabpage())
+        assert.are.equal(
+            vim.uv.fs_realpath(vim.fs.joinpath(repo, 'tracked.txt')),
+            vim.uv.fs_realpath(vim.api.nvim_buf_get_name(0))
+        )
+        assert.is_false(gsw.tab_foreign_buffer)
     end)
 
     it('does not open the commit window without staged files', function()
