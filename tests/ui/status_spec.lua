@@ -279,6 +279,58 @@ describe('minifugit status UI', function()
         assert.are.equal(2, #vim.api.nvim_tabpage_list_wins(0))
     end)
 
+    it('reopens tab diff previews with the configured status width', function()
+        minifugit = require('minifugit').setup({
+            status = { width = 0.4, min_width = 20, open_in_tab = true },
+            preview = { diff_layout = 'stacked' },
+        })
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'one', 'two' }
+        )
+
+        minifugit.status()
+
+        ---@type GitStatusWindow
+        local gsw = minifugit.gsw
+        local status_win = assert(gsw.win)
+        local expected_status_width =
+            math.max(math.floor(vim.o.columns * 0.4), 20)
+        vim.api.nvim_win_set_cursor(
+            status_win,
+            { row_containing(gsw.buf.id, 'tracked.txt'), 0 }
+        )
+
+        assert.is_true(gsw:diff_entry())
+        assert.are.equal(
+            expected_status_width,
+            vim.api.nvim_win_get_width(status_win)
+        )
+
+        local diff_win = assert(gsw.diff_win)
+        vim.api.nvim_set_current_win(diff_win)
+        vim.cmd.quit()
+
+        assert.is_true(vim.wait(1000, function()
+            return vim.api.nvim_win_is_valid(status_win)
+                and #vim.api.nvim_tabpage_list_wins(0) == 1
+        end))
+
+        vim.api.nvim_set_current_win(status_win)
+        assert.is_true(gsw:diff_entry())
+
+        local reopened_diff_win = assert(gsw.diff_win)
+        assert.are.equal(2, #vim.api.nvim_tabpage_list_wins(0))
+        assert.are.equal(
+            expected_status_width,
+            vim.api.nvim_win_get_width(status_win)
+        )
+        assert.are.equal(
+            vim.o.columns - expected_status_width - 1,
+            vim.api.nvim_win_get_width(reopened_diff_win)
+        )
+    end)
+
     it(
         'auto-closes the status tab when only minifugit buffers remain',
         function()

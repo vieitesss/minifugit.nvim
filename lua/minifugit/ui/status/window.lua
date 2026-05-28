@@ -19,7 +19,7 @@ local M = {}
 
 ---@param opts MinifugitStatusOptions
 ---@return integer
-local function status_win_width(opts)
+function M.status_win_width(opts)
     return math.max(math.floor(vim.o.columns * opts.width), opts.min_width)
 end
 
@@ -54,7 +54,7 @@ end
 ---@return number? target_win
 ---@return number? placeholder_buf
 function M.create_status_win(buf, opts)
-    local width = status_win_width(opts)
+    local width = M.status_win_width(opts)
     local target_win
     local placeholder_buf
 
