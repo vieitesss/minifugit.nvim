@@ -48,15 +48,42 @@ end
 ---@field width integer
 
 ---@param self GitStatusWindow
+---@return integer
+local function status_preview_width(self)
+    return math.min(
+        window.status_win_width(self.options.status),
+        math.max(1, vim.o.columns - 1)
+    )
+end
+
+---@param self GitStatusWindow
+---@return boolean
+local function has_only_status_window(self)
+    if not common.is_valid_win(self.win) then
+        return false
+    end
+
+    local tabpage = vim.api.nvim_win_get_tabpage(self.win)
+
+    return #vim.api.nvim_tabpage_list_wins(tabpage) == 1
+end
+
+---@param self GitStatusWindow
 ---@return MiniFugitStatusWinState?
 local function make_status_win_resizable(self)
     if not common.is_valid_win(self.win) then
         return nil
     end
 
+    local width = vim.api.nvim_win_get_width(self.win)
+
+    if has_only_status_window(self) then
+        width = status_preview_width(self)
+    end
+
     local state = {
         winfixwidth = vim.wo[self.win].winfixwidth,
-        width = vim.api.nvim_win_get_width(self.win),
+        width = width,
     }
     vim.wo[self.win].winfixwidth = false
 
