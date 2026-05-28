@@ -290,6 +290,11 @@ function GitStatusWindow:begin_related_buffer_open()
 end
 
 ---@return boolean
+function GitStatusWindow:close_owned_tab()
+    return status_tab.close_owned_tab(self)
+end
+
+---@return boolean
 function GitStatusWindow:maybe_close_owned_tab()
     return status_tab.maybe_close(self)
 end
@@ -501,6 +506,12 @@ function GitStatusWindow:close()
         local tabpage = vim.api.nvim_win_get_tabpage(self.win)
 
         if #vim.api.nvim_tabpage_list_wins(tabpage) <= 1 then
+            if tabpage == self.tabpage and self:close_owned_tab() then
+                self.win = nil
+                self.win_prev_winopts = nil
+                return true
+            end
+
             common.notify_warn('Cannot close the last window')
             return false
         end

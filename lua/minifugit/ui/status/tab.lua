@@ -143,12 +143,11 @@ end
 
 ---@param self GitStatusWindow
 ---@return boolean
-function M.maybe_close(self)
+function M.close_owned_tab(self)
     if
         not M.uses(self)
         or self.tab_foreign_buffer
         or self.tab_closing
-        or tabpage_has_workflow_buffer(self)
         or not is_valid_tabpage(self.tabpage)
     then
         return false
@@ -165,6 +164,16 @@ function M.maybe_close(self)
 end
 
 ---@param self GitStatusWindow
+---@return boolean
+function M.maybe_close(self)
+    if tabpage_has_workflow_buffer(self) then
+        return false
+    end
+
+    return M.close_owned_tab(self)
+end
+
+---@param self GitStatusWindow
 ---@param target_win number?
 ---@param placeholder_buf number?
 function M.attach(self, target_win, placeholder_buf)
@@ -172,8 +181,9 @@ function M.attach(self, target_win, placeholder_buf)
         return
     end
 
+    M.setup_state(self)
     self.tabpage = vim.api.nvim_win_get_tabpage(self.win)
-    self.tab_placeholder_buf = placeholder_buf or self.tab_placeholder_buf
+    self.tab_placeholder_buf = placeholder_buf
     M.mark_related_buffer(self, self.buf.id)
 
     if target_win ~= nil and common.is_valid_win(target_win) then
