@@ -612,7 +612,16 @@ function M.goto_code(self)
         window_state.close_diff_windows_for_code(self, state)
 
     vim.api.nvim_set_current_win(code_win)
-    edit_without_jumplist(path)
+    local finish_related_open = self:begin_related_buffer_open()
+    local ok, err = pcall(edit_without_jumplist, path)
+    finish_related_open(ok and vim.api.nvim_get_current_buf() or nil)
+
+    if not ok then
+        common.notify_error(tostring(err), 'Cannot open ' .. position.path)
+        window_state.delete_diff_buffers(diff_buffers)
+        return false
+    end
+
     preview_cursor.set_cursor_row(code_win, position.line)
     self.target_win = code_win
 

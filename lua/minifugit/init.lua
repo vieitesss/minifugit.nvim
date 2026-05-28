@@ -8,6 +8,7 @@
 ---@class MinifugitStatusOptions
 ---@field width number
 ---@field min_width integer
+---@field open_in_tab boolean
 
 ---@class MinifugitOptions
 ---@field preview MinifugitPreviewOptions
@@ -24,6 +25,7 @@ local defaults = {
     status = {
         width = 0.4,
         min_width = 20,
+        open_in_tab = false,
     },
 }
 
@@ -185,6 +187,12 @@ function M.setup(opts)
             'opts.status.min_width',
             opts.status.min_width,
             'number',
+            true
+        )
+        vim.validate(
+            'opts.status.open_in_tab',
+            opts.status.open_in_tab,
+            'boolean',
             true
         )
 

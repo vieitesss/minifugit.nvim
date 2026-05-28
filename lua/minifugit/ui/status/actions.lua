@@ -471,9 +471,20 @@ function M.commit(self)
 
     vim.api.nvim_set_current_win(self.win)
     vim.wo[self.win].winbar = ''
-    vim.cmd('edit ' .. vim.fn.fnameescape(path))
+
+    local finish_related_open = self:begin_related_buffer_open()
+    local edit_ok, edit_err = pcall(function()
+        vim.cmd('edit ' .. vim.fn.fnameescape(path))
+    end)
     local win = vim.api.nvim_get_current_win()
     local buf = vim.api.nvim_get_current_buf()
+    finish_related_open(edit_ok and buf or nil)
+
+    if not edit_ok then
+        common.notify_error(tostring(edit_err), 'Cannot open commit message')
+        vim.fn.delete(path)
+        return false
+    end
     vim.bo.filetype = 'gitcommit'
     vim.wo.winbar = ''
     local stop_return_on_close =

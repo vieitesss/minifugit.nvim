@@ -49,9 +49,20 @@ end
 
 ---@param buf Buffer
 ---@param opts MinifugitStatusOptions
----@return number, GitStatusWindowOptions
+---@return number
+---@return GitStatusWindowOptions
+---@return number? target_win
+---@return number? placeholder_buf
 function M.create_status_win(buf, opts)
     local width = status_win_width(opts)
+    local target_win
+    local placeholder_buf
+
+    if opts.open_in_tab then
+        vim.cmd('tabnew')
+        target_win = vim.api.nvim_get_current_win()
+        placeholder_buf = vim.api.nvim_get_current_buf()
+    end
 
     vim.cmd('topleft ' .. width .. 'vsplit')
 
@@ -64,7 +75,7 @@ function M.create_status_win(buf, opts)
 
     log.info(string.format('created status window win=%d buf=%d', win, buf.id))
 
-    return win, prev_winopts
+    return win, prev_winopts, target_win, placeholder_buf
 end
 
 ---@param win number
@@ -186,7 +197,18 @@ function M.open_entry(self, entry)
     )
 
     if current_path ~= path then
-        vim.cmd('edit ' .. vim.fn.fnameescape(path))
+        local finish_related_open = self:begin_related_buffer_open()
+        local ok, err = pcall(function()
+            vim.cmd('edit ' .. vim.fn.fnameescape(path))
+        end)
+        finish_related_open(ok and vim.api.nvim_get_current_buf() or nil)
+
+        if not ok then
+            common.notify_error(tostring(err), 'Cannot open worktree path')
+            return false
+        end
+    else
+        self:mark_related_buffer(vim.api.nvim_win_get_buf(target_win))
     end
 
     return true
