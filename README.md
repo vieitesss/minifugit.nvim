@@ -76,6 +76,9 @@ require('minifugit').setup({
 
         -- Minimum status window width in columns.
         min_width = 20,
+
+        -- Open the minifugit workflow in a dedicated tab.
+        open_in_tab = false,
     },
 })
 ```
