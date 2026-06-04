@@ -401,7 +401,7 @@ describe('minifugit status UI', function()
         assert.is_true(gsw:diff_entry())
 
         local diff_win = assert(gsw.diff_win)
-        assert.are.same(2, #normal_windows(vim.api.nvim_get_current_tabpage()))
+        assert.are.equal(2, #normal_windows(vim.api.nvim_get_current_tabpage()))
         assert.are.equal(
             expected_status_width,
             vim.api.nvim_win_get_width(status_win)
