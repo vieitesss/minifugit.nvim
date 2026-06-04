@@ -217,6 +217,28 @@ describe('minifugit status UI', function()
         end
     )
 
+    it('previews a diff for an untracked file', function()
+        helpers.write_file(vim.fs.joinpath(repo, 'new-dir/file.txt'), {
+            'new content',
+        })
+        minifugit.options.preview.diff_layout = 'stacked'
+        minifugit.status()
+
+        ---@type GitStatusWindow
+        local gsw = minifugit.gsw
+        vim.api.nvim_win_set_cursor(
+            gsw.win,
+            { row_containing(gsw.buf.id, 'new-dir/file.txt'), 0 }
+        )
+
+        assert.is_true(gsw:diff_entry())
+        assert.is_not_nil(gsw.diff_buf)
+        assert_has_line_containing(
+            buffer_lines(gsw.diff_buf.id),
+            '+new content'
+        )
+    end)
+
     it(
         'refreshes and reuses the existing status buffer on repeated calls',
         function()

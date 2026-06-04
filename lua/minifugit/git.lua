@@ -266,7 +266,12 @@ end
 function git.status()
     ensure_git()
 
-    local out = git.run({ 'status', '--porcelain=v1', '-z' })
+    local out = git.run({
+        'status',
+        '--porcelain=v1',
+        '-z',
+        '--untracked-files=all',
+    })
 
     if out.exit_code ~= 0 then
         return {}
@@ -316,7 +321,7 @@ function git.status_snapshot()
     end
 
     local status_out = git.run(
-        { 'status', '--porcelain=v1', '-z' },
+        { 'status', '--porcelain=v1', '-z', '--untracked-files=all' },
         { cwd = root }
     )
 
@@ -1022,10 +1027,14 @@ function git.file_change_counts(path)
             'File change counts are not available for directories'
     end
 
-    local status_out = git.run(
-        { 'status', '--porcelain=v1', '-z', '--', relative_path },
-        { cwd = root, ignore_error = true }
-    )
+    local status_out = git.run({
+        'status',
+        '--porcelain=v1',
+        '-z',
+        '--untracked-files=all',
+        '--',
+        relative_path,
+    }, { cwd = root, ignore_error = true })
 
     if status_out.exit_code ~= 0 then
         return empty_change_counts(), return_result(status_out)
@@ -1067,6 +1076,18 @@ end
 
 ---@param entry GitStatusEntry
 ---@param section string?
+---@return boolean
+local function is_worktree_new_file(entry, section)
+    if section == 'untracked' or entry.unstaged == '?' then
+        return true
+    end
+
+    return entry.unstaged == 'A'
+        and (section == 'unstaged' or entry.staged == ' ')
+end
+
+---@param entry GitStatusEntry
+---@param section string?
 ---@return string[]
 ---@return string?
 function git.diff(entry, section)
@@ -1079,7 +1100,7 @@ function git.diff(entry, section)
         or entry.path
     local stat = vim.uv.fs_stat(full_path)
 
-    if section == 'untracked' or entry.unstaged == '?' then
+    if is_worktree_new_file(entry, section) then
         if stat ~= nil and stat.type == 'directory' then
             return {}, 'Diff preview is not available for untracked directories'
         end
