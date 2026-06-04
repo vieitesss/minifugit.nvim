@@ -112,6 +112,20 @@ local function tabpage_is_valid(tabpage)
     return false
 end
 
+---@param tabpage integer
+---@return integer[]
+local function normal_windows(tabpage)
+    local wins = {}
+
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
+        if vim.api.nvim_win_get_config(win).relative == '' then
+            table.insert(wins, win)
+        end
+    end
+
+    return wins
+end
+
 describe('minifugit status UI', function()
     ---@type string
     local original_cwd
@@ -339,6 +353,66 @@ describe('minifugit status UI', function()
             vim.o.columns - expected_status_width - 1,
             vim.api.nvim_win_get_width(reopened_diff_win)
         )
+    end)
+
+    it('ignores floating windows when opening status-only previews', function()
+        minifugit = require('minifugit').setup({
+            status = { width = 0.4, min_width = 20 },
+            preview = { diff_layout = 'stacked' },
+        })
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'one', 'two' }
+        )
+
+        minifugit.status()
+
+        ---@type GitStatusWindow
+        local gsw = minifugit.gsw
+        local status_win = assert(gsw.win)
+
+        for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+            if
+                win ~= status_win
+                and vim.api.nvim_win_get_config(win).relative == ''
+            then
+                vim.api.nvim_win_close(win, true)
+            end
+        end
+
+        local float_buf = vim.api.nvim_create_buf(false, true)
+        local float_win = vim.api.nvim_open_win(float_buf, false, {
+            relative = 'editor',
+            row = 1,
+            col = 1,
+            width = 10,
+            height = 1,
+            style = 'minimal',
+        })
+        local expected_status_width =
+            math.max(math.floor(vim.o.columns * 0.4), 20)
+
+        vim.api.nvim_set_current_win(status_win)
+        vim.api.nvim_win_set_cursor(
+            status_win,
+            { row_containing(gsw.buf.id, 'tracked.txt'), 0 }
+        )
+
+        assert.is_true(gsw:diff_entry())
+
+        local diff_win = assert(gsw.diff_win)
+        assert.are.equal(2, #normal_windows(vim.api.nvim_get_current_tabpage()))
+        assert.are.equal(
+            expected_status_width,
+            vim.api.nvim_win_get_width(status_win)
+        )
+        assert.are.equal(
+            vim.o.columns - expected_status_width - 1,
+            vim.api.nvim_win_get_width(diff_win)
+        )
+        assert.is_true(vim.api.nvim_win_is_valid(float_win))
+
+        vim.api.nvim_win_close(float_win, true)
     end)
 
     it(
