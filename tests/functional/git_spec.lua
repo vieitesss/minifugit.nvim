@@ -18,18 +18,6 @@ local function entry_by_path(entries, path)
     end
 end
 
----@param lines string[]
----@param expected string
-local function assert_has_line_containing(lines, expected)
-    for _, line in ipairs(lines) do
-        if line:find(expected, 1, true) ~= nil then
-            return
-        end
-    end
-
-    assert.fail('Expected line containing not found: ' .. expected)
-end
-
 describe('minifugit.git', function()
     ---@type string
     local original_cwd
@@ -153,8 +141,8 @@ describe('minifugit.git', function()
         local lines, err = git.diff(entry, 'untracked')
 
         assert.is_nil(err)
-        assert_has_line_containing(lines, 'new file mode')
-        assert_has_line_containing(lines, '+new content')
+        helpers.assert_has_line_containing(lines, 'new file mode')
+        helpers.assert_has_line_containing(lines, '+new content')
     end)
 
     it('previews an unstaged new file as a full-file diff', function()
@@ -167,8 +155,8 @@ describe('minifugit.git', function()
         local lines, err = git.diff(entry, 'unstaged')
 
         assert.is_nil(err)
-        assert_has_line_containing(lines, 'new file mode')
-        assert_has_line_containing(lines, '+new content')
+        helpers.assert_has_line_containing(lines, 'new file mode')
+        helpers.assert_has_line_containing(lines, '+new content')
     end)
 
     it(

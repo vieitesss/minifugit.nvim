@@ -1,4 +1,5 @@
 ---@class MinifugitTestHelpers
+---@field assert_has_line_containing fun(lines: string[], expected: string)
 ---@field run fun(args: string[], cwd: string): string
 ---@field write_file fun(path: string, lines: string[])
 
@@ -11,6 +12,18 @@ local git_env = {
 
 ---@type MinifugitTestHelpers
 local M = {
+    ---@param lines string[]
+    ---@param expected string
+    assert_has_line_containing = function(lines, expected)
+        for _, line in ipairs(lines) do
+            if line:find(expected, 1, true) ~= nil then
+                return
+            end
+        end
+
+        assert.fail('Expected line containing not found: ' .. expected)
+    end,
+
     ---@param args string[]
     ---@param cwd string
     ---@return string
