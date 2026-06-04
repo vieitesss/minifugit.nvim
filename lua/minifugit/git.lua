@@ -118,6 +118,15 @@ end
 
 local return_result
 
+---@return string
+local function null_device_path()
+    if vim.fn.has('win32') == 1 then
+        return 'NUL'
+    end
+
+    return '/dev/null'
+end
+
 ---Executes a git command and returns the result
 ---@param args string[] List of git arguments (e.g., {"status", "--porcelain"})
 ---@param opts? table Options { cwd = string?, ignore_error = boolean? }
@@ -1153,7 +1162,7 @@ function git.diff(entry, section)
             return {}, 'Diff preview is not available for untracked directories'
         end
 
-        args = { 'diff', '--no-index', '--', '/dev/null', entry.path }
+        args = { 'diff', '--no-index', '--', null_device_path(), entry.path }
     elseif section == 'staged' then
         args = { 'diff', '--cached', '--' }
         vim.list_extend(args, pathspecs)
