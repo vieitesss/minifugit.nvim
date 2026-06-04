@@ -23,18 +23,6 @@ local function assert_has_line(lines, expected)
     assert.fail('Expected line not found: ' .. expected)
 end
 
----@param lines string[]
----@param expected string
-local function assert_has_line_containing(lines, expected)
-    for _, line in ipairs(lines) do
-        if line:find(expected, 1, true) ~= nil then
-            return
-        end
-    end
-
-    assert.fail('Expected line containing not found: ' .. expected)
-end
-
 ---@param buf integer
 ---@param text string
 ---@return integer
@@ -216,6 +204,28 @@ describe('minifugit status UI', function()
             assert_has_line(lines, '?? untracked.txt')
         end
     )
+
+    it('previews a diff for an untracked file', function()
+        helpers.write_file(vim.fs.joinpath(repo, 'new-dir/file.txt'), {
+            'new content',
+        })
+        minifugit.options.preview.diff_layout = 'stacked'
+        minifugit.status()
+
+        ---@type GitStatusWindow
+        local gsw = minifugit.gsw
+        vim.api.nvim_win_set_cursor(
+            gsw.win,
+            { row_containing(gsw.buf.id, 'new-dir/file.txt'), 0 }
+        )
+
+        assert.is_true(gsw:diff_entry())
+        assert.is_not_nil(gsw.diff_buf)
+        helpers.assert_has_line_containing(
+            buffer_lines(gsw.diff_buf.id),
+            '+new content'
+        )
+    end)
 
     it(
         'refreshes and reuses the existing status buffer on repeated calls',
@@ -693,7 +703,7 @@ describe('minifugit status UI', function()
 
         local lines = buffer_lines(minifugit.gsw.buf.id)
         assert_has_line(lines, 'HEAD: (none)')
-        assert_has_line_containing(lines, 'Not inside a git repository')
+        helpers.assert_has_line_containing(lines, 'Not inside a git repository')
 
         vim.fn.delete(not_repo, 'rf')
     end)

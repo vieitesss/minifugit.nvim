@@ -118,6 +118,15 @@ end
 
 local return_result
 
+---@return string
+local function null_device_path()
+    if vim.fn.has('win32') == 1 then
+        return 'NUL'
+    end
+
+    return '/dev/null'
+end
+
 ---Executes a git command and returns the result
 ---@param args string[] List of git arguments (e.g., {"status", "--porcelain"})
 ---@param opts? table Options { cwd = string?, ignore_error = boolean? }
@@ -266,7 +275,12 @@ end
 function git.status()
     ensure_git()
 
-    local out = git.run({ 'status', '--porcelain=v1', '-z' })
+    local out = git.run({
+        'status',
+        '--porcelain=v1',
+        '-z',
+        '--untracked-files=all',
+    })
 
     if out.exit_code ~= 0 then
         return {}
@@ -316,7 +330,7 @@ function git.status_snapshot()
     end
 
     local status_out = git.run(
-        { 'status', '--porcelain=v1', '-z' },
+        { 'status', '--porcelain=v1', '-z', '--untracked-files=all' },
         { cwd = root }
     )
 
@@ -519,6 +533,57 @@ local function entries_pathspecs(entries)
     return pathspecs
 end
 
+local PATHSPEC_BATCH_MAX_ARGS = 128
+local PATHSPEC_BATCH_MAX_CHARS = 24 * 1024
+
+---@param base_args string[]
+---@param pathspecs string[]
+---@param opts? table
+---@return GitResult
+local function run_pathspec_batches(base_args, pathspecs, opts)
+    local batch = {}
+    local batch_chars = 0
+
+    ---@return GitResult?
+    local function flush()
+        if #batch == 0 then
+            return nil
+        end
+
+        local args = vim.deepcopy(base_args)
+        vim.list_extend(args, batch)
+
+        local out = git.run(args, opts)
+        batch = {}
+        batch_chars = 0
+
+        if out.exit_code ~= 0 then
+            return out
+        end
+    end
+
+    for _, path in ipairs(pathspecs) do
+        if
+            #batch > 0
+            and (
+                #batch >= PATHSPEC_BATCH_MAX_ARGS
+                or batch_chars + #path > PATHSPEC_BATCH_MAX_CHARS
+            )
+        then
+            local out = flush()
+
+            if out ~= nil then
+                return out
+            end
+        end
+
+        table.insert(batch, path)
+        batch_chars = batch_chars + #path + 1
+    end
+
+    return flush() or { output = '', exit_code = 0, stderr = '' }
+end
+
 ---@param entry GitStatusEntry
 ---@return boolean
 ---@return string?
@@ -538,10 +603,7 @@ function git.stage_entries(entries)
         return true
     end
 
-    local args = { 'add', '--' }
-    vim.list_extend(args, pathspecs)
-
-    local out = git.run(args, root_opts())
+    local out = run_pathspec_batches({ 'add', '--' }, pathspecs, root_opts())
 
     return out.exit_code == 0, return_result(out)
 end
@@ -568,10 +630,11 @@ function git.unstage_entries(entries)
         return true
     end
 
-    local args = { 'restore', '--staged', '--' }
-    vim.list_extend(args, pathspecs)
-
-    local out = git.run(args, root_opts())
+    local out = run_pathspec_batches(
+        { 'restore', '--staged', '--' },
+        pathspecs,
+        root_opts()
+    )
 
     return out.exit_code == 0, return_result(out)
 end
@@ -588,10 +651,11 @@ function git.discard_unstaged_entries(entries)
         return true
     end
 
-    local args = { 'restore', '--worktree', '--' }
-    vim.list_extend(args, pathspecs)
-
-    local out = git.run(args, root_opts())
+    local out = run_pathspec_batches(
+        { 'restore', '--worktree', '--' },
+        pathspecs,
+        root_opts()
+    )
 
     return out.exit_code == 0, return_result(out)
 end
@@ -608,10 +672,8 @@ function git.discard_untracked_entries(entries)
         return true
     end
 
-    local args = { 'clean', '-fd', '--' }
-    vim.list_extend(args, pathspecs)
-
-    local out = git.run(args, root_opts())
+    local out =
+        run_pathspec_batches({ 'clean', '-fd', '--' }, pathspecs, root_opts())
 
     return out.exit_code == 0, return_result(out)
 end
@@ -1022,10 +1084,14 @@ function git.file_change_counts(path)
             'File change counts are not available for directories'
     end
 
-    local status_out = git.run(
-        { 'status', '--porcelain=v1', '-z', '--', relative_path },
-        { cwd = root, ignore_error = true }
-    )
+    local status_out = git.run({
+        'status',
+        '--porcelain=v1',
+        '-z',
+        '--untracked-files=all',
+        '--',
+        relative_path,
+    }, { cwd = root, ignore_error = true })
 
     if status_out.exit_code ~= 0 then
         return empty_change_counts(), return_result(status_out)
@@ -1067,6 +1133,18 @@ end
 
 ---@param entry GitStatusEntry
 ---@param section string?
+---@return boolean
+local function is_worktree_new_file(entry, section)
+    if section == 'untracked' or entry.unstaged == '?' then
+        return true
+    end
+
+    return entry.unstaged == 'A'
+        and (section == 'unstaged' or entry.staged == ' ')
+end
+
+---@param entry GitStatusEntry
+---@param section string?
 ---@return string[]
 ---@return string?
 function git.diff(entry, section)
@@ -1079,12 +1157,12 @@ function git.diff(entry, section)
         or entry.path
     local stat = vim.uv.fs_stat(full_path)
 
-    if section == 'untracked' or entry.unstaged == '?' then
+    if is_worktree_new_file(entry, section) then
         if stat ~= nil and stat.type == 'directory' then
             return {}, 'Diff preview is not available for untracked directories'
         end
 
-        args = { 'diff', '--no-index', '--', '/dev/null', entry.path }
+        args = { 'diff', '--no-index', '--', null_device_path(), entry.path }
     elseif section == 'staged' then
         args = { 'diff', '--cached', '--' }
         vim.list_extend(args, pathspecs)

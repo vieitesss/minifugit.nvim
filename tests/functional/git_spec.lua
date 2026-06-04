@@ -107,6 +107,58 @@ describe('minifugit.git', function()
         )
     end)
 
+    it('lists files inside untracked directories recursively', function()
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'new-dir/file.txt'),
+            { 'file' }
+        )
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'new-dir/inner-dir/nested.txt'),
+            { 'nested' }
+        )
+
+        local entries = git.status_snapshot().entries
+
+        assert.are.same(
+            { staged = '?', unstaged = '?', path = 'new-dir/file.txt' },
+            entry_by_path(entries, 'new-dir/file.txt')
+        )
+        assert.are.same({
+            staged = '?',
+            unstaged = '?',
+            path = 'new-dir/inner-dir/nested.txt',
+        }, entry_by_path(entries, 'new-dir/inner-dir/nested.txt'))
+        assert.is_nil(entry_by_path(entries, 'new-dir/'))
+    end)
+
+    it('previews a diff for an untracked file', function()
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'new-dir/file.txt'),
+            { 'new content' }
+        )
+
+        local entry = entry_by_path(git.status(), 'new-dir/file.txt')
+        local lines, err = git.diff(entry, 'untracked')
+
+        assert.is_nil(err)
+        helpers.assert_has_line_containing(lines, 'new file mode')
+        helpers.assert_has_line_containing(lines, '+new content')
+    end)
+
+    it('previews an unstaged new file as a full-file diff', function()
+        helpers.write_file(vim.fs.joinpath(repo, 'intent.txt'), {
+            'new content',
+        })
+        helpers.run({ 'git', 'add', '-N', 'intent.txt' }, repo)
+
+        local entry = entry_by_path(git.status(), 'intent.txt')
+        local lines, err = git.diff(entry, 'unstaged')
+
+        assert.is_nil(err)
+        helpers.assert_has_line_containing(lines, 'new file mode')
+        helpers.assert_has_line_containing(lines, '+new content')
+    end)
+
     it(
         'stages, unstages, and discards files through public API calls',
         function()
