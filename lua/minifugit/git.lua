@@ -524,6 +524,57 @@ local function entries_pathspecs(entries)
     return pathspecs
 end
 
+local PATHSPEC_BATCH_MAX_ARGS = 128
+local PATHSPEC_BATCH_MAX_CHARS = 24 * 1024
+
+---@param base_args string[]
+---@param pathspecs string[]
+---@param opts? table
+---@return GitResult
+local function run_pathspec_batches(base_args, pathspecs, opts)
+    local batch = {}
+    local batch_chars = 0
+
+    ---@return GitResult?
+    local function flush()
+        if #batch == 0 then
+            return nil
+        end
+
+        local args = vim.deepcopy(base_args)
+        vim.list_extend(args, batch)
+
+        local out = git.run(args, opts)
+        batch = {}
+        batch_chars = 0
+
+        if out.exit_code ~= 0 then
+            return out
+        end
+    end
+
+    for _, path in ipairs(pathspecs) do
+        if
+            #batch > 0
+            and (
+                #batch >= PATHSPEC_BATCH_MAX_ARGS
+                or batch_chars + #path > PATHSPEC_BATCH_MAX_CHARS
+            )
+        then
+            local out = flush()
+
+            if out ~= nil then
+                return out
+            end
+        end
+
+        table.insert(batch, path)
+        batch_chars = batch_chars + #path + 1
+    end
+
+    return flush() or { output = '', exit_code = 0, stderr = '' }
+end
+
 ---@param entry GitStatusEntry
 ---@return boolean
 ---@return string?
@@ -543,10 +594,7 @@ function git.stage_entries(entries)
         return true
     end
 
-    local args = { 'add', '--' }
-    vim.list_extend(args, pathspecs)
-
-    local out = git.run(args, root_opts())
+    local out = run_pathspec_batches({ 'add', '--' }, pathspecs, root_opts())
 
     return out.exit_code == 0, return_result(out)
 end
@@ -573,10 +621,11 @@ function git.unstage_entries(entries)
         return true
     end
 
-    local args = { 'restore', '--staged', '--' }
-    vim.list_extend(args, pathspecs)
-
-    local out = git.run(args, root_opts())
+    local out = run_pathspec_batches(
+        { 'restore', '--staged', '--' },
+        pathspecs,
+        root_opts()
+    )
 
     return out.exit_code == 0, return_result(out)
 end
@@ -593,10 +642,11 @@ function git.discard_unstaged_entries(entries)
         return true
     end
 
-    local args = { 'restore', '--worktree', '--' }
-    vim.list_extend(args, pathspecs)
-
-    local out = git.run(args, root_opts())
+    local out = run_pathspec_batches(
+        { 'restore', '--worktree', '--' },
+        pathspecs,
+        root_opts()
+    )
 
     return out.exit_code == 0, return_result(out)
 end
@@ -613,10 +663,8 @@ function git.discard_untracked_entries(entries)
         return true
     end
 
-    local args = { 'clean', '-fd', '--' }
-    vim.list_extend(args, pathspecs)
-
-    local out = git.run(args, root_opts())
+    local out =
+        run_pathspec_batches({ 'clean', '-fd', '--' }, pathspecs, root_opts())
 
     return out.exit_code == 0, return_result(out)
 end
