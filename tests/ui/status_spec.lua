@@ -946,7 +946,9 @@ describe('minifugit status UI', function()
             minifugit.gsw.diff_left_buf.id,
             vim.api.nvim_win_get_buf(file_win)
         )
-        assert.are.equal(true, vim.wo[file_win].diff)
+        assert.are.equal(false, vim.wo[file_win].diff)
+        assert.are.equal(true, vim.wo[file_win].scrollbind)
+        assert.are.equal(true, vim.wo[file_win].cursorbind)
         assert.are.equal(false, vim.wo[file_win].relativenumber)
         assert.are.equal('yes:1', vim.wo[file_win].signcolumn)
 
