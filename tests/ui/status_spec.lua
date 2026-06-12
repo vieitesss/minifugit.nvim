@@ -237,7 +237,7 @@ describe('minifugit status UI', function()
         assert.is_not_nil(gsw.diff_buf)
         helpers.assert_has_line_containing(
             buffer_lines(gsw.diff_buf.id),
-            '+new content'
+            'new content'
         )
     end)
 

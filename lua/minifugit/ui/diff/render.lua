@@ -29,15 +29,19 @@ local function format_diff_line(line, width, opts)
         return line.text
     end
 
+    -- Strip the diff prefix character ('+', '-', or ' ') to match split view
+    -- where content lines have no symbols.
+    local text = line.text:sub(2)
+
     if opts.show_numbers == false then
-        return line.text
+        return text
     end
 
     return string.format(
         '%s %s %s',
         format_number(line.old_number, width),
         format_number(line.new_number, width),
-        line.text
+        text
     )
 end
 
@@ -125,7 +129,7 @@ local function add_source_syntax(line, diff_line, source_spans, width, opts)
 
     local text_start = (opts.show_numbers ~= false) and (2 * width + 2) or 0
 
-    add_source_highlights(line, source_spans[side][source_row], text_start + 1)
+    add_source_highlights(line, source_spans[side][source_row], text_start)
 end
 
 ---@param lines string[]
