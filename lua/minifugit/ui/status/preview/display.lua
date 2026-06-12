@@ -6,6 +6,7 @@ local buffers = require('minifugit.ui.status.preview.buffers')
 local window_state = require('minifugit.ui.status.preview.window_state')
 local preview_util = require('minifugit.ui.status.preview.util')
 local split_align = require('minifugit.ui.diff.split_align')
+local word_diff = require('minifugit.ui.diff.word_diff')
 
 local M = {}
 
@@ -339,10 +340,15 @@ local function apply_split_line_highlights(bufnr, rows, groups, side)
                 buf_row - 1,
                 0,
                 {
-                    end_row = buf_row,
-                    end_col = 0,
-                    hl_group = line_hl,
+                    end_row = buf_row - 1,
+                    end_col = #(vim.api.nvim_buf_get_lines(
+                        bufnr,
+                        buf_row - 1,
+                        buf_row,
+                        false
+                    )[1] or ''),
                     hl_eol = true,
+                    hl_group = line_hl,
                     priority = 200,
                 }
             )
@@ -368,8 +374,8 @@ local function apply_split_intraline_highlights(
 )
     vim.api.nvim_buf_clear_namespace(bufnr, SPLIT_INTRALINE_NAMESPACE, 0, -1)
 
-    local text_hl = side == 'left' and groups.diff_removed_text
-        or groups.diff_added_text
+    local text_hl = side == 'left' and groups.diff_removed_intraline
+        or groups.diff_added_intraline
 
     -- Parse all diff lines once, indexed by raw_row.
     local parsed = diff_parser.parse_lines(raw_diff_lines or {})
@@ -412,99 +418,35 @@ local function apply_split_intraline_highlights(
                 if del.text and add.text then
                     local old_text = del.text:sub(2)
                     local new_text = add.text:sub(2)
+                    local ranges = word_diff.changed_ranges(
+                        old_text,
+                        new_text,
+                        side == 'left' and 'left' or 'right'
+                    )
 
-                    local old_words = { old_text:match('[%w_]+|[^%w_]+') }
-                    local new_words = { new_text:match('[%w_]+|[^%w_]+') }
+                    for _, range in ipairs(ranges) do
+                        for buf_row, meta in ipairs(rows) do
+                            local matches_row = side == 'right'
+                                    and meta.new_lnum == add.new_number
+                                    and meta.kind == 'add'
+                                or side == 'left'
+                                    and meta.old_lnum == del.old_number
+                                    and meta.kind == 'delete'
 
-                    if #old_words == 0 then
-                        old_words = { old_text }
-                    end
-                    if #new_words == 0 then
-                        new_words = { new_text }
-                    end
-
-                    local old_token_text = table.concat(old_words, '\n') .. '\n'
-                    local new_token_text = table.concat(new_words, '\n') .. '\n'
-
-                    local ok, word_hunks =
-                        pcall(vim.diff, old_token_text, new_token_text, {
-                            result_type = 'indices',
-                        })
-
-                    if ok and word_hunks then
-                        if side == 'right' then
-                            for _, wh in ipairs(word_hunks) do
-                                if wh[2] > 0 then
-                                    local start_word = wh[3]
-                                    local end_word = wh[3] + wh[4] - 1
-
-                                    local start_col = 1
-                                    for w = 1, start_word - 1 do
-                                        start_col = start_col + #new_words[w]
-                                    end
-                                    local end_col = start_col
-                                    for w = start_word, end_word do
-                                        end_col = end_col + #new_words[w]
-                                    end
-
-                                    for buf_row, meta in ipairs(rows) do
-                                        if
-                                            meta.new_lnum == add.new_number
-                                            and meta.kind == 'add'
-                                        then
-                                            pcall(
-                                                vim.api.nvim_buf_set_extmark,
-                                                bufnr,
-                                                SPLIT_INTRALINE_NAMESPACE,
-                                                buf_row - 1,
-                                                start_col - 1,
-                                                {
-                                                    end_col = end_col - 1,
-                                                    hl_group = text_hl,
-                                                    priority = 201,
-                                                }
-                                            )
-                                            break
-                                        end
-                                    end
-                                end
-                            end
-                        else
-                            for _, wh in ipairs(word_hunks) do
-                                if wh[1] > 0 then
-                                    local start_word = wh[1]
-                                    local end_word = wh[1] + wh[2] - 1
-
-                                    local start_col = 1
-                                    for w = 1, start_word - 1 do
-                                        start_col = start_col + #old_words[w]
-                                    end
-                                    local end_col = start_col
-                                    for w = start_word, end_word do
-                                        end_col = end_col + #old_words[w]
-                                    end
-
-                                    for buf_row, meta in ipairs(rows) do
-                                        if
-                                            meta.old_lnum == del.old_number
-                                            and meta.kind == 'delete'
-                                        then
-                                            pcall(
-                                                vim.api.nvim_buf_set_extmark,
-                                                bufnr,
-                                                SPLIT_INTRALINE_NAMESPACE,
-                                                buf_row - 1,
-                                                start_col - 1,
-                                                {
-                                                    end_col = end_col - 1,
-                                                    hl_group = text_hl,
-                                                    priority = 201,
-                                                }
-                                            )
-                                            break
-                                        end
-                                    end
-                                end
+                            if matches_row then
+                                pcall(
+                                    vim.api.nvim_buf_set_extmark,
+                                    bufnr,
+                                    SPLIT_INTRALINE_NAMESPACE,
+                                    buf_row - 1,
+                                    range.start_col,
+                                    {
+                                        end_col = range.end_col,
+                                        hl_group = text_hl,
+                                        priority = 201,
+                                    }
+                                )
+                                break
                             end
                         end
                     end

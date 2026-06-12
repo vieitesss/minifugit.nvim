@@ -136,6 +136,7 @@ local HIGHLIGHT_SPECS = {
         fallback_fg = 0xE06C75,
         fallback_bg = 0x5A2D34,
     },
+
     unpushed = {
         name = 'MiniFugitUnpushed',
         sources = { 'Constant', 'Number' },
@@ -204,6 +205,8 @@ local function create_highlight_groups()
 
     groups.diff_header = DIFF_HEADER_GROUP
     groups.diff_hunk_header = DIFF_HUNK_HEADER_GROUP
+    groups.diff_added_intraline = 'MiniFugitDiffAddedIntraline'
+    groups.diff_removed_intraline = 'MiniFugitDiffRemovedIntraline'
 
     return groups
 end
@@ -226,6 +229,18 @@ local function create_highlights()
         create_fixed_highlight(DIFF_HEADER_GROUP, diff_header_style)
     highlights.diff_hunk_header =
         create_fixed_highlight(DIFF_HUNK_HEADER_GROUP, diff_hunk_header_style)
+    highlights.diff_added_intraline = create_fixed_highlight(
+        'MiniFugitDiffAddedIntraline',
+        function()
+            return { bg = 0x3D6B44 }
+        end
+    )
+    highlights.diff_removed_intraline = create_fixed_highlight(
+        'MiniFugitDiffRemovedIntraline',
+        function()
+            return { bg = 0x7A3B45 }
+        end
+    )
 
     return highlights
 end
