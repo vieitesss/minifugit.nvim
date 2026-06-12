@@ -131,6 +131,13 @@ function M.clear_missing_diff_window_states(self)
             M.clear_diff_window_state(self, state)
         end
     end
+
+    -- Clear alignment metadata when no split diff remains.
+    if not M.has_any_split_diff(self) then
+        self.diff_left_rows = nil
+        self.diff_right_rows = nil
+        self.diff_anchors = nil
+    end
 end
 
 ---@param self GitStatusWindow

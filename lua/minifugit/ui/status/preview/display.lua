@@ -5,11 +5,15 @@ local window = require('minifugit.ui.status.window')
 local buffers = require('minifugit.ui.status.preview.buffers')
 local window_state = require('minifugit.ui.status.preview.window_state')
 local preview_util = require('minifugit.ui.status.preview.util')
+local split_align = require('minifugit.ui.diff.split_align')
 
 local M = {}
 
-local SPLIT_DIFF_NAMESPACE =
-    vim.api.nvim_create_namespace('minifugit.ui.split_diff')
+local SPLIT_LINE_NAMESPACE =
+    vim.api.nvim_create_namespace('minifugit.ui.split_line')
+
+local SPLIT_INTRALINE_NAMESPACE =
+    vim.api.nvim_create_namespace('minifugit.ui.split_intra')
 
 ---@param win number?
 ---@param enabled boolean
@@ -174,65 +178,11 @@ end
 
 ---@param self GitStatusWindow
 local function resize_split_preview_windows(self)
-    -- Split diff uses three vertical windows: status, left diff, and right
-    -- diff. Account for the two vertical separators, then size each content
-    -- window to one third of the usable width.
     local width = math.max(1, math.floor((vim.o.columns - 2) / 3))
 
     set_win_width(self.win, width)
     set_win_width(self.diff_left_win, width)
     set_win_width(self.diff_right_win, width)
-end
-
----@param buf Buffer
----@param row integer?
----@param group string
----@param marker string
-local function mark_split_change(buf, row, group, marker)
-    if row == nil or row < 1 then
-        return
-    end
-
-    pcall(
-        vim.api.nvim_buf_set_extmark,
-        buf.id,
-        SPLIT_DIFF_NAMESPACE,
-        row - 1,
-        0,
-        {
-            line_hl_group = group,
-            sign_text = marker,
-            sign_hl_group = group,
-            priority = 200,
-        }
-    )
-end
-
----@param left_buf Buffer
----@param right_buf Buffer
----@param diff_lines string[]
----@param groups table<string, string>
-local function mark_split_changes(left_buf, right_buf, diff_lines, groups)
-    vim.api.nvim_buf_clear_namespace(left_buf.id, SPLIT_DIFF_NAMESPACE, 0, -1)
-    vim.api.nvim_buf_clear_namespace(right_buf.id, SPLIT_DIFF_NAMESPACE, 0, -1)
-
-    for _, line in ipairs(diff_parser.parse_lines(diff_lines)) do
-        if line.kind == 'added' then
-            mark_split_change(
-                right_buf,
-                line.new_number,
-                groups.diff_added,
-                '+'
-            )
-        elseif line.kind == 'removed' then
-            mark_split_change(
-                left_buf,
-                line.old_number,
-                groups.diff_removed,
-                '-'
-            )
-        end
-    end
 end
 
 ---@param self GitStatusWindow
@@ -278,7 +228,6 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
         end
 
         if common.is_valid_win(self.diff_left_win) then
-            preview_util.diffoff(self.diff_left_win)
             transition_win = self.diff_left_win
             transition_prev_buf = self.diff_left_prev_buf
             transition_prev_winopts = self.diff_left_prev_winopts
@@ -370,14 +319,218 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
     return true
 end
 
+---Apply line-background extmarks to a split diff buffer using alignment rows.
+---@param bufnr integer
+---@param rows MiniFugitSplitRow[]
+---@param groups table<string, string>
+---@param side MiniFugitDiffSide
+local function apply_split_line_highlights(bufnr, rows, groups, side)
+    vim.api.nvim_buf_clear_namespace(bufnr, SPLIT_LINE_NAMESPACE, 0, -1)
+
+    local line_hl = side == 'left' and groups.diff_removed or groups.diff_added
+    local change_kind = side == 'left' and 'delete' or 'add'
+
+    for buf_row, meta in ipairs(rows) do
+        if meta.kind == change_kind then
+            pcall(
+                vim.api.nvim_buf_set_extmark,
+                bufnr,
+                SPLIT_LINE_NAMESPACE,
+                buf_row - 1,
+                0,
+                {
+                    end_row = buf_row,
+                    end_col = 0,
+                    hl_group = line_hl,
+                    hl_eol = true,
+                    priority = 200,
+                }
+            )
+        end
+    end
+end
+
+---Apply intra-line word-change extmarks using word-diff between paired
+---deleted/added lines.
+---@param bufnr integer
+---@param rows MiniFugitSplitRow[]
+---@param hunks MiniFugitDiffHunk[]
+---@param groups table<string, string>
+---@param side MiniFugitDiffSide
+---@param raw_diff_lines string[]
+local function apply_split_intraline_highlights(
+    bufnr,
+    rows,
+    hunks,
+    groups,
+    side,
+    raw_diff_lines
+)
+    vim.api.nvim_buf_clear_namespace(bufnr, SPLIT_INTRALINE_NAMESPACE, 0, -1)
+
+    local text_hl = side == 'left' and groups.diff_removed_text
+        or groups.diff_added_text
+
+    -- Parse all diff lines once, indexed by raw_row.
+    local parsed = diff_parser.parse_lines(raw_diff_lines or {})
+    ---@type table<integer, MiniFugitDiffLine>
+    local by_raw_row = {}
+    for _, dl in ipairs(parsed) do
+        by_raw_row[dl.raw_row] = dl
+    end
+
+    for _, hunk in ipairs(hunks or {}) do
+        local del_lines = {}
+        local add_lines = {}
+        local in_hunk = false
+
+        for raw_row = hunk.raw_start_row, hunk.raw_end_row do
+            local dl = by_raw_row[raw_row]
+
+            if dl ~= nil then
+                if dl.kind == 'hunk' and dl.raw_row == hunk.raw_header_row then
+                    in_hunk = true
+                end
+
+                if in_hunk then
+                    if dl.kind == 'removed' then
+                        table.insert(del_lines, dl)
+                    elseif dl.kind == 'added' then
+                        table.insert(add_lines, dl)
+                    end
+                end
+            end
+        end
+
+        if #del_lines > 0 and #add_lines > 0 then
+            local pairs_count = math.min(#del_lines, #add_lines)
+
+            for pair_i = 1, pairs_count do
+                local del = del_lines[pair_i]
+                local add = add_lines[pair_i]
+
+                if del.text and add.text then
+                    local old_text = del.text:sub(2)
+                    local new_text = add.text:sub(2)
+
+                    local old_words = { old_text:match('[%w_]+|[^%w_]+') }
+                    local new_words = { new_text:match('[%w_]+|[^%w_]+') }
+
+                    if #old_words == 0 then
+                        old_words = { old_text }
+                    end
+                    if #new_words == 0 then
+                        new_words = { new_text }
+                    end
+
+                    local old_token_text = table.concat(old_words, '\n') .. '\n'
+                    local new_token_text = table.concat(new_words, '\n') .. '\n'
+
+                    local ok, word_hunks =
+                        pcall(vim.diff, old_token_text, new_token_text, {
+                            result_type = 'indices',
+                        })
+
+                    if ok and word_hunks then
+                        if side == 'right' then
+                            for _, wh in ipairs(word_hunks) do
+                                if wh[2] > 0 then
+                                    local start_word = wh[3]
+                                    local end_word = wh[3] + wh[4] - 1
+
+                                    local start_col = 1
+                                    for w = 1, start_word - 1 do
+                                        start_col = start_col + #new_words[w]
+                                    end
+                                    local end_col = start_col
+                                    for w = start_word, end_word do
+                                        end_col = end_col + #new_words[w]
+                                    end
+
+                                    for buf_row, meta in ipairs(rows) do
+                                        if
+                                            meta.new_lnum == add.new_number
+                                            and meta.kind == 'add'
+                                        then
+                                            pcall(
+                                                vim.api.nvim_buf_set_extmark,
+                                                bufnr,
+                                                SPLIT_INTRALINE_NAMESPACE,
+                                                buf_row - 1,
+                                                start_col - 1,
+                                                {
+                                                    end_col = end_col - 1,
+                                                    hl_group = text_hl,
+                                                    priority = 201,
+                                                }
+                                            )
+                                            break
+                                        end
+                                    end
+                                end
+                            end
+                        else
+                            for _, wh in ipairs(word_hunks) do
+                                if wh[1] > 0 then
+                                    local start_word = wh[1]
+                                    local end_word = wh[1] + wh[2] - 1
+
+                                    local start_col = 1
+                                    for w = 1, start_word - 1 do
+                                        start_col = start_col + #old_words[w]
+                                    end
+                                    local end_col = start_col
+                                    for w = start_word, end_word do
+                                        end_col = end_col + #old_words[w]
+                                    end
+
+                                    for buf_row, meta in ipairs(rows) do
+                                        if
+                                            meta.old_lnum == del.old_number
+                                            and meta.kind == 'delete'
+                                        then
+                                            pcall(
+                                                vim.api.nvim_buf_set_extmark,
+                                                bufnr,
+                                                SPLIT_INTRALINE_NAMESPACE,
+                                                buf_row - 1,
+                                                start_col - 1,
+                                                {
+                                                    end_col = end_col - 1,
+                                                    hl_group = text_hl,
+                                                    priority = 201,
+                                                }
+                                            )
+                                            break
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 ---@param self GitStatusWindow
 ---@param split_diff GitSplitDiff
 ---@param diff_lines string[]
+---@param hunks MiniFugitDiffHunk[]
 ---@param preview_key string
 ---@param title string
 ---@param actions MiniFugitPreviewBufferActions
 ---@return boolean
-function M.show_split(self, split_diff, diff_lines, preview_key, title, actions)
+function M.show_split(
+    self,
+    split_diff,
+    diff_lines,
+    hunks,
+    preview_key,
+    title,
+    actions
+)
     local transition_win
     local transition_prev_buf
     local transition_prev_winopts
@@ -397,6 +550,14 @@ function M.show_split(self, split_diff, diff_lines, preview_key, title, actions)
         )
     end
 
+    -- Build hunk-only alignment from split_diff contents and parsed hunks.
+    local alignment = split_align.align(
+        split_diff.left.lines,
+        split_diff.right.lines,
+        diff_lines,
+        hunks
+    )
+
     local left_buf = buffers.ensure_split(
         self,
         'Minifugit diff left',
@@ -414,9 +575,45 @@ function M.show_split(self, split_diff, diff_lines, preview_key, title, actions)
     self.diff_right_buf = right_buf
     window_state.attach_autocmds(self, left_buf.id)
     window_state.attach_autocmds(self, right_buf.id)
-    buffers.set_plain_lines(left_buf, split_diff.left.lines)
-    buffers.set_plain_lines(right_buf, split_diff.right.lines)
-    mark_split_changes(left_buf, right_buf, diff_lines, self.groups)
+
+    -- Write aligned lines (hunks only) to both buffers.
+    buffers.set_plain_lines(left_buf, alignment.left_lines)
+    buffers.set_plain_lines(right_buf, alignment.right_lines)
+
+    -- Apply line-background and intra-line highlights.
+    apply_split_line_highlights(
+        left_buf.id,
+        alignment.left_rows,
+        self.groups,
+        'left'
+    )
+    apply_split_line_highlights(
+        right_buf.id,
+        alignment.right_rows,
+        self.groups,
+        'right'
+    )
+    apply_split_intraline_highlights(
+        left_buf.id,
+        alignment.left_rows,
+        hunks,
+        self.groups,
+        'left',
+        diff_lines
+    )
+    apply_split_intraline_highlights(
+        right_buf.id,
+        alignment.right_rows,
+        hunks,
+        self.groups,
+        'right',
+        diff_lines
+    )
+
+    -- Store alignment metadata for cursor position lookup.
+    self.diff_left_rows = alignment.left_rows
+    self.diff_right_rows = alignment.right_rows
+    self.diff_anchors = alignment.anchors
 
     if split_diff.filetype ~= '' then
         vim.bo[left_buf.id].filetype = split_diff.filetype
@@ -431,10 +628,6 @@ function M.show_split(self, split_diff, diff_lines, preview_key, title, actions)
         target_win = transition_win
         vim.api.nvim_set_current_win(target_win)
     elseif window_state.has_open_split_diff(self) then
-        -- Reuse the existing left window directly. find_target_win(self) could
-        -- return diff_right_win if the user last focused it (self.target_win ==
-        -- diff_right_win), which would make diff_left_win and diff_right_win
-        -- point at the same window and corrupt the two-window layout.
         target_win = assert(self.diff_left_win)
         vim.api.nvim_set_current_win(target_win)
     else
@@ -548,16 +741,13 @@ function M.show_split(self, split_diff, diff_lines, preview_key, title, actions)
     self.diff_right_win = right_win
     resize_split_preview_windows(self)
 
-    preview_util.diffoff(self.diff_left_win)
-    preview_util.diffoff(self.diff_right_win)
-    vim.api.nvim_win_call(self.diff_left_win, function()
-        vim.cmd('diffthis')
-    end)
-    vim.api.nvim_win_call(self.diff_right_win, function()
-        vim.cmd('diffthis')
-    end)
-    vim.api.nvim_win_call(self.diff_left_win, function()
-        vim.cmd('diffupdate')
+    -- Set scrollbind and cursorbind instead of using diffthis.
+    vim.wo[target_win].scrollbind = true
+    vim.wo[target_win].cursorbind = true
+    vim.wo[right_win].scrollbind = true
+    vim.wo[right_win].cursorbind = true
+
+    vim.api.nvim_win_call(target_win, function()
         vim.cmd('syncbind')
     end)
 

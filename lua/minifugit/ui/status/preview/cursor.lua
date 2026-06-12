@@ -30,6 +30,78 @@ function M.current_diff_cursor(self)
     return nil
 end
 
+---For split diff, translate a buffer row to the worktree (new) line number
+---using alignment row metadata.
+---@param rows MiniFugitSplitRow[]
+---@param side MiniFugitDiffSide
+---@param buf_row integer
+---@param raw_lines string[]?
+---@param hunks MiniFugitDiffHunk[]?
+---@return integer?
+local function source_line_from_split_row(rows, side, buf_row, raw_lines, hunks)
+    local meta = rows[buf_row]
+
+    if meta == nil or meta.kind == 'filler' or meta.kind == 'separator' then
+        return nil
+    end
+
+    if side == 'left' then
+        if meta.old_lnum == nil then
+            return nil
+        end
+
+        return diff_position.old_line_to_new_line(
+            raw_lines,
+            hunks,
+            meta.old_lnum
+        )
+    end
+
+    return meta.new_lnum
+end
+
+---For split diff, translate a buffer row to a hunk position using alignment
+---row metadata.
+---@param rows MiniFugitSplitRow[]
+---@param side MiniFugitDiffSide
+---@param buf_row integer
+---@return MiniFugitDiffHunkPosition?
+local function hunk_position_from_split_row(rows, side, buf_row)
+    local meta = rows[buf_row]
+
+    if meta == nil or meta.hunk_index == nil then
+        return nil
+    end
+
+    return { hunk_index = meta.hunk_index, side = side, offset = 0 }
+end
+
+---For split diff, find the buffer row for a hunk position using alignment row
+---metadata.
+---@param rows MiniFugitSplitRow[]
+---@param side MiniFugitDiffSide
+---@param position MiniFugitDiffHunkPosition
+---@return integer?
+local function buffer_row_for_hunk_position(rows, side, position)
+    for buf_row, meta in ipairs(rows) do
+        if
+            meta.hunk_index == position.hunk_index
+            and meta.kind ~= 'filler'
+            and meta.kind ~= 'separator'
+        then
+            return buf_row
+        end
+    end
+
+    for buf_row, meta in ipairs(rows) do
+        if meta.hunk_index == position.hunk_index then
+            return buf_row
+        end
+    end
+
+    return nil
+end
+
 ---@param self GitStatusWindow
 ---@return MiniFugitDiffSourcePosition?
 function M.current_source_position(self)
@@ -55,12 +127,18 @@ function M.current_source_position(self)
             raw_row
         )
     elseif cursor.side ~= nil then
-        line_number = diff_position.source_line_for_split_row(
-            self.diff_raw_lines,
-            self.diff_hunks,
-            cursor.side,
-            cursor.row
-        )
+        local rows = cursor.side == 'left' and self.diff_left_rows
+            or self.diff_right_rows
+
+        if rows then
+            line_number = source_line_from_split_row(
+                rows,
+                cursor.side,
+                cursor.row,
+                self.diff_raw_lines,
+                self.diff_hunks
+            )
+        end
     end
 
     if line_number == nil then
@@ -93,11 +171,14 @@ function M.current_hunk_position(self)
         return nil
     end
 
-    return diff_position.hunk_position_for_split_row(
-        self.diff_hunks,
-        cursor.side,
-        cursor.row
-    )
+    local rows = cursor.side == 'left' and self.diff_left_rows
+        or self.diff_right_rows
+
+    if rows then
+        return hunk_position_from_split_row(rows, cursor.side, cursor.row)
+    end
+
+    return nil
 end
 
 ---@param win number
@@ -144,13 +225,32 @@ function M.restore_hunk_position(self, position)
         return
     end
 
-    local side, row = diff_position.split_row_for_hunk_position(hunk, position)
-    local win = side == 'left' and self.diff_left_win or self.diff_right_win
+    -- For split diff, find the buffer row from alignment rows.
+    local rows = position.side == 'left' and self.diff_left_rows
+        or self.diff_right_rows
 
-    if common.is_valid_win(win) and row ~= nil then
+    local row = rows
+        and buffer_row_for_hunk_position(rows, position.side, position)
+
+    if row == nil then
+        return
+    end
+
+    local win = position.side == 'left' and self.diff_left_win
+        or self.diff_right_win
+
+    if common.is_valid_win(win) then
         win = assert(win)
         vim.api.nvim_set_current_win(win)
         M.set_cursor_row(win, row)
+
+        -- Sync paired window.
+        local paired = position.side == 'left' and self.diff_right_win
+            or self.diff_left_win
+
+        if common.is_valid_win(paired) then
+            M.set_cursor_row(paired, row)
+        end
     end
 end
 

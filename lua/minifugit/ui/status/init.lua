@@ -27,6 +27,9 @@ local git = require('minifugit.git')
 ---@field diff_created_win boolean
 ---@field diff_left_created_win boolean
 ---@field diff_right_created_win boolean
+---@field diff_left_rows MiniFugitSplitRow[]?
+---@field diff_right_rows MiniFugitSplitRow[]?
+---@field diff_anchors table<integer, integer>?
 ---@field diff_preview_key string?
 ---@field diff_raw_lines string[]?
 ---@field diff_raw_rows integer[]?
@@ -119,6 +122,18 @@ local HIGHLIGHT_SPECS = {
     diff_removed = {
         name = 'MiniFugitDiffRemoved',
         sources = { 'DiffDelete', 'Removed', 'Error' },
+        fallback_bg = 0x5A2D34,
+    },
+    diff_added_text = {
+        name = 'MiniFugitDiffAddedText',
+        sources = { 'DiffAdd', 'Added', 'String' },
+        fallback_fg = 0x98C379,
+        fallback_bg = 0x2E4D33,
+    },
+    diff_removed_text = {
+        name = 'MiniFugitDiffRemovedText',
+        sources = { 'DiffDelete', 'Removed', 'Error' },
+        fallback_fg = 0xE06C75,
         fallback_bg = 0x5A2D34,
     },
     unpushed = {

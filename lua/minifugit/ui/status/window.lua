@@ -235,11 +235,6 @@ function M.configure_split_diff_win(win)
     vim.wo[win].wrap = false
     vim.wo[win].cursorline = false
     vim.wo[win].winfixwidth = false
-    vim.api.nvim_win_call(win, function()
-        local fc = vim.opt_local.fillchars:get()
-        fc.diff = ' '
-        vim.opt_local.fillchars = fc
-    end)
 end
 
 ---@param win number

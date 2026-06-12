@@ -154,7 +154,7 @@ function M.ensure_split(_, buf_name, existing, actions)
     })
 
     vim.keymap.set('n', ']h', function()
-        vim.cmd('normal! ]c')
+        actions.jump_hunk(1)
     end, {
         buffer = buf.id,
         desc = 'Jump to next diff hunk',
@@ -162,7 +162,7 @@ function M.ensure_split(_, buf_name, existing, actions)
     })
 
     vim.keymap.set('n', '[h', function()
-        vim.cmd('normal! [c')
+        actions.jump_hunk(-1)
     end, {
         buffer = buf.id,
         desc = 'Jump to previous diff hunk',

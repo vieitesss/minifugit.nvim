@@ -237,22 +237,89 @@ function M.jump_hunk(self, delta)
         return false
     end
 
-    if not common.is_valid_win(self.diff_win) then
-        -- Split diff layout uses vim-native ]c / [c for hunk navigation.
+    -- Stacked diff: scan for @@ lines.
+    if common.is_valid_win(self.diff_win) then
+        local win = assert(self.diff_win)
+        local cursor_row = vim.api.nvim_win_get_cursor(win)[1]
+        local lines = vim.api.nvim_buf_get_lines(self.diff_buf.id, 0, -1, false)
+        local start = delta > 0 and cursor_row + 1 or cursor_row - 1
+        local stop = delta > 0 and #lines or 1
+
+        for row = start, stop, delta do
+            if vim.startswith(lines[row] or '', '@@') then
+                vim.api.nvim_win_set_cursor(win, { row, 0 })
+                return true
+            end
+        end
+
+        common.notify_warn('No more hunks')
         return false
     end
 
-    local win = assert(self.diff_win)
-    local cursor_row = vim.api.nvim_win_get_cursor(win)[1]
-    local lines = vim.api.nvim_buf_get_lines(self.diff_buf.id, 0, -1, false)
-    local start = delta > 0 and cursor_row + 1 or cursor_row - 1
-    local stop = delta > 0 and #lines or 1
+    -- Split diff: use alignment anchors.
+    local anchors = self.diff_anchors
 
-    for row = start, stop, delta do
-        if vim.startswith(lines[row] or '', '@@') then
-            vim.api.nvim_win_set_cursor(win, { row, 0 })
-            return true
+    if anchors == nil or vim.tbl_isempty(anchors) then
+        common.notify_warn('No hunks to jump to')
+        return false
+    end
+
+    local win = vim.api.nvim_get_current_win()
+
+    if not common.is_valid_win(win) then
+        return false
+    end
+
+    local cursor_row = vim.api.nvim_win_get_cursor(win)[1]
+    local anchor_rows = {}
+
+    for _, row in pairs(anchors) do
+        table.insert(anchor_rows, row)
+    end
+
+    table.sort(anchor_rows)
+
+    local target
+
+    if delta > 0 then
+        for _, row in ipairs(anchor_rows) do
+            if row > cursor_row then
+                target = row
+                break
+            end
         end
+
+        if target == nil then
+            target = anchor_rows[1]
+        end
+    else
+        for i = #anchor_rows, 1, -1 do
+            if anchor_rows[i] < cursor_row then
+                target = anchor_rows[i]
+                break
+            end
+        end
+
+        if target == nil then
+            target = anchor_rows[#anchor_rows]
+        end
+    end
+
+    if target ~= nil then
+        local buf = vim.api.nvim_win_get_buf(win)
+        local line_count = vim.api.nvim_buf_line_count(buf)
+        target = math.min(target, line_count)
+        vim.api.nvim_win_set_cursor(win, { target, 0 })
+
+        -- Sync the paired window (cursorbind doesn't fire for API moves).
+        local paired = win == self.diff_left_win and self.diff_right_win
+            or (win == self.diff_right_win and self.diff_left_win)
+
+        if common.is_valid_win(paired) then
+            vim.api.nvim_win_set_cursor(paired, { target, 0 })
+        end
+
+        return true
     end
 
     common.notify_warn('No more hunks')
@@ -493,6 +560,7 @@ function M.open_diff(self, entry, section, opts)
                 self,
                 split_diff,
                 lines,
+                parsed_hunks,
                 preview_key,
                 diff_title(entry, section),
                 preview_actions(self)
