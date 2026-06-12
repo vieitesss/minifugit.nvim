@@ -1,6 +1,7 @@
 # minifugit.nvim
 
-https://github.com/user-attachments/assets/54852a86-f04e-4eea-a432-700de08bb89f
+![split view](./assets/split.png)
+![stacked view](./assets/stacked.png)
 
 A lightweight Git status UI for Neovim, inspired by
 [vim-fugitive](https://github.com/tpope/vim-fugitive).
