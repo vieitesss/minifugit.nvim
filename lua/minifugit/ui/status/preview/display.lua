@@ -67,15 +67,8 @@ local function has_only_status_window(self)
     end
 
     local tabpage = vim.api.nvim_win_get_tabpage(self.win)
-    local normal_wins = 0
 
-    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
-        if vim.api.nvim_win_get_config(win).relative == '' then
-            normal_wins = normal_wins + 1
-        end
-    end
-
-    return normal_wins == 1
+    return window.normal_window_count(tabpage) == 1
 end
 
 ---@param self GitStatusWindow

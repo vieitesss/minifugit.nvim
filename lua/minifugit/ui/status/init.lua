@@ -533,24 +533,28 @@ function GitStatusWindow:close()
     if self.win ~= nil and common.is_valid_win(self.win) then
         window.restore_winopts(self.win, self.win_prev_winopts)
 
-        local tabpage = vim.api.nvim_win_get_tabpage(self.win)
+        local win = self.win
+        local buf = self.buf.id
+        local tabpage = vim.api.nvim_win_get_tabpage(win)
 
-        if #vim.api.nvim_tabpage_list_wins(tabpage) <= 1 then
+        if window.normal_window_count(tabpage) <= 1 then
             if tabpage == self.tabpage and self:close_owned_tab() then
                 self.win = nil
                 self.win_prev_winopts = nil
                 return true
             end
 
-            common.notify_warn('Cannot close the last window')
-            return false
-        end
+            vim.api.nvim_win_call(win, function()
+                vim.cmd('enew!')
+                pcall(vim.api.nvim_buf_delete, buf, { force = true })
+            end)
+        else
+            local ok = pcall(vim.api.nvim_win_close, win, true)
 
-        local ok = pcall(vim.api.nvim_win_close, self.win, true)
-
-        if not ok then
-            common.notify_warn('Cannot close status window')
-            return false
+            if not ok then
+                common.notify_warn('Cannot close status window')
+                return false
+            end
         end
     end
 
