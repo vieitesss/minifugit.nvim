@@ -74,6 +74,15 @@ local function normal_keys(keys)
     )
 end
 
+---@param keys string
+local function mapped_normal_keys(keys)
+    vim.api.nvim_feedkeys(
+        vim.api.nvim_replace_termcodes(keys, true, false, true),
+        'mx',
+        false
+    )
+end
+
 ---@param actual table<string, any>
 ---@param expected table<string, any>
 ---@return boolean
@@ -938,6 +947,46 @@ describe('minifugit status UI', function()
                 minifugit.gsw.diff_win,
                 vim.api.nvim_get_current_win()
             )
+        end
+    )
+
+    it(
+        'keeps status focused when status mappings toggle diff preview',
+        function()
+            helpers.write_file(
+                vim.fs.joinpath(repo, 'tracked.txt'),
+                { 'one', 'two' }
+            )
+
+            minifugit.options.preview.diff_layout = 'stacked'
+            minifugit.status()
+            local status_win = assert(minifugit.gsw.win)
+            vim.api.nvim_set_current_win(status_win)
+            vim.api.nvim_win_set_cursor(
+                status_win,
+                { row_containing(minifugit.gsw.buf.id, 'tracked.txt'), 0 }
+            )
+            assert.is_true(minifugit.gsw:diff_entry())
+
+            vim.api.nvim_set_current_win(status_win)
+            local wrap = minifugit.gsw.diff_wrap
+            mapped_normal_keys('aw')
+            assert.are.equal(not wrap, minifugit.gsw.diff_wrap)
+            assert.are.equal(status_win, vim.api.nvim_get_current_win())
+
+            local numbers = minifugit.gsw.diff_show_numbers
+            mapped_normal_keys('an')
+            assert.are.equal(not numbers, minifugit.gsw.diff_show_numbers)
+            assert.are.equal(status_win, vim.api.nvim_get_current_win())
+
+            local headers = minifugit.gsw.diff_show_headers
+            mapped_normal_keys('am')
+            assert.are.equal(not headers, minifugit.gsw.diff_show_headers)
+            assert.are.equal(status_win, vim.api.nvim_get_current_win())
+
+            mapped_normal_keys('al')
+            assert.are.equal('split', minifugit.gsw.diff_layout_override)
+            assert.are.equal(status_win, vim.api.nvim_get_current_win())
         end
     )
 

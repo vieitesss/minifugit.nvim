@@ -135,6 +135,30 @@ function M.attach(self)
         silent = true,
     })
 
+    vim.keymap.set('n', 'aw', function()
+        preview.toggle_wrap(self)
+    end, {
+        buffer = self.buf.id,
+        desc = 'Alternate diff preview line wrapping',
+        silent = true,
+    })
+
+    vim.keymap.set('n', 'an', function()
+        preview.toggle_numbers(self)
+    end, {
+        buffer = self.buf.id,
+        desc = 'Alternate diff preview line numbers',
+        silent = true,
+    })
+
+    vim.keymap.set('n', 'am', function()
+        preview.toggle_headers(self)
+    end, {
+        buffer = self.buf.id,
+        desc = 'Alternate stacked diff preview metadata rows',
+        silent = true,
+    })
+
     vim.keymap.set('n', 'al', function()
         preview.toggle_layout(self)
     end, {

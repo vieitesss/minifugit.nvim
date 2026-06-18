@@ -219,7 +219,6 @@ function M.restore_hunk_position(self, position)
         )
 
         local win = assert(self.diff_win)
-        vim.api.nvim_set_current_win(win)
         M.set_cursor_row(win, row)
 
         return
@@ -241,7 +240,6 @@ function M.restore_hunk_position(self, position)
 
     if common.is_valid_win(win) then
         win = assert(win)
-        vim.api.nvim_set_current_win(win)
         M.set_cursor_row(win, row)
 
         -- Sync paired window.
