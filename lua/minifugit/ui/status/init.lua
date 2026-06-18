@@ -544,9 +544,10 @@ function GitStatusWindow:close()
                 return true
             end
 
-            vim.api.nvim_set_current_win(win)
-            vim.cmd('enew!')
-            pcall(vim.api.nvim_buf_delete, buf, { force = true })
+            vim.api.nvim_win_call(win, function()
+                vim.cmd('enew!')
+                pcall(vim.api.nvim_buf_delete, buf, { force = true })
+            end)
         else
             local ok = pcall(vim.api.nvim_win_close, win, true)
 
