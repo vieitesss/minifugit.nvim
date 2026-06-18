@@ -1,24 +1,17 @@
-# Project Context
+# minifugit.nvim Context
 
-## Purpose
-- Neovim Lua plugin providing a lightweight Git status buffer and diff previews.
+minifugit.nvim is a lightweight Neovim Git interface centered on status inspection and diff review.
 
-## Vocabulary
-- **Status buffer**: Plugin-owned text buffer listing Git state and actions.
-- **Diff buffer**: Plugin-owned text buffer showing staged/unstaged/commit diffs.
-- **Related buffer**: Real user file buffer opened from minifugit.
+## Language
 
-## Commands
-- Test: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedDirectory tests { minimal_init = 'tests/minimal_init.lua' }"`
-- Format: `stylua lua tests plugin`
-- Health: `:checkhealth minifugit`
+**Status Buffer**:
+A plugin-owned Neovim buffer that presents the current Git repository state.
+_Avoid_: Git panel, status pane, status view
 
-## Pitfalls
-- Never set global editor or buffer options from plugin buffer setup; scope options to plugin-owned buffers/windows.
-- Diff previews reuse the status target window when available, but must restore that window's buffer/options on close.
-- Refreshing or toggling diff previews should preserve the caller's current window unless the user explicitly requested preview focus.
-- Treat plugin buffers as text buffers with local filetypes and buffer-local mappings, not opaque UI widgets.
-- Use temp Git repositories in tests; do not operate on real repositories.
+**Diff Buffer**:
+A plugin-owned Neovim buffer that presents Git diff content for review.
+_Avoid_: Diff pane, preview buffer, diff view
 
-## ADRs
-Design decisions live in [docs/adr/](docs/adr/).
+**Related Buffer**:
+A user file buffer opened from minifugit because it corresponds to a Git status entry or diff location.
+_Avoid_: Source buffer, target buffer, file pane
