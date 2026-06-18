@@ -150,7 +150,9 @@ describe('minifugit status UI', function()
     local minifugit
 
     before_each(function()
-        vim.opt.runtimepath:prepend(project_root)
+        if not vim.tbl_contains(vim.opt.runtimepath:get(), project_root) then
+            vim.opt.runtimepath:prepend(project_root)
+        end
         local lua_path = project_root
             .. '/lua/?.lua;'
             .. project_root
