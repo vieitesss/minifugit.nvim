@@ -521,20 +521,6 @@ function GitStatusWindow:toggle_help()
     help.toggle(self)
 end
 
----@param tabpage number
----@return integer
-local function normal_window_count(tabpage)
-    local count = 0
-
-    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
-        if vim.api.nvim_win_get_config(win).relative == '' then
-            count = count + 1
-        end
-    end
-
-    return count
-end
-
 ---@return boolean closed
 function GitStatusWindow:close()
     self:stop_loading()
@@ -551,7 +537,7 @@ function GitStatusWindow:close()
         local buf = self.buf.id
         local tabpage = vim.api.nvim_win_get_tabpage(win)
 
-        if normal_window_count(tabpage) <= 1 then
+        if window.normal_window_count(tabpage) <= 1 then
             if tabpage == self.tabpage and self:close_owned_tab() then
                 self.win = nil
                 self.win_prev_winopts = nil

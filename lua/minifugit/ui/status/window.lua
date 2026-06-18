@@ -25,6 +25,20 @@ function M.status_win_width(opts)
     return math.max(math.floor(vim.o.columns * opts.width), opts.min_width)
 end
 
+---@param tabpage number
+---@return integer
+function M.normal_window_count(tabpage)
+    local count = 0
+
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
+        if vim.api.nvim_win_get_config(win).relative == '' then
+            count = count + 1
+        end
+    end
+
+    return count
+end
+
 ---@param entry GitStatusEntry
 ---@return string
 local function entry_path(entry)
