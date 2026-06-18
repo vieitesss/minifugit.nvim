@@ -17,6 +17,13 @@ local SPLIT_INTRALINE_NAMESPACE =
     vim.api.nvim_create_namespace('minifugit.ui.split_intra')
 
 ---@param win number?
+local function restore_current_win(win)
+    if common.is_valid_win(win) and vim.api.nvim_get_current_win() ~= win then
+        pcall(vim.api.nvim_set_current_win, win)
+    end
+end
+
+---@param win number?
 ---@param enabled boolean
 function M.set_split_line_numbers(win, enabled)
     if not common.is_valid_win(win) then
@@ -108,37 +115,41 @@ local function restore_status_win_state(self, state)
 end
 
 ---@param self GitStatusWindow
+---@param anchor_win number?
 ---@param command string
 ---@param status_win_state MiniFugitStatusWinState?
 ---@return number?
-local function split_from_status(self, command, status_win_state)
+local function create_preview_split(self, anchor_win, command, status_win_state)
     local current_win = vim.api.nvim_get_current_win()
+    local split_win
     local ok, err = pcall(function()
-        if
-            common.is_valid_win(self.win)
-            and current_win ~= self.win
-            and current_win ~= self.diff_win
-            and current_win ~= self.diff_left_win
-            and current_win ~= self.diff_right_win
-        then
-            vim.api.nvim_set_current_win(self.win)
-        end
+        local win = common.is_valid_win(anchor_win) and anchor_win or self.win
 
-        vim.cmd(command)
+        if common.is_valid_win(win) then
+            vim.api.nvim_win_call(win, function()
+                vim.cmd(command)
+                split_win = vim.api.nvim_get_current_win()
+            end)
+        else
+            vim.cmd(command)
+            split_win = vim.api.nvim_get_current_win()
+        end
     end)
+
+    if
+        common.is_valid_win(current_win)
+        and vim.api.nvim_get_current_win() ~= current_win
+    then
+        restore_current_win(current_win)
+    end
 
     if not ok then
         restore_status_win_state(self, status_win_state)
-
-        if common.is_valid_win(current_win) then
-            pcall(vim.api.nvim_set_current_win, current_win)
-        end
-
         common.notify_error(tostring(err), 'Cannot open diff preview')
         return nil
     end
 
-    return vim.api.nvim_get_current_win()
+    return split_win
 end
 
 ---@param self GitStatusWindow
@@ -212,6 +223,7 @@ end
 ---@param actions MiniFugitPreviewBufferActions
 ---@return boolean
 function M.show_stacked(self, diff_lines, preview_key, title, actions)
+    local current_win = vim.api.nvim_get_current_win()
     local transition_win
     local transition_prev_buf
     local transition_prev_winopts
@@ -252,22 +264,19 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
 
     if transition_win ~= nil and common.is_valid_win(transition_win) then
         target_win = transition_win
-        vim.api.nvim_set_current_win(target_win)
     elseif window_state.has_open_stacked_diff(self) then
         target_win = assert(self.diff_win)
-        vim.api.nvim_set_current_win(target_win)
     else
-        target_win = window.find_target_win(self)
-
-        if target_win ~= nil then
-            vim.api.nvim_set_current_win(target_win)
-        else
-            target_win =
-                split_from_status(self, 'rightbelow vsplit', status_winfixwidth)
-            created_win = target_win ~= nil
-        end
+        target_win = create_preview_split(
+            self,
+            self.win,
+            'rightbelow vsplit',
+            status_winfixwidth
+        )
+        created_win = target_win ~= nil
 
         if target_win == nil then
+            restore_current_win(current_win)
             return false
         end
     end
@@ -297,6 +306,7 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
             status_winfixwidth
         )
     then
+        restore_current_win(current_win)
         return false
     end
 
@@ -306,9 +316,7 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
     self.diff_win = target_win
     self.diff_preview_key = preview_key
 
-    if self.win ~= nil and common.is_valid_win(self.win) then
-        vim.api.nvim_set_current_win(self.win)
-    end
+    restore_current_win(current_win)
 
     return true
 end
@@ -466,6 +474,7 @@ function M.show_split(
     title,
     actions
 )
+    local current_win = vim.api.nvim_get_current_win()
     local transition_win
     local transition_prev_buf
     local transition_prev_winopts
@@ -561,22 +570,19 @@ function M.show_split(
 
     if transition_win ~= nil and common.is_valid_win(transition_win) then
         target_win = transition_win
-        vim.api.nvim_set_current_win(target_win)
     elseif window_state.has_open_split_diff(self) then
         target_win = assert(self.diff_left_win)
-        vim.api.nvim_set_current_win(target_win)
     else
-        target_win = window.find_target_win(self)
-
-        if target_win ~= nil then
-            vim.api.nvim_set_current_win(target_win)
-        else
-            target_win =
-                split_from_status(self, 'rightbelow vsplit', status_winfixwidth)
-            left_created = target_win ~= nil
-        end
+        target_win = create_preview_split(
+            self,
+            self.win,
+            'rightbelow vsplit',
+            status_winfixwidth
+        )
+        left_created = target_win ~= nil
 
         if target_win == nil then
+            restore_current_win(current_win)
             return false
         end
     end
@@ -606,6 +612,7 @@ function M.show_split(
             status_winfixwidth
         )
     then
+        restore_current_win(current_win)
         return false
     end
 
@@ -622,21 +629,22 @@ function M.show_split(
     local right_created = false
 
     if not common.is_valid_win(right_win) then
-        right_win = split_from_status(
+        right_win = create_preview_split(
             self,
+            target_win,
             'rightbelow vsplit',
             right_status_winfixwidth
         )
 
         if right_win == nil then
             actions.close_diff()
+            restore_current_win(current_win)
             return false
         end
 
         right_created = true
     else
         right_win = assert(right_win)
-        vim.api.nvim_set_current_win(right_win)
     end
 
     right_win = assert(right_win)
@@ -659,6 +667,7 @@ function M.show_split(
         )
     then
         actions.close_diff()
+        restore_current_win(current_win)
         return false
     end
 
@@ -683,9 +692,7 @@ function M.show_split(
 
     self.diff_preview_key = preview_key
 
-    if self.win ~= nil and common.is_valid_win(self.win) then
-        vim.api.nvim_set_current_win(self.win)
-    end
+    restore_current_win(current_win)
 
     return true
 end

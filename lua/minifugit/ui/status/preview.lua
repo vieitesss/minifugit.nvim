@@ -177,6 +177,22 @@ local function set_diff_context(
 end
 
 ---@param self GitStatusWindow
+---@param action fun(): boolean
+---@return fun(): boolean
+local function keep_or_focus_preview(self, action)
+    return function()
+        local win = vim.api.nvim_get_current_win()
+        local ok = action()
+
+        if ok and not common.is_valid_win(win) then
+            display.focus_open_diff(self)
+        end
+
+        return ok
+    end
+end
+
+---@param self GitStatusWindow
 ---@return MiniFugitPreviewActions
 local function preview_actions(self)
     return {
@@ -189,12 +205,12 @@ local function preview_actions(self)
         toggle_wrap = function()
             M.toggle_wrap(self)
         end,
-        toggle_numbers = function()
-            M.toggle_numbers(self)
-        end,
-        toggle_headers = function()
-            M.toggle_headers(self)
-        end,
+        toggle_numbers = keep_or_focus_preview(self, function()
+            return M.toggle_numbers(self)
+        end),
+        toggle_headers = keep_or_focus_preview(self, function()
+            return M.toggle_headers(self)
+        end),
         toggle_split_numbers = function()
             display.toggle_split_numbers(self)
         end,
@@ -207,9 +223,9 @@ local function preview_actions(self)
         discard_current_hunk = function()
             M.discard_current_hunk(self)
         end,
-        toggle_layout = function()
-            M.toggle_layout(self)
-        end,
+        toggle_layout = keep_or_focus_preview(self, function()
+            return M.toggle_layout(self)
+        end),
         goto_code = function()
             M.goto_code(self)
         end,
@@ -357,13 +373,7 @@ end
 function M.set_layout(self, layout)
     self.diff_layout_override = layout
 
-    local ok = M.refresh_current_entry(self) == true
-
-    if ok and self.win ~= nil and common.is_valid_win(self.win) then
-        vim.api.nvim_set_current_win(self.win)
-    end
-
-    return ok
+    return M.refresh_current_entry(self) == true
 end
 
 ---@param self GitStatusWindow
@@ -397,17 +407,7 @@ local function toggle_diff_render_option(self, option)
         self.diff_show_headers = not self.diff_show_headers
     end
 
-    local ok = M.refresh_current_entry(self) == true
-
-    if
-        ok
-        and self.diff_win ~= nil
-        and vim.api.nvim_win_is_valid(self.diff_win)
-    then
-        vim.api.nvim_set_current_win(self.diff_win)
-    end
-
-    return ok
+    return M.refresh_current_entry(self) == true
 end
 
 ---@param self GitStatusWindow
@@ -568,6 +568,10 @@ function M.open_diff(self, entry, section, opts)
 
             if ok then
                 set_diff_context(self, lines, nil, parsed_hunks, section, entry)
+
+                if opts.focus then
+                    display.focus_open_diff(self)
+                end
             end
 
             return ok
@@ -612,6 +616,10 @@ function M.open_diff(self, entry, section, opts)
 
     if ok then
         set_diff_context(self, lines, raw_rows, parsed_hunks, section, entry)
+
+        if opts.focus then
+            display.focus_open_diff(self)
+        end
 
         if self.diff_buf ~= nil then
             preview_buffers.set_goto_code_keymap(
