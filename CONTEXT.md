@@ -15,7 +15,7 @@
 
 ## Pitfalls
 - Never set global editor or buffer options from plugin buffer setup; scope options to plugin-owned buffers/windows.
-- Do not replace real file windows with preview buffers; create plugin preview windows instead.
+- Diff previews may temporarily occupy the selected normal target window; restore its previous buffer/options when the preview closes.
 - Treat plugin buffers as text buffers with local filetypes and buffer-local mappings, not opaque UI widgets.
 - Use temp Git repositories in tests; do not operate on real repositories.
 

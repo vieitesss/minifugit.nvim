@@ -53,15 +53,6 @@ end
 ---@field width integer
 
 ---@param self GitStatusWindow
----@return integer
-local function status_preview_width(self)
-    return math.min(
-        window.status_win_width(self.options.status),
-        math.max(1, vim.o.columns - 1)
-    )
-end
-
----@param self GitStatusWindow
 ---@return boolean
 local function has_only_status_window(self)
     if not common.is_valid_win(self.win) then
@@ -90,7 +81,10 @@ local function make_status_win_resizable(self)
     local width = vim.api.nvim_win_get_width(self.win)
 
     if has_only_status_window(self) then
-        width = status_preview_width(self)
+        width = math.min(
+            window.status_win_width(self.options.status),
+            math.max(1, vim.o.columns - 1)
+        )
     end
 
     local state = {
@@ -117,7 +111,7 @@ end
 ---@param command string
 ---@param status_win_state MiniFugitStatusWinState?
 ---@return number?
-local function create_preview_split(self, command, status_win_state)
+local function split_from_status(self, command, status_win_state)
     local current_win = vim.api.nvim_get_current_win()
     local ok, err = pcall(function()
         if
@@ -153,7 +147,7 @@ end
 ---@param created boolean
 ---@param status_win_state MiniFugitStatusWinState?
 ---@return boolean
-local function set_preview_win_buf(self, win, buf, created, status_win_state)
+local function set_win_buf(self, win, buf, created, status_win_state)
     vim.wo[win].winfixwidth = false
 
     local ok, err = pcall(vim.api.nvim_win_set_buf, win, buf)
@@ -179,21 +173,15 @@ local function set_preview_win_buf(self, win, buf, created, status_win_state)
     return false
 end
 
----@param win number?
----@param width integer
-local function set_win_width(win, width)
-    if common.is_valid_win(win) then
-        pcall(vim.api.nvim_win_set_width, win, width)
-    end
-end
-
 ---@param self GitStatusWindow
-local function resize_split_preview_windows(self)
+local function resize_split_windows(self)
     local width = math.max(1, math.floor((vim.o.columns - 2) / 3))
 
-    set_win_width(self.win, width)
-    set_win_width(self.diff_left_win, width)
-    set_win_width(self.diff_right_win, width)
+    for _, win in ipairs({ self.win, self.diff_left_win, self.diff_right_win }) do
+        if common.is_valid_win(win) then
+            pcall(vim.api.nvim_win_set_width, win, width)
+        end
+    end
 end
 
 ---@param self GitStatusWindow
@@ -269,14 +257,19 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
         target_win = assert(self.diff_win)
         vim.api.nvim_set_current_win(target_win)
     else
-        target_win =
-            create_preview_split(self, 'rightbelow vsplit', status_winfixwidth)
+        target_win = window.find_target_win(self)
+
+        if target_win ~= nil then
+            vim.api.nvim_set_current_win(target_win)
+        else
+            target_win =
+                split_from_status(self, 'rightbelow vsplit', status_winfixwidth)
+            created_win = target_win ~= nil
+        end
 
         if target_win == nil then
             return false
         end
-
-        created_win = true
     end
 
     target_win = assert(target_win)
@@ -296,7 +289,7 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
     end
 
     if
-        not set_preview_win_buf(
+        not set_win_buf(
             self,
             target_win,
             buf.id,
@@ -573,14 +566,19 @@ function M.show_split(
         target_win = assert(self.diff_left_win)
         vim.api.nvim_set_current_win(target_win)
     else
-        target_win =
-            create_preview_split(self, 'rightbelow vsplit', status_winfixwidth)
+        target_win = window.find_target_win(self)
+
+        if target_win ~= nil then
+            vim.api.nvim_set_current_win(target_win)
+        else
+            target_win =
+                split_from_status(self, 'rightbelow vsplit', status_winfixwidth)
+            left_created = target_win ~= nil
+        end
 
         if target_win == nil then
             return false
         end
-
-        left_created = true
     end
 
     target_win = assert(target_win)
@@ -600,7 +598,7 @@ function M.show_split(
     end
 
     if
-        not set_preview_win_buf(
+        not set_win_buf(
             self,
             target_win,
             left_buf.id,
@@ -624,7 +622,7 @@ function M.show_split(
     local right_created = false
 
     if not common.is_valid_win(right_win) then
-        right_win = create_preview_split(
+        right_win = split_from_status(
             self,
             'rightbelow vsplit',
             right_status_winfixwidth
@@ -652,7 +650,7 @@ function M.show_split(
     end
 
     if
-        not set_preview_win_buf(
+        not set_win_buf(
             self,
             right_win,
             right_buf.id,
@@ -671,7 +669,7 @@ function M.show_split(
         .. ' [2/2] '
         .. preview_util.winbar_text(split_diff.right.title)
     self.diff_right_win = right_win
-    resize_split_preview_windows(self)
+    resize_split_windows(self)
 
     -- Set scrollbind and cursorbind instead of using diffthis.
     vim.wo[target_win].scrollbind = true

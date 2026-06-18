@@ -274,6 +274,35 @@ describe('minifugit status UI', function()
         )
     end)
 
+    it('shows stacked previews in the selected target window', function()
+        helpers.write_file(vim.fs.joinpath(repo, 'tracked.txt'), {
+            'one',
+            'two',
+        })
+        local target_win = vim.api.nvim_get_current_win()
+        local target_buf = vim.api.nvim_get_current_buf()
+        minifugit.options.preview.diff_layout = 'stacked'
+
+        minifugit.status()
+
+        ---@type GitStatusWindow
+        local gsw = minifugit.gsw
+        vim.api.nvim_win_set_cursor(
+            gsw.win,
+            { row_containing(gsw.buf.id, 'tracked.txt'), 0 }
+        )
+
+        assert.is_true(gsw:diff_entry())
+
+        assert.are.equal(2, #normal_windows(vim.api.nvim_get_current_tabpage()))
+        assert.are.equal(target_win, gsw.diff_win)
+        assert.are.equal(gsw.diff_buf.id, vim.api.nvim_win_get_buf(target_win))
+
+        require('minifugit.ui.status.preview').close_diff(gsw)
+
+        assert.are.equal(target_buf, vim.api.nvim_win_get_buf(target_win))
+    end)
+
     it(
         'refreshes and reuses the existing status buffer on repeated calls',
         function()
@@ -370,14 +399,14 @@ describe('minifugit status UI', function()
 
         assert.is_true(vim.wait(1000, function()
             return vim.api.nvim_win_is_valid(status_win)
-                and #vim.api.nvim_tabpage_list_wins(0) == 2
+                and #vim.api.nvim_tabpage_list_wins(0) == 1
         end))
 
         vim.api.nvim_set_current_win(status_win)
         assert.is_true(gsw:diff_entry())
 
         local reopened_diff_win = assert(gsw.diff_win)
-        assert.are.equal(3, #vim.api.nvim_tabpage_list_wins(0))
+        assert.are.equal(2, #vim.api.nvim_tabpage_list_wins(0))
         assert.are.equal(
             expected_status_width,
             vim.api.nvim_win_get_width(status_win)
@@ -872,7 +901,7 @@ describe('minifugit status UI', function()
     )
 
     it(
-        'opens stacked diff in plugin windows without touching file window',
+        'opens stacked diff in the selected file window and restores it',
         function()
             helpers.write_file(
                 vim.fs.joinpath(repo, 'tracked.txt'),
@@ -902,9 +931,11 @@ describe('minifugit status UI', function()
             )
             minifugit.gsw:diff_entry()
 
-            assert.are.equal(file_buf, vim.api.nvim_win_get_buf(file_win))
-            assert_winopts(capture_winopts(file_win), before)
-            assert.are_not.equal(file_win, minifugit.gsw.diff_win)
+            assert.are.equal(file_win, minifugit.gsw.diff_win)
+            assert.are.equal(
+                minifugit.gsw.diff_buf.id,
+                vim.api.nvim_win_get_buf(file_win)
+            )
 
             minifugit.gsw:close()
 
@@ -941,45 +972,47 @@ describe('minifugit status UI', function()
         end
     )
 
-    it(
-        'opens split diff in plugin windows without touching file window',
-        function()
-            helpers.write_file(
-                vim.fs.joinpath(repo, 'tracked.txt'),
-                { 'one', 'two' }
-            )
-            vim.cmd.edit(
-                vim.fn.fnameescape(vim.fs.joinpath(repo, 'tracked.txt'))
-            )
-            local file_win = vim.api.nvim_get_current_win()
-            local file_buf = vim.api.nvim_get_current_buf()
-            vim.wo[file_win].number = false
-            vim.wo[file_win].relativenumber = true
-            vim.wo[file_win].signcolumn = 'auto:2'
-            vim.wo[file_win].foldcolumn = '1'
-            vim.wo[file_win].wrap = true
-            vim.wo[file_win].cursorline = true
-            vim.wo[file_win].winfixwidth = false
-            vim.wo[file_win].winbar = 'real file split'
-            vim.wo[file_win].statuscolumn = 'split-statuscolumn'
-            local before = capture_winopts(file_win)
+    it('opens split diff from the selected file window', function()
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'one', 'two' }
+        )
+        vim.cmd.edit(vim.fn.fnameescape(vim.fs.joinpath(repo, 'tracked.txt')))
+        local file_win = vim.api.nvim_get_current_win()
+        local file_buf = vim.api.nvim_get_current_buf()
+        vim.wo[file_win].number = false
+        vim.wo[file_win].relativenumber = true
+        vim.wo[file_win].signcolumn = 'auto:2'
+        vim.wo[file_win].foldcolumn = '1'
+        vim.wo[file_win].wrap = true
+        vim.wo[file_win].cursorline = true
+        vim.wo[file_win].winfixwidth = false
+        vim.wo[file_win].winbar = 'real file split'
+        vim.wo[file_win].statuscolumn = 'split-statuscolumn'
+        local before = capture_winopts(file_win)
 
-            minifugit.options.preview.diff_layout = 'split'
-            minifugit.status()
-            file_win = assert(win_showing_buf(file_buf))
-            before = capture_winopts(file_win)
-            vim.api.nvim_win_set_cursor(
-                minifugit.gsw.win,
-                { row_containing(minifugit.gsw.buf.id, 'tracked.txt'), 0 }
-            )
-            minifugit.gsw:diff_entry()
+        minifugit.options.preview.diff_layout = 'split'
+        minifugit.status()
+        file_win = assert(win_showing_buf(file_buf))
+        before = capture_winopts(file_win)
+        vim.api.nvim_win_set_cursor(
+            minifugit.gsw.win,
+            { row_containing(minifugit.gsw.buf.id, 'tracked.txt'), 0 }
+        )
+        minifugit.gsw:diff_entry()
 
-            assert.are.equal(file_buf, vim.api.nvim_win_get_buf(file_win))
-            assert_winopts(capture_winopts(file_win), before)
-            assert.are_not.equal(file_win, minifugit.gsw.diff_left_win)
-            assert.are_not.equal(file_win, minifugit.gsw.diff_right_win)
-        end
-    )
+        assert.are.equal(file_win, minifugit.gsw.diff_left_win)
+        assert.are.equal(
+            minifugit.gsw.diff_left_buf.id,
+            vim.api.nvim_win_get_buf(file_win)
+        )
+        assert.are_not.equal(file_win, minifugit.gsw.diff_right_win)
+
+        minifugit.gsw:close()
+
+        assert.are.equal(file_buf, vim.api.nvim_win_get_buf(file_win))
+        assert_winopts(capture_winopts(file_win), before)
+    end)
 
     it('restores real file window options after closing split diff', function()
         helpers.write_file(
@@ -1008,9 +1041,11 @@ describe('minifugit status UI', function()
         )
         minifugit.gsw:diff_entry()
 
-        assert.are.equal(file_buf, vim.api.nvim_win_get_buf(file_win))
-        assert_winopts(capture_winopts(file_win), before)
-        assert.are_not.equal(file_win, minifugit.gsw.diff_left_win)
+        assert.are.equal(file_win, minifugit.gsw.diff_left_win)
+        assert.are.equal(
+            minifugit.gsw.diff_left_buf.id,
+            vim.api.nvim_win_get_buf(file_win)
+        )
         assert.are_not.equal(file_win, minifugit.gsw.diff_right_win)
 
         minifugit.gsw:close()
