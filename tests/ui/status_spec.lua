@@ -156,14 +156,18 @@ describe('minifugit status UI', function()
         local lua_path = project_root
             .. '/lua/?.lua;'
             .. project_root
-            .. '/lua/?/init.lua;'
+            .. '/lua/?/init.lua'
         if not package.path:find(project_root, 1, true) then
             package.path = lua_path .. ';' .. package.path
         end
+        local minifugit_modules = {}
         for name in pairs(package.loaded) do
             if name == 'minifugit' or name:match('^minifugit%.') then
-                package.loaded[name] = nil
+                table.insert(minifugit_modules, name)
             end
+        end
+        for _, name in ipairs(minifugit_modules) do
+            package.loaded[name] = nil
         end
         original_cwd = vim.fn.getcwd()
         repo = vim.fn.tempname()
