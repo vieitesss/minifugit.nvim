@@ -352,6 +352,32 @@ describe('minifugit status UI', function()
         assert.is_nil(gsw.win)
     end)
 
+    it(
+        'replaces the status buffer instead of closing Neovim when it is the last window',
+        function()
+            minifugit.status()
+
+            ---@type GitStatusWindow
+            local gsw = minifugit.gsw
+            local win = assert(gsw.win)
+            local buf = gsw.buf.id
+
+            for _, other_win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+                if other_win ~= win then
+                    vim.api.nvim_win_close(other_win, true)
+                end
+            end
+
+            vim.api.nvim_set_current_win(win)
+            vim.cmd.normal('q')
+
+            assert.is_true(vim.api.nvim_win_is_valid(win))
+            assert.are_not.equal(buf, vim.api.nvim_win_get_buf(win))
+            assert.is_false(vim.api.nvim_buf_is_valid(buf))
+            assert.is_nil(gsw.win)
+        end
+    )
+
     it('opens the status workflow in a new tab when configured', function()
         minifugit = require('minifugit').setup({
             status = { width = 0.5, min_width = 20, open_in_tab = true },
