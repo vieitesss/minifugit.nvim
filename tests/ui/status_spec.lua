@@ -369,6 +369,8 @@ describe('minifugit status UI', function()
             end
 
             vim.api.nvim_set_current_win(win)
+            vim.bo[buf].modifiable = true
+            vim.bo[buf].modified = true
             vim.cmd.normal('q')
 
             assert.is_true(vim.api.nvim_win_is_valid(win))
