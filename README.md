@@ -130,6 +130,9 @@ Default status-window mappings:
 | n | `D` | Discard the entry without confirmation |
 | n | `c` | Commit staged changes |
 | n | `p` | Push unpushed commits |
+| n | `aw` | Alternate diff preview line wrapping |
+| n | `an` | Alternate diff preview line numbers |
+| n | `am` | Alternate stacked diff preview metadata rows |
 | n | `al` | Alternate diff preview stacked/split layout |
 | n | `?` | Toggle mappings help |
 
