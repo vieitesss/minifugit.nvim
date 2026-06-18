@@ -120,7 +120,13 @@ end
 local function create_preview_split(self, command, status_win_state)
     local current_win = vim.api.nvim_get_current_win()
     local ok, err = pcall(function()
-        if common.is_valid_win(self.win) then
+        if
+            common.is_valid_win(self.win)
+            and current_win ~= self.win
+            and current_win ~= self.diff_win
+            and current_win ~= self.diff_left_win
+            and current_win ~= self.diff_right_win
+        then
             vim.api.nvim_set_current_win(self.win)
         end
 
