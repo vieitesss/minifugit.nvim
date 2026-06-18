@@ -45,15 +45,16 @@ vim.pack.add({
 ```lua
 {
     'vieitesss/minifugit.nvim',
-    cmd = { 'MinifugitStatus' },
 }
 ```
 
 ### Options
 
+minifugit works without setup. Configure it with `vim.g.minifugit` before the
+plugin loads:
+
 ```lua
--- Returns Minifugit object
-require('minifugit').setup({
+vim.g.minifugit = {
     preview = {
         -- Start diff previews with wrapping disabled.
         wrap = false,
@@ -80,6 +81,16 @@ require('minifugit').setup({
 
         -- Open the minifugit workflow in a dedicated tab.
         open_in_tab = false,
+    },
+}
+```
+
+Or use `setup()` if your plugin manager expects Lua options:
+
+```lua
+require('minifugit').setup({
+    preview = {
+        diff_layout = 'auto',
     },
 })
 ```
