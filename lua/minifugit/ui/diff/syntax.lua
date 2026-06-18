@@ -10,6 +10,8 @@
 
 local M = {}
 
+local Buffer = require('minifugit.ui.buffer')
+
 local VIM_SYNTAX_MAX_LINES = 2000
 local VIM_SYNTAX_MAX_BYTES = 200000
 
@@ -205,7 +207,7 @@ local function vim_spans(buf, filetype, lines, rows)
     end
 
     pcall(vim.api.nvim_buf_call, buf, function()
-        vim.bo[buf].syntax = filetype
+        Buffer.set_buf_option(buf, 'syntax', filetype)
         vim.cmd('syntax sync fromstart')
 
         local scan_rows = rows or {}
@@ -264,11 +266,11 @@ local function spans_by_line(filetype, lines, rows)
 
     local buf = vim.api.nvim_create_buf(false, true)
 
-    vim.bo[buf].buftype = 'nofile'
-    vim.bo[buf].bufhidden = 'wipe'
-    vim.bo[buf].swapfile = false
+    Buffer.set_buf_option(buf, 'buftype', 'nofile')
+    Buffer.set_buf_option(buf, 'bufhidden', 'wipe')
+    Buffer.set_buf_option(buf, 'swapfile', false)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    vim.bo[buf].filetype = filetype
+    Buffer.set_buf_option(buf, 'filetype', filetype)
 
     local spans = treesitter_spans(buf, filetype, lines, rows)
         or vim_spans(buf, filetype, lines, rows)

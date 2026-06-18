@@ -12,9 +12,20 @@ local log = require('minifugit.log')
 ---listed: boolean,
 ---scratch: boolean,
 ---name?: string,
+---buftype?: string,
+---bufhidden?: string,
+---filetype?: string,
 ---}
 
--- local function create_buf()
+---@param buf integer
+---@param name string
+---@param value any
+function Buffer.set_buf_option(buf, name, value)
+    vim.api.nvim_set_option_value(name, value, {
+        buf = buf,
+        scope = 'local',
+    })
+end
 
 ---@param opts BufferOpts
 ---@return Buffer
@@ -23,6 +34,9 @@ function Buffer.new(opts)
     vim.validate('name', opts.name, 'string', true, '`name` should be a string')
     vim.validate('listed', opts.listed, 'boolean', '`listed` is required')
     vim.validate('scratch', opts.scratch, 'boolean', '`scratch` is required')
+    vim.validate('buftype', opts.buftype, 'string', true)
+    vim.validate('bufhidden', opts.bufhidden, 'string', true)
+    vim.validate('filetype', opts.filetype, 'string', true)
 
     local self = setmetatable({}, Buffer)
 
@@ -38,7 +52,39 @@ function Buffer.new(opts)
     self.id = buf
     self.lines = {}
 
+    if opts.scratch then
+        Buffer.set_buf_option(buf, 'buftype', opts.buftype or 'nofile')
+        Buffer.set_buf_option(buf, 'bufhidden', opts.bufhidden or 'hide')
+        Buffer.set_buf_option(buf, 'swapfile', false)
+    elseif opts.buftype ~= nil then
+        Buffer.set_buf_option(buf, 'buftype', opts.buftype)
+    end
+
+    if opts.bufhidden ~= nil and not opts.scratch then
+        Buffer.set_buf_option(buf, 'bufhidden', opts.bufhidden)
+    end
+
+    if opts.filetype ~= nil then
+        Buffer.set_buf_option(buf, 'filetype', opts.filetype)
+    end
+
     return self
+end
+
+---@param name string
+---@param value any
+function Buffer:set_option(name, value)
+    if not self:is_valid() then
+        log.error('Cannot set option on buf=' .. self.id)
+        return
+    end
+
+    Buffer.set_buf_option(self.id, name, value)
+end
+
+---@param value boolean
+function Buffer:set_modifiable(value)
+    self:set_option('modifiable', value)
 end
 
 function Buffer:is_valid()

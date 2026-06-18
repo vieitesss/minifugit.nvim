@@ -120,6 +120,16 @@ end
 local function create_preview_split(self, command, status_win_state)
     local current_win = vim.api.nvim_get_current_win()
     local ok, err = pcall(function()
+        if
+            common.is_valid_win(self.win)
+            and current_win ~= self.win
+            and current_win ~= self.diff_win
+            and current_win ~= self.diff_left_win
+            and current_win ~= self.diff_right_win
+        then
+            vim.api.nvim_set_current_win(self.win)
+        end
+
         vim.cmd(command)
     end)
 
@@ -243,9 +253,9 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
     local buf = buffers.ensure_stacked(self, actions)
     window_state.attach_autocmds(self, buf.id)
 
-    vim.bo[buf.id].modifiable = true
+    buf:set_modifiable(true)
     buf:set_lines(render.text_lines(diff_lines))
-    vim.bo[buf.id].modifiable = false
+    buf:set_modifiable(false)
     render.apply(buf.id, diff_lines)
 
     local status_winfixwidth = make_status_win_resizable(self)
@@ -259,24 +269,14 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
         target_win = assert(self.diff_win)
         vim.api.nvim_set_current_win(target_win)
     else
-        target_win = window.find_target_win(self)
+        target_win =
+            create_preview_split(self, 'rightbelow vsplit', status_winfixwidth)
 
         if target_win == nil then
-            target_win = create_preview_split(
-                self,
-                'rightbelow vsplit',
-                status_winfixwidth
-            )
-
-            if target_win == nil then
-                return false
-            end
-
-            self.target_win = target_win
-            created_win = true
-        else
-            vim.api.nvim_set_current_win(target_win)
+            return false
         end
+
+        created_win = true
     end
 
     target_win = assert(target_win)
@@ -558,8 +558,8 @@ function M.show_split(
     self.diff_anchors = alignment.anchors
 
     if split_diff.filetype ~= '' then
-        vim.bo[left_buf.id].filetype = split_diff.filetype
-        vim.bo[right_buf.id].filetype = split_diff.filetype
+        left_buf:set_option('filetype', split_diff.filetype)
+        right_buf:set_option('filetype', split_diff.filetype)
     end
 
     local status_winfixwidth = make_status_win_resizable(self)
@@ -573,24 +573,14 @@ function M.show_split(
         target_win = assert(self.diff_left_win)
         vim.api.nvim_set_current_win(target_win)
     else
-        target_win = window.find_target_win(self)
+        target_win =
+            create_preview_split(self, 'rightbelow vsplit', status_winfixwidth)
 
         if target_win == nil then
-            target_win = create_preview_split(
-                self,
-                'rightbelow vsplit',
-                status_winfixwidth
-            )
-
-            if target_win == nil then
-                return false
-            end
-
-            self.target_win = target_win
-            left_created = true
-        else
-            vim.api.nvim_set_current_win(target_win)
+            return false
         end
+
+        left_created = true
     end
 
     target_win = assert(target_win)

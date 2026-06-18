@@ -16,6 +16,8 @@ local M = {}
 ---@field diff boolean
 ---@field fillchars string
 ---@field statuscolumn string
+---@field scrollbind boolean
+---@field cursorbind boolean
 
 ---@param opts MinifugitStatusOptions
 ---@return integer
@@ -252,6 +254,8 @@ function M.capture_winopts(win)
         diff = vim.wo[win].diff,
         fillchars = vim.wo[win].fillchars,
         statuscolumn = vim.wo[win].statuscolumn,
+        scrollbind = vim.wo[win].scrollbind,
+        cursorbind = vim.wo[win].cursorbind,
     }
 end
 
@@ -273,6 +277,8 @@ function M.restore_winopts(win, opts)
     vim.wo[win].diff = opts.diff
     vim.wo[win].fillchars = opts.fillchars
     vim.wo[win].statuscolumn = opts.statuscolumn
+    vim.wo[win].scrollbind = opts.scrollbind
+    vim.wo[win].cursorbind = opts.cursorbind
 end
 
 return M

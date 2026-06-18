@@ -1,6 +1,7 @@
 local git = require('minifugit.git')
 local common = require('minifugit.ui.status.common')
 local selection = require('minifugit.ui.status.selection')
+local Buffer = require('minifugit.ui.buffer')
 
 local M = {}
 
@@ -485,7 +486,7 @@ function M.commit(self)
         vim.fn.delete(path)
         return false
     end
-    vim.bo.filetype = 'gitcommit'
+    Buffer.set_buf_option(buf, 'filetype', 'gitcommit')
     vim.wo.winbar = ''
     local stop_return_on_close =
         return_to_status_on_commit_close(self, win, buf, path)

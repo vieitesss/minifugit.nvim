@@ -24,9 +24,9 @@ end
 ---@param buf Buffer
 ---@param lines string[]
 function M.set_plain_lines(buf, lines)
-    vim.bo[buf.id].modifiable = true
+    buf:set_modifiable(true)
     vim.api.nvim_buf_set_lines(buf.id, 0, -1, false, lines)
-    vim.bo[buf.id].modifiable = false
+    buf:set_modifiable(false)
 end
 
 ---@param self GitStatusWindow
@@ -42,10 +42,6 @@ function M.ensure_stacked(self, actions)
         scratch = true,
         name = 'Minifugit diff',
     })
-
-    vim.bo[self.diff_buf.id].buftype = 'nofile'
-    vim.bo[self.diff_buf.id].bufhidden = 'hide'
-    vim.bo[self.diff_buf.id].swapfile = false
 
     vim.keymap.set('n', 'q', actions.close_diff, {
         buffer = self.diff_buf.id,
@@ -136,10 +132,6 @@ function M.ensure_split(_, buf_name, existing, actions)
         scratch = true,
         name = buf_name,
     })
-
-    vim.bo[buf.id].buftype = 'nofile'
-    vim.bo[buf.id].bufhidden = 'hide'
-    vim.bo[buf.id].swapfile = false
 
     vim.keymap.set('n', 'q', actions.close_diff, {
         buffer = buf.id,
