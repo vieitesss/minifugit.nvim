@@ -267,13 +267,17 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
     elseif window_state.has_open_stacked_diff(self) then
         target_win = assert(self.diff_win)
     else
-        target_win = create_preview_split(
-            self,
-            self.win,
-            'rightbelow vsplit',
-            status_winfixwidth
-        )
-        created_win = target_win ~= nil
+        target_win = window.find_target_win(self)
+
+        if target_win == nil then
+            target_win = create_preview_split(
+                self,
+                self.win,
+                'rightbelow vsplit',
+                status_winfixwidth
+            )
+            created_win = target_win ~= nil
+        end
 
         if target_win == nil then
             restore_current_win(current_win)
@@ -573,13 +577,17 @@ function M.show_split(
     elseif window_state.has_open_split_diff(self) then
         target_win = assert(self.diff_left_win)
     else
-        target_win = create_preview_split(
-            self,
-            self.win,
-            'rightbelow vsplit',
-            status_winfixwidth
-        )
-        left_created = target_win ~= nil
+        target_win = window.find_target_win(self)
+
+        if target_win == nil then
+            target_win = create_preview_split(
+                self,
+                self.win,
+                'rightbelow vsplit',
+                status_winfixwidth
+            )
+            left_created = target_win ~= nil
+        end
 
         if target_win == nil then
             restore_current_win(current_win)
