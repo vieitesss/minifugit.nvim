@@ -166,12 +166,10 @@ function M.toggle(self)
         name = 'Minifugit mappings',
     })
 
-    vim.bo[self.help_buf.id].buftype = 'nofile'
-    vim.bo[self.help_buf.id].bufhidden = 'wipe'
-    vim.bo[self.help_buf.id].swapfile = false
-    vim.bo[self.help_buf.id].modifiable = true
+    self.help_buf:set_option('bufhidden', 'wipe')
+    self.help_buf:set_modifiable(true)
     self.help_buf:set_lines(lines)
-    vim.bo[self.help_buf.id].modifiable = false
+    self.help_buf:set_modifiable(false)
 
     self.help_win = vim.api.nvim_open_win(self.help_buf.id, true, {
         relative = 'editor',

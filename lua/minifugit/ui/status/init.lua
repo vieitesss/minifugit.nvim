@@ -638,9 +638,9 @@ function GitStatusWindow:render_cached()
         loading_frame = loading_frame,
     })
 
-    vim.bo[self.buf.id].modifiable = true
+    self.buf:set_modifiable(true)
     self.buf:set_lines(render.text_lines(self.lines))
-    vim.bo[self.buf.id].modifiable = false
+    self.buf:set_modifiable(false)
     render.apply(self.buf.id, self.lines)
 end
 
@@ -720,15 +720,12 @@ function GitStatusWindow.new(opts)
     ensure_highlights(self)
 
     ---@type BufferOpts
-    local opts = { listed = false, scratch = true, name = 'Minifugit' }
-    self.buf = Buffer.new(opts)
-    vim.bo[self.buf.id].buftype = 'nofile'
-    vim.bo[self.buf.id].bufhidden = 'hide'
-    vim.bo[self.buf.id].swapfile = false
-    vim.bo[self.buf.id].filetype = 'minifugit'
+    local buf_opts = { listed = false, scratch = true, name = 'Minifugit' }
+    self.buf = Buffer.new(buf_opts)
 
     keymaps.attach(self)
     self:render()
+    self.buf:set_option('filetype', 'minifugit')
 
     local target_win
     local placeholder_buf
