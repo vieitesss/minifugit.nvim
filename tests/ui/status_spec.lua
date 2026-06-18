@@ -283,6 +283,35 @@ describe('minifugit status UI', function()
         )
     end)
 
+    it('shows stacked previews in a plugin window', function()
+        helpers.write_file(vim.fs.joinpath(repo, 'tracked.txt'), {
+            'one',
+            'two',
+        })
+        local target_win = vim.api.nvim_get_current_win()
+        local target_buf = vim.api.nvim_get_current_buf()
+        minifugit.options.preview.diff_layout = 'stacked'
+
+        minifugit.status()
+
+        ---@type GitStatusWindow
+        local gsw = minifugit.gsw
+        vim.api.nvim_win_set_cursor(
+            gsw.win,
+            { row_containing(gsw.buf.id, 'tracked.txt'), 0 }
+        )
+
+        assert.is_true(gsw:diff_entry())
+
+        assert.are.equal(3, #normal_windows(vim.api.nvim_get_current_tabpage()))
+        assert.are_not.equal(target_win, gsw.diff_win)
+        assert.are.equal(target_buf, vim.api.nvim_win_get_buf(target_win))
+
+        require('minifugit.ui.status.preview').close_diff(gsw)
+
+        assert.are.equal(target_buf, vim.api.nvim_win_get_buf(target_win))
+    end)
+
     it(
         'refreshes and reuses the existing status buffer on repeated calls',
         function()
@@ -881,7 +910,7 @@ describe('minifugit status UI', function()
     )
 
     it(
-        'opens stacked diff in plugin windows without touching file window',
+        'opens stacked diff in a plugin window without touching file window',
         function()
             helpers.write_file(
                 vim.fs.joinpath(repo, 'tracked.txt'),
@@ -911,9 +940,8 @@ describe('minifugit status UI', function()
             )
             minifugit.gsw:diff_entry()
 
-            assert.are.equal(file_buf, vim.api.nvim_win_get_buf(file_win))
-            assert_winopts(capture_winopts(file_win), before)
             assert.are_not.equal(file_win, minifugit.gsw.diff_win)
+            assert.are.equal(file_buf, vim.api.nvim_win_get_buf(file_win))
 
             minifugit.gsw:close()
 
@@ -1023,10 +1051,14 @@ describe('minifugit status UI', function()
             )
             minifugit.gsw:diff_entry()
 
+            assert.are_not.equal(file_win, minifugit.gsw.diff_left_win)
+            assert.are.equal(file_buf, vim.api.nvim_win_get_buf(file_win))
+            assert.are_not.equal(file_win, minifugit.gsw.diff_right_win)
+
+            minifugit.gsw:close()
+
             assert.are.equal(file_buf, vim.api.nvim_win_get_buf(file_win))
             assert_winopts(capture_winopts(file_win), before)
-            assert.are_not.equal(file_win, minifugit.gsw.diff_left_win)
-            assert.are_not.equal(file_win, minifugit.gsw.diff_right_win)
         end
     )
 
@@ -1057,9 +1089,8 @@ describe('minifugit status UI', function()
         )
         minifugit.gsw:diff_entry()
 
-        assert.are.equal(file_buf, vim.api.nvim_win_get_buf(file_win))
-        assert_winopts(capture_winopts(file_win), before)
         assert.are_not.equal(file_win, minifugit.gsw.diff_left_win)
+        assert.are.equal(file_buf, vim.api.nvim_win_get_buf(file_win))
         assert.are_not.equal(file_win, minifugit.gsw.diff_right_win)
 
         minifugit.gsw:close()

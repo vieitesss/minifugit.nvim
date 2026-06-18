@@ -150,6 +150,29 @@ function M.set_target_win(self, win)
     end
 end
 
+---@param start_win number?
+---@return number[]
+local function windows_before(start_win)
+    local wins = vim.api.nvim_tabpage_list_wins(0)
+    local start = 1
+
+    for i, win in ipairs(wins) do
+        if win == start_win then
+            start = i
+            break
+        end
+    end
+
+    local ordered = {}
+
+    for offset = 1, #wins do
+        local index = ((start - offset - 1) % #wins) + 1
+        table.insert(ordered, wins[index])
+    end
+
+    return ordered
+end
+
 ---@param self GitStatusWindow
 ---@return number?
 function M.find_target_win(self)
@@ -159,7 +182,7 @@ function M.find_target_win(self)
 
     self.target_win = nil
 
-    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    for _, win in ipairs(windows_before(self.win)) do
         if is_usable_target_win(self, win) then
             self.target_win = win
             return win
