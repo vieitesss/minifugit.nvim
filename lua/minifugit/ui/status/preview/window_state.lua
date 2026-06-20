@@ -1,21 +1,8 @@
-local Buffer = require('minifugit.ui.buffer')
 local common = require('minifugit.ui.status.common')
-local window = require('minifugit.ui.status.window')
 local preview_util = require('minifugit.ui.status.preview.util')
+local window = require('minifugit.ui.status.window')
 
 local M = {}
-
----@param buf Buffer?
----@param win number?
----@return boolean
-local function has_diff_side(buf, win)
-    if buf == nil or not buf:is_valid() or not common.is_valid_win(win) then
-        return false
-    end
-
-    win = assert(win)
-    return vim.api.nvim_win_get_buf(win) == buf.id
-end
 
 ---@param self GitStatusWindow
 local function clear_diff_context(self)
@@ -26,59 +13,28 @@ local function clear_diff_context(self)
     self.diff_context_entry = nil
 end
 
----@type MiniFugitDiffWindowState[]
-local DIFF_WINDOW_STATES = {
-    {
-        win_field = 'diff_win',
-        prev_buf_field = 'diff_prev_buf',
-        prev_winopts_field = 'diff_prev_winopts',
-        created_win_field = 'diff_created_win',
-        buf_field = 'diff_buf',
-    },
-    {
-        win_field = 'diff_left_win',
-        prev_buf_field = 'diff_left_prev_buf',
-        prev_winopts_field = 'diff_left_prev_winopts',
-        created_win_field = 'diff_left_created_win',
-        buf_field = 'diff_left_buf',
-        split = true,
-    },
-    {
-        win_field = 'diff_right_win',
-        prev_buf_field = 'diff_right_prev_buf',
-        prev_winopts_field = 'diff_right_prev_winopts',
-        created_win_field = 'diff_right_created_win',
-        buf_field = 'diff_right_buf',
-        split = true,
-    },
-}
-
-M.STACKED_DIFF_STATE = DIFF_WINDOW_STATES[1]
-M.SPLIT_LEFT_DIFF_STATE = DIFF_WINDOW_STATES[2]
-M.SPLIT_RIGHT_DIFF_STATE = DIFF_WINDOW_STATES[3]
-M.SPLIT_DIFF_CLOSE_STATES = {
-    M.SPLIT_RIGHT_DIFF_STATE,
-    M.SPLIT_LEFT_DIFF_STATE,
-}
+---@param self GitStatusWindow
+---@return DiffWindow[]
+local function diff_windows(self)
+    return { self.diff_stacked, self.diff_left, self.diff_right }
+end
 
 ---@param self GitStatusWindow
 ---@return boolean
 function M.has_open_split_diff(self)
-    return has_diff_side(self.diff_left_buf, self.diff_left_win)
-        and has_diff_side(self.diff_right_buf, self.diff_right_win)
+    return self.diff_left:has_open() and self.diff_right:has_open()
 end
 
 ---@param self GitStatusWindow
 ---@return boolean
 function M.has_any_split_diff(self)
-    return has_diff_side(self.diff_left_buf, self.diff_left_win)
-        or has_diff_side(self.diff_right_buf, self.diff_right_win)
+    return self.diff_left:has_open() or self.diff_right:has_open()
 end
 
 ---@param self GitStatusWindow
 ---@return boolean
 function M.has_open_stacked_diff(self)
-    return has_diff_side(self.diff_buf, self.diff_win)
+    return self.diff_stacked:has_open()
 end
 
 ---@param self GitStatusWindow
@@ -89,13 +45,11 @@ end
 
 ---@param self GitStatusWindow
 ---@param buf integer
----@return MiniFugitDiffWindowState?
-function M.diff_window_state_for_buf(self, buf)
-    for _, state in ipairs(DIFF_WINDOW_STATES) do
-        local diff_buf = self[state.buf_field]
-
-        if diff_buf ~= nil and diff_buf.id == buf then
-            return state
+---@return DiffWindow?
+function M.diff_window_for_buf(self, buf)
+    for _, dw in ipairs(diff_windows(self)) do
+        if dw.buf ~= nil and dw.buf.id == buf then
+            return dw
         end
     end
 
@@ -104,11 +58,11 @@ end
 
 ---@param self GitStatusWindow
 ---@param win number
----@return MiniFugitDiffWindowState?
-function M.diff_window_state_for_win(self, win)
-    for _, state in ipairs(DIFF_WINDOW_STATES) do
-        if self[state.win_field] == win then
-            return state
+---@return DiffWindow?
+function M.diff_window_for_win(self, win)
+    for _, dw in ipairs(diff_windows(self)) do
+        if dw.win == win then
+            return dw
         end
     end
 
@@ -116,19 +70,10 @@ function M.diff_window_state_for_win(self, win)
 end
 
 ---@param self GitStatusWindow
----@param state MiniFugitDiffWindowState
-function M.clear_diff_window_state(self, state)
-    self[state.win_field] = nil
-    self[state.prev_buf_field] = nil
-    self[state.prev_winopts_field] = nil
-    self[state.created_win_field] = false
-end
-
----@param self GitStatusWindow
 function M.clear_missing_diff_window_states(self)
-    for _, state in ipairs(DIFF_WINDOW_STATES) do
-        if not has_diff_side(self[state.buf_field], self[state.win_field]) then
-            M.clear_diff_window_state(self, state)
+    for _, dw in ipairs(diff_windows(self)) do
+        if not dw:has_open() then
+            dw:clear()
         end
     end
 
@@ -143,29 +88,27 @@ end
 ---@param self GitStatusWindow
 ---@param buf integer
 function M.restore_replaced_diff_window(self, buf)
-    local state = M.diff_window_state_for_buf(self, buf)
+    local dw = M.diff_window_for_buf(self, buf)
 
-    if state == nil then
+    if dw == nil then
         return
     end
 
-    local win = self[state.win_field]
-
-    if not common.is_valid_win(win) then
-        M.clear_diff_window_state(self, state)
+    if not common.is_valid_win(dw.win) then
+        dw:clear()
         return
     end
 
-    if vim.api.nvim_win_get_buf(win) == buf then
+    if vim.api.nvim_win_get_buf(dw.win) == buf then
         return
     end
 
-    if state.split then
-        preview_util.diffoff(win)
+    if dw.is_split then
+        preview_util.diffoff(dw.win)
     end
 
-    window.restore_winopts(win, self[state.prev_winopts_field])
-    M.clear_diff_window_state(self, state)
+    window.restore_winopts(dw.win, dw.prev_winopts)
+    dw:clear()
 end
 
 ---@param self GitStatusWindow
@@ -195,11 +138,9 @@ end
 function M.diff_buffers(self)
     local buffers = {}
 
-    for _, state in ipairs(DIFF_WINDOW_STATES) do
-        local buf = self[state.buf_field]
-
-        if buf ~= nil and buf:is_valid() then
-            table.insert(buffers, buf)
+    for _, dw in ipairs(diff_windows(self)) do
+        if dw.buf ~= nil and dw.buf:is_valid() then
+            table.insert(buffers, dw.buf)
         end
     end
 
@@ -208,8 +149,8 @@ end
 
 ---@param self GitStatusWindow
 function M.clear_diff_buffers(self)
-    for _, state in ipairs(DIFF_WINDOW_STATES) do
-        self[state.buf_field] = nil
+    for _, dw in ipairs(diff_windows(self)) do
+        dw.buf = nil
     end
 end
 
@@ -221,93 +162,34 @@ function M.delete_diff_buffers(buffers)
 end
 
 ---@param self GitStatusWindow
----@param state MiniFugitDiffWindowState
----@param keep_win boolean
----@return boolean
-function M.restore_or_close_diff_window(self, state, keep_win)
-    local win = self[state.win_field]
-
-    if not common.is_valid_win(win) then
-        M.clear_diff_window_state(self, state)
-        return false
+---@param current_dw DiffWindow
+---@return DiffWindow
+function M.code_window_for_diff(self, current_dw)
+    if not current_dw.is_split then
+        return current_dw
     end
 
-    if state.split then
-        preview_util.diffoff(win)
+    if common.is_valid_win(self.diff_left.win) then
+        return self.diff_left
     end
 
-    if keep_win then
-        window.restore_winopts(win, self[state.prev_winopts_field])
-        M.clear_diff_window_state(self, state)
-        return true
-    end
-
-    if
-        self[state.created_win_field]
-        and #vim.api.nvim_tabpage_list_wins(0) > 1
-    then
-        vim.api.nvim_win_close(win, true)
-    elseif
-        self[state.prev_buf_field]
-        and vim.api.nvim_buf_is_valid(self[state.prev_buf_field])
-    then
-        vim.api.nvim_win_set_buf(win, self[state.prev_buf_field])
-        window.restore_winopts(win, self[state.prev_winopts_field])
-    elseif #vim.api.nvim_tabpage_list_wins(0) > 1 then
-        vim.api.nvim_win_close(win, true)
-    else
-        window.restore_winopts(win, self[state.prev_winopts_field])
-    end
-
-    M.clear_diff_window_state(self, state)
-    return true
+    return current_dw
 end
 
 ---@param self GitStatusWindow
----@param states MiniFugitDiffWindowState[]
----@return boolean
-function M.restore_or_close_diff_windows(self, states)
-    local restored = false
-
-    for _, state in ipairs(states) do
-        restored = M.restore_or_close_diff_window(self, state, false)
-            or restored
-    end
-
-    return restored
-end
-
----@param self GitStatusWindow
----@param current_state MiniFugitDiffWindowState
----@return MiniFugitDiffWindowState
-function M.code_window_state_for_diff(self, current_state)
-    if not current_state.split then
-        return current_state
-    end
-
-    local left_state = DIFF_WINDOW_STATES[2]
-
-    if common.is_valid_win(self[left_state.win_field]) then
-        return left_state
-    end
-
-    return current_state
-end
-
----@param self GitStatusWindow
----@param current_state MiniFugitDiffWindowState
+---@param current_dw DiffWindow
 ---@return Buffer[]
 ---@return number
-function M.close_diff_windows_for_code(self, current_state)
+function M.close_diff_windows_for_code(self, current_dw)
     local buffers = M.diff_buffers(self)
-    local code_state = M.code_window_state_for_diff(self, current_state)
-    local code_win = self[code_state.win_field]
+    local code_dw = M.code_window_for_diff(self, current_dw)
+    local code_win = code_dw.win
 
-    for _, state in ipairs(DIFF_WINDOW_STATES) do
-        if state == code_state then
-            M.restore_or_close_diff_window(self, state, true)
-        elseif current_state.split and state.split then
-            M.restore_or_close_diff_window(self, state, false)
+    for _, dw in ipairs(diff_windows(self)) do
+        if dw == code_dw then
+            dw:restore_or_close(true)
+        elseif current_dw.is_split and dw.is_split then
+            dw:restore_or_close(false)
         end
     end
 

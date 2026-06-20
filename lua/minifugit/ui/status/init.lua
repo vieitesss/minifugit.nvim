@@ -11,22 +11,14 @@ local preview = require('minifugit.ui.status.preview')
 local selection = require('minifugit.ui.status.selection')
 local status_tab = require('minifugit.ui.status.tab')
 local window = require('minifugit.ui.status.window')
+local DiffWindow = require('minifugit.ui.status.preview.diff_window')
 local git = require('minifugit.git')
 
 ---@class GitStatusWindow
 ---@field buf Buffer
----@field diff_buf Buffer?
----@field diff_win number?
----@field diff_left_buf Buffer?
----@field diff_right_buf Buffer?
----@field diff_left_win number?
----@field diff_right_win number?
----@field diff_prev_buf number?
----@field diff_left_prev_buf number?
----@field diff_right_prev_buf number?
----@field diff_created_win boolean
----@field diff_left_created_win boolean
----@field diff_right_created_win boolean
+---@field diff_stacked DiffWindow
+---@field diff_left DiffWindow
+---@field diff_right DiffWindow
 ---@field diff_left_rows MiniFugitSplitRow[]?
 ---@field diff_right_rows MiniFugitSplitRow[]?
 ---@field diff_anchors table<integer, integer>?
@@ -36,9 +28,6 @@ local git = require('minifugit.git')
 ---@field diff_hunks MiniFugitDiffHunk[]?
 ---@field diff_section GitStatusSectionName?
 ---@field diff_context_entry GitStatusEntry?
----@field diff_prev_winopts GitStatusWindowOptions?
----@field diff_left_prev_winopts GitStatusWindowOptions?
----@field diff_right_prev_winopts GitStatusWindowOptions?
 ---@field diff_wrap boolean
 ---@field diff_show_headers boolean
 ---@field diff_show_numbers boolean
@@ -73,9 +62,6 @@ local HIGHLIGHT_NAMESPACE = 'GitStatusWindow'
 
 local OWNED_BUFFER_FIELDS = {
     'buf',
-    'diff_buf',
-    'diff_left_buf',
-    'diff_right_buf',
     'help_buf',
 }
 
@@ -301,8 +287,8 @@ local function refresh_highlights(self)
     end
 
     if
-        self.diff_buf ~= nil
-        and self.diff_buf:is_valid()
+        self.diff_stacked.buf ~= nil
+        and self.diff_stacked.buf:is_valid()
         and preview.has_open_diff(self)
     then
         preview.refresh_current_entry(self)
@@ -579,6 +565,11 @@ function GitStatusWindow:delete_owned_buffers()
         delete_owned_buffer(self[field])
         self[field] = nil
     end
+
+    for _, dw in ipairs({ self.diff_stacked, self.diff_left, self.diff_right }) do
+        delete_owned_buffer(dw.buf)
+        dw.buf = nil
+    end
 end
 
 ---@return boolean destroyed
@@ -709,9 +700,9 @@ function GitStatusWindow.new(opts)
     self.groups = create_highlight_groups()
     self.highlights = create_highlights()
     self.lines = {}
-    self.diff_created_win = false
-    self.diff_left_created_win = false
-    self.diff_right_created_win = false
+    self.diff_stacked = DiffWindow.new(false)
+    self.diff_left = DiffWindow.new(true)
+    self.diff_right = DiffWindow.new(true)
     self.diff_wrap = opts.preview.wrap
     self.diff_show_headers = opts.preview.show_metadata
     self.diff_show_numbers = opts.preview.show_line_numbers
