@@ -1,8 +1,8 @@
 local DiffPreview = require('minifugit.ui.status.preview.diff_preview')
 
----@return DiffPreviewHostContext
+---@return table
 local function make_ctx(overrides)
-    ---@type DiffPreviewHostContext
+    ---@type table
     local ctx = {
         get_status_win = function()
             return nil
