@@ -4,46 +4,46 @@ local window = require('minifugit.ui.status.window')
 
 local M = {}
 
----@param self GitStatusWindow
+---@param self DiffPreview
 local function clear_diff_context(self)
-    self.diff_raw_lines = nil
-    self.diff_raw_rows = nil
-    self.diff_hunks = nil
-    self.diff_section = nil
-    self.diff_context_entry = nil
+    self.raw_lines = nil
+    self.raw_rows = nil
+    self.hunks = nil
+    self.section = nil
+    self.context_entry = nil
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@return DiffWindow[]
 local function diff_windows(self)
-    return { self.diff_stacked, self.diff_left, self.diff_right }
+    return { self.stacked, self.left, self.right }
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@return boolean
 function M.has_open_split_diff(self)
-    return self.diff_left:has_open() and self.diff_right:has_open()
+    return self.left:has_open() and self.right:has_open()
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@return boolean
 function M.has_any_split_diff(self)
-    return self.diff_left:has_open() or self.diff_right:has_open()
+    return self.left:has_open() or self.right:has_open()
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@return boolean
 function M.has_open_stacked_diff(self)
-    return self.diff_stacked:has_open()
+    return self.stacked:has_open()
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@return boolean
 function M.has_open_diff(self)
     return M.has_open_stacked_diff(self) or M.has_any_split_diff(self)
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@param buf integer
 ---@return DiffWindow?
 function M.diff_window_for_buf(self, buf)
@@ -56,7 +56,7 @@ function M.diff_window_for_buf(self, buf)
     return nil
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@param win number
 ---@return DiffWindow?
 function M.diff_window_for_win(self, win)
@@ -69,7 +69,7 @@ function M.diff_window_for_win(self, win)
     return nil
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 function M.clear_missing_diff_window_states(self)
     for _, dw in ipairs(diff_windows(self)) do
         if not dw:has_open() then
@@ -77,15 +77,14 @@ function M.clear_missing_diff_window_states(self)
         end
     end
 
-    -- Clear alignment metadata when no split diff remains.
     if not M.has_any_split_diff(self) then
-        self.diff_left_rows = nil
-        self.diff_right_rows = nil
-        self.diff_anchors = nil
+        self.left_rows = nil
+        self.right_rows = nil
+        self.anchors = nil
     end
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@param buf integer
 function M.restore_replaced_diff_window(self, buf)
     local dw = M.diff_window_for_buf(self, buf)
@@ -111,19 +110,21 @@ function M.restore_replaced_diff_window(self, buf)
     dw:clear()
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@param buf integer
 function M.attach_autocmds(self, buf)
-    if self.autocmd_group == nil then
+    local ag = self.ctx.get_autocmd_group()
+
+    if ag == nil then
         return
     end
 
     vim.api.nvim_clear_autocmds({
-        group = self.autocmd_group,
+        group = ag,
         buffer = buf,
     })
     vim.api.nvim_create_autocmd({ 'BufLeave', 'BufHidden' }, {
-        group = self.autocmd_group,
+        group = ag,
         buffer = buf,
         callback = function(args)
             vim.schedule(function()
@@ -133,7 +134,7 @@ function M.attach_autocmds(self, buf)
     })
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@return Buffer[]
 function M.diff_buffers(self)
     local buffers = {}
@@ -147,7 +148,7 @@ function M.diff_buffers(self)
     return buffers
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 function M.clear_diff_buffers(self)
     for _, dw in ipairs(diff_windows(self)) do
         dw.buf = nil
@@ -161,7 +162,7 @@ function M.delete_diff_buffers(buffers)
     end
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@param current_dw DiffWindow
 ---@return DiffWindow
 function M.code_window_for_diff(self, current_dw)
@@ -169,14 +170,14 @@ function M.code_window_for_diff(self, current_dw)
         return current_dw
     end
 
-    if common.is_valid_win(self.diff_left.win) then
-        return self.diff_left
+    if common.is_valid_win(self.left.win) then
+        return self.left
     end
 
     return current_dw
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@param current_dw DiffWindow
 ---@return Buffer[]
 ---@return number
@@ -193,7 +194,7 @@ function M.close_diff_windows_for_code(self, current_dw)
         end
     end
 
-    self.diff_preview_key = nil
+    self.preview_key = nil
     clear_diff_context(self)
     M.clear_diff_buffers(self)
     M.clear_missing_diff_window_states(self)

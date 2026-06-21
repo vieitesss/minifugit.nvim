@@ -51,7 +51,11 @@ local function is_owned_buffer(self, bufnr)
         end
     end
 
-    for _, dw in ipairs({ self.diff_stacked, self.diff_left, self.diff_right }) do
+    for _, dw in ipairs({
+        self.preview.stacked,
+        self.preview.left,
+        self.preview.right,
+    }) do
         if dw ~= nil and dw.buf ~= nil and dw.buf.id == bufnr then
             return true
         end

@@ -8,25 +8,22 @@ local M = {}
 ---@field row integer
 ---@field side MiniFugitDiffSide?
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@return MiniFugitDiffCursor?
 function M.current_diff_cursor(self)
     local current_win = vim.api.nvim_get_current_win()
     local current_buf = vim.api.nvim_win_get_buf(current_win)
     local row = vim.api.nvim_win_get_cursor(current_win)[1]
 
-    if
-        self.diff_stacked.buf ~= nil
-        and current_buf == self.diff_stacked.buf.id
-    then
+    if self.stacked.buf ~= nil and current_buf == self.stacked.buf.id then
         return { layout = 'stacked', row = row }
     end
 
-    if self.diff_left.buf ~= nil and current_buf == self.diff_left.buf.id then
+    if self.left.buf ~= nil and current_buf == self.left.buf.id then
         return { layout = 'split', side = 'left', row = row }
     end
 
-    if self.diff_right.buf ~= nil and current_buf == self.diff_right.buf.id then
+    if self.right.buf ~= nil and current_buf == self.right.buf.id then
         return { layout = 'split', side = 'right', row = row }
     end
 
@@ -105,10 +102,10 @@ local function buffer_row_for_hunk_position(rows, side, position)
     return nil
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@return MiniFugitDiffSourcePosition?
 function M.current_source_position(self)
-    local entry = self.diff_context_entry
+    local entry = self.context_entry
 
     if entry == nil then
         return nil
@@ -123,23 +120,22 @@ function M.current_source_position(self)
     local line_number
 
     if cursor.layout == 'stacked' then
-        local raw_row = self.diff_raw_rows and self.diff_raw_rows[cursor.row]
+        local raw_row = self.raw_rows and self.raw_rows[cursor.row]
         line_number = diff_position.source_line_for_stacked_row(
-            self.diff_raw_lines,
-            self.diff_hunks,
+            self.raw_lines,
+            self.hunks,
             raw_row
         )
     elseif cursor.side ~= nil then
-        local rows = cursor.side == 'left' and self.diff_left_rows
-            or self.diff_right_rows
+        local rows = cursor.side == 'left' and self.left_rows or self.right_rows
 
         if rows then
             line_number = source_line_from_split_row(
                 rows,
                 cursor.side,
                 cursor.row,
-                self.diff_raw_lines,
-                self.diff_hunks
+                self.raw_lines,
+                self.hunks
             )
         end
     end
@@ -151,7 +147,7 @@ function M.current_source_position(self)
     return { path = entry.path, line = math.max(line_number, 1) }
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@return MiniFugitDiffHunkPosition?
 function M.current_hunk_position(self)
     local cursor = M.current_diff_cursor(self)
@@ -161,11 +157,11 @@ function M.current_hunk_position(self)
     end
 
     if cursor.layout == 'stacked' then
-        local raw_row = self.diff_raw_rows and self.diff_raw_rows[cursor.row]
+        local raw_row = self.raw_rows and self.raw_rows[cursor.row]
 
         return diff_position.hunk_position_for_raw_row(
-            self.diff_raw_lines,
-            self.diff_hunks,
+            self.raw_lines,
+            self.hunks,
             raw_row
         )
     end
@@ -174,8 +170,7 @@ function M.current_hunk_position(self)
         return nil
     end
 
-    local rows = cursor.side == 'left' and self.diff_left_rows
-        or self.diff_right_rows
+    local rows = cursor.side == 'left' and self.left_rows or self.right_rows
 
     if rows then
         return hunk_position_from_split_row(rows, cursor.side, cursor.row)
@@ -198,38 +193,35 @@ function M.set_cursor_row(win, row)
     pcall(vim.api.nvim_win_set_cursor, win, { clamped, 0 })
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@param position MiniFugitDiffHunkPosition?
 function M.restore_hunk_position(self, position)
     if position == nil then
         return
     end
 
-    local hunk =
-        diff_position.hunk_by_index(self.diff_hunks, position.hunk_index)
+    local hunk = diff_position.hunk_by_index(self.hunks, position.hunk_index)
 
     if hunk == nil then
         return
     end
 
-    if common.is_valid_win(self.diff_stacked.win) then
+    if common.is_valid_win(self.stacked.win) then
         local row = diff_position.stacked_row_for_hunk_position(
-            self.diff_raw_lines,
-            self.diff_raw_rows,
+            self.raw_lines,
+            self.raw_rows,
             hunk,
             position.side,
             position.offset
         )
 
-        local win = assert(self.diff_stacked.win)
+        local win = assert(self.stacked.win)
         M.set_cursor_row(win, row)
 
         return
     end
 
-    -- For split diff, find the buffer row from alignment rows.
-    local rows = position.side == 'left' and self.diff_left_rows
-        or self.diff_right_rows
+    local rows = position.side == 'left' and self.left_rows or self.right_rows
 
     local row = rows
         and buffer_row_for_hunk_position(rows, position.side, position)
@@ -238,16 +230,14 @@ function M.restore_hunk_position(self, position)
         return
     end
 
-    local win = position.side == 'left' and self.diff_left.win
-        or self.diff_right.win
+    local win = position.side == 'left' and self.left.win or self.right.win
 
     if common.is_valid_win(win) then
         win = assert(win)
         M.set_cursor_row(win, row)
 
-        -- Sync paired window.
-        local paired = position.side == 'left' and self.diff_right.win
-            or self.diff_left.win
+        local paired = position.side == 'left' and self.right.win
+            or self.left.win
 
         if common.is_valid_win(paired) then
             M.set_cursor_row(paired, row)

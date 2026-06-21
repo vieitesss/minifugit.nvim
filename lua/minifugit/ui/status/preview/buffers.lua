@@ -29,22 +29,22 @@ function M.set_plain_lines(buf, lines)
     buf:set_modifiable(false)
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@param actions MiniFugitPreviewBufferActions
 ---@return Buffer
 function M.ensure_stacked(self, actions)
-    if self.diff_stacked.buf and self.diff_stacked.buf:is_valid() then
-        return self.diff_stacked.buf
+    if self.stacked.buf and self.stacked.buf:is_valid() then
+        return self.stacked.buf
     end
 
-    self.diff_stacked.buf = Buffer.new({
+    self.stacked.buf = Buffer.new({
         listed = false,
         scratch = true,
         name = 'Minifugit diff',
     })
 
     vim.keymap.set('n', 'q', actions.close_diff, {
-        buffer = self.diff_stacked.buf.id,
+        buffer = self.stacked.buf.id,
         desc = 'Close Minifugit diff preview',
         silent = true,
     })
@@ -52,7 +52,7 @@ function M.ensure_stacked(self, actions)
     vim.keymap.set('n', ']h', function()
         actions.jump_hunk(1)
     end, {
-        buffer = self.diff_stacked.buf.id,
+        buffer = self.stacked.buf.id,
         desc = 'Jump to next diff hunk',
         silent = true,
     })
@@ -60,62 +60,62 @@ function M.ensure_stacked(self, actions)
     vim.keymap.set('n', '[h', function()
         actions.jump_hunk(-1)
     end, {
-        buffer = self.diff_stacked.buf.id,
+        buffer = self.stacked.buf.id,
         desc = 'Jump to previous diff hunk',
         silent = true,
     })
 
     vim.keymap.set('n', 'aw', actions.toggle_wrap, {
-        buffer = self.diff_stacked.buf.id,
+        buffer = self.stacked.buf.id,
         desc = 'Alternate diff preview line wrapping',
         silent = true,
     })
 
     vim.keymap.set('n', 'an', actions.toggle_numbers, {
-        buffer = self.diff_stacked.buf.id,
+        buffer = self.stacked.buf.id,
         desc = 'Alternate diff preview line numbers',
         silent = true,
     })
 
     vim.keymap.set('n', 'am', actions.toggle_headers, {
-        buffer = self.diff_stacked.buf.id,
+        buffer = self.stacked.buf.id,
         desc = 'Alternate stacked diff metadata rows',
         silent = true,
     })
 
     vim.keymap.set('n', 's', actions.stage_current_hunk, {
-        buffer = self.diff_stacked.buf.id,
+        buffer = self.stacked.buf.id,
         desc = 'Stage hunk under cursor',
         silent = true,
     })
 
     vim.keymap.set('n', 'u', actions.unstage_current_hunk, {
-        buffer = self.diff_stacked.buf.id,
+        buffer = self.stacked.buf.id,
         desc = 'Unstage hunk under cursor',
         silent = true,
     })
 
     vim.keymap.set('n', 'd', actions.discard_current_hunk, {
-        buffer = self.diff_stacked.buf.id,
+        buffer = self.stacked.buf.id,
         desc = 'Discard hunk under cursor with confirmation',
         silent = true,
     })
 
     vim.keymap.set('n', 'al', actions.toggle_layout, {
-        buffer = self.diff_stacked.buf.id,
+        buffer = self.stacked.buf.id,
         desc = 'Alternate diff preview between stacked and split layout',
         silent = true,
     })
 
-    M.set_goto_code_keymap(self.diff_stacked.buf.id, actions)
+    M.set_goto_code_keymap(self.stacked.buf.id, actions)
 
     vim.keymap.set('n', '?', actions.toggle_help, {
-        buffer = self.diff_stacked.buf.id,
+        buffer = self.stacked.buf.id,
         desc = 'Toggle Minifugit mappings help',
         silent = true,
     })
 
-    return self.diff_stacked.buf
+    return self.stacked.buf
 end
 
 ---@param buf_name string
