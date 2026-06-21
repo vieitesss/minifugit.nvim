@@ -15,15 +15,18 @@ function M.current_diff_cursor(self)
     local current_buf = vim.api.nvim_win_get_buf(current_win)
     local row = vim.api.nvim_win_get_cursor(current_win)[1]
 
-    if self.diff_buf ~= nil and current_buf == self.diff_buf.id then
+    if
+        self.diff_stacked.buf ~= nil
+        and current_buf == self.diff_stacked.buf.id
+    then
         return { layout = 'stacked', row = row }
     end
 
-    if self.diff_left_buf ~= nil and current_buf == self.diff_left_buf.id then
+    if self.diff_left.buf ~= nil and current_buf == self.diff_left.buf.id then
         return { layout = 'split', side = 'left', row = row }
     end
 
-    if self.diff_right_buf ~= nil and current_buf == self.diff_right_buf.id then
+    if self.diff_right.buf ~= nil and current_buf == self.diff_right.buf.id then
         return { layout = 'split', side = 'right', row = row }
     end
 
@@ -209,7 +212,7 @@ function M.restore_hunk_position(self, position)
         return
     end
 
-    if common.is_valid_win(self.diff_win) then
+    if common.is_valid_win(self.diff_stacked.win) then
         local row = diff_position.stacked_row_for_hunk_position(
             self.diff_raw_lines,
             self.diff_raw_rows,
@@ -218,7 +221,7 @@ function M.restore_hunk_position(self, position)
             position.offset
         )
 
-        local win = assert(self.diff_win)
+        local win = assert(self.diff_stacked.win)
         M.set_cursor_row(win, row)
 
         return
@@ -235,16 +238,16 @@ function M.restore_hunk_position(self, position)
         return
     end
 
-    local win = position.side == 'left' and self.diff_left_win
-        or self.diff_right_win
+    local win = position.side == 'left' and self.diff_left.win
+        or self.diff_right.win
 
     if common.is_valid_win(win) then
         win = assert(win)
         M.set_cursor_row(win, row)
 
         -- Sync paired window.
-        local paired = position.side == 'left' and self.diff_right_win
-            or self.diff_left_win
+        local paired = position.side == 'left' and self.diff_right.win
+            or self.diff_left.win
 
         if common.is_valid_win(paired) then
             M.set_cursor_row(paired, row)

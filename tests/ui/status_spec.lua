@@ -276,9 +276,9 @@ describe('minifugit status UI', function()
         )
 
         assert.is_true(gsw:diff_entry())
-        assert.is_not_nil(gsw.diff_buf)
+        assert.is_not_nil(gsw.diff_stacked.buf)
         helpers.assert_has_line_containing(
-            buffer_lines(gsw.diff_buf.id),
+            buffer_lines(gsw.diff_stacked.buf.id),
             'new content'
         )
     end)
@@ -304,8 +304,11 @@ describe('minifugit status UI', function()
         assert.is_true(gsw:diff_entry())
 
         assert.are.equal(2, #normal_windows(vim.api.nvim_get_current_tabpage()))
-        assert.are.equal(target_win, gsw.diff_win)
-        assert.are.equal(gsw.diff_buf.id, vim.api.nvim_win_get_buf(target_win))
+        assert.are.equal(target_win, gsw.diff_stacked.win)
+        assert.are.equal(
+            gsw.diff_stacked.buf.id,
+            vim.api.nvim_win_get_buf(target_win)
+        )
 
         require('minifugit.ui.status.preview').close_diff(gsw)
 
@@ -459,7 +462,7 @@ describe('minifugit status UI', function()
             vim.api.nvim_win_get_width(status_win)
         )
 
-        local diff_win = assert(gsw.diff_win)
+        local diff_win = assert(gsw.diff_stacked.win)
         require('minifugit.ui.status.preview').close_diff(gsw)
 
         assert.are.equal(2, #vim.api.nvim_tabpage_list_wins(0))
@@ -469,7 +472,7 @@ describe('minifugit status UI', function()
         vim.api.nvim_set_current_win(status_win)
         assert.is_true(gsw:diff_entry())
 
-        local reopened_diff_win = assert(gsw.diff_win)
+        local reopened_diff_win = assert(gsw.diff_stacked.win)
         assert.are.equal(2, #vim.api.nvim_tabpage_list_wins(0))
         assert.are.equal(diff_win, reopened_diff_win)
         assert.are.equal(
@@ -524,7 +527,7 @@ describe('minifugit status UI', function()
 
         assert.is_true(gsw:diff_entry())
 
-        local diff_win = assert(gsw.diff_win)
+        local diff_win = assert(gsw.diff_stacked.win)
         assert.are.equal(2, #normal_windows(vim.api.nvim_get_current_tabpage()))
         assert.are.equal(
             expected_status_width,
@@ -996,9 +999,9 @@ describe('minifugit status UI', function()
             )
             minifugit.gsw:diff_entry()
 
-            assert.are.equal(file_win, minifugit.gsw.diff_win)
+            assert.are.equal(file_win, minifugit.gsw.diff_stacked.win)
             assert.are.equal(
-                minifugit.gsw.diff_buf.id,
+                minifugit.gsw.diff_stacked.buf.id,
                 vim.api.nvim_win_get_buf(file_win)
             )
 
@@ -1031,7 +1034,7 @@ describe('minifugit status UI', function()
             assert.is_true(minifugit.gsw:diff_entry())
 
             assert.are.equal(
-                minifugit.gsw.diff_win,
+                minifugit.gsw.diff_stacked.win,
                 vim.api.nvim_get_current_win()
             )
         end
@@ -1106,12 +1109,12 @@ describe('minifugit status UI', function()
         )
         minifugit.gsw:diff_entry()
 
-        assert.are.equal(file_win, minifugit.gsw.diff_left_win)
+        assert.are.equal(file_win, minifugit.gsw.diff_left.win)
         assert.are.equal(
-            minifugit.gsw.diff_left_buf.id,
+            minifugit.gsw.diff_left.buf.id,
             vim.api.nvim_win_get_buf(file_win)
         )
-        assert.are_not.equal(file_win, minifugit.gsw.diff_right_win)
+        assert.are_not.equal(file_win, minifugit.gsw.diff_right.win)
 
         minifugit.gsw:close()
 
@@ -1146,12 +1149,12 @@ describe('minifugit status UI', function()
         )
         minifugit.gsw:diff_entry()
 
-        assert.are.equal(file_win, minifugit.gsw.diff_left_win)
+        assert.are.equal(file_win, minifugit.gsw.diff_left.win)
         assert.are.equal(
-            minifugit.gsw.diff_left_buf.id,
+            minifugit.gsw.diff_left.buf.id,
             vim.api.nvim_win_get_buf(file_win)
         )
-        assert.are_not.equal(file_win, minifugit.gsw.diff_right_win)
+        assert.are_not.equal(file_win, minifugit.gsw.diff_right.win)
 
         minifugit.gsw:close()
 
@@ -1222,7 +1225,7 @@ describe('minifugit status UI', function()
         )
         minifugit.gsw:diff_entry()
 
-        local diff_win = minifugit.gsw.diff_win
+        local diff_win = minifugit.gsw.diff_stacked.win
         assert.is_not_nil(diff_win)
         vim.api.nvim_set_current_win(diff_win)
         normal_keys('<C-O>')
@@ -1329,7 +1332,7 @@ describe('minifugit status UI', function()
         )
         minifugit.gsw:diff_entry()
 
-        local diff_win = minifugit.gsw.diff_left_win
+        local diff_win = minifugit.gsw.diff_left.win
         assert.is_not_nil(diff_win)
         vim.api.nvim_set_current_win(diff_win)
         normal_keys('<C-O>')

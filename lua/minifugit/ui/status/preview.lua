@@ -113,14 +113,6 @@ end
 ---@field path string
 ---@field line integer
 
----@class MiniFugitDiffWindowState
----@field win_field string
----@field prev_buf_field string
----@field prev_winopts_field string
----@field created_win_field string
----@field buf_field string
----@field split boolean?
-
 ---@param commit GitCommit
 ---@return string
 local function commit_diff_title(commit)
@@ -254,10 +246,11 @@ function M.jump_hunk(self, delta)
     end
 
     -- Stacked diff: scan for @@ lines.
-    if common.is_valid_win(self.diff_win) then
-        local win = assert(self.diff_win)
+    if common.is_valid_win(self.diff_stacked.win) then
+        local win = assert(self.diff_stacked.win)
         local cursor_row = vim.api.nvim_win_get_cursor(win)[1]
-        local lines = vim.api.nvim_buf_get_lines(self.diff_buf.id, 0, -1, false)
+        local lines =
+            vim.api.nvim_buf_get_lines(self.diff_stacked.buf.id, 0, -1, false)
         local start = delta > 0 and cursor_row + 1 or cursor_row - 1
         local stop = delta > 0 and #lines or 1
 
@@ -328,8 +321,8 @@ function M.jump_hunk(self, delta)
         vim.api.nvim_win_set_cursor(win, { target, 0 })
 
         -- Sync the paired window (cursorbind doesn't fire for API moves).
-        local paired = win == self.diff_left_win and self.diff_right_win
-            or (win == self.diff_right_win and self.diff_left_win)
+        local paired = win == self.diff_left.win and self.diff_right.win
+            or (win == self.diff_right.win and self.diff_left.win)
 
         if common.is_valid_win(paired) then
             vim.api.nvim_win_set_cursor(paired, { target, 0 })
@@ -352,16 +345,16 @@ function M.toggle_wrap(self)
 
     self.diff_wrap = not self.diff_wrap
 
-    if common.is_valid_win(self.diff_win) then
-        vim.wo[self.diff_win].wrap = self.diff_wrap
+    if common.is_valid_win(self.diff_stacked.win) then
+        vim.wo[self.diff_stacked.win].wrap = self.diff_wrap
     end
 
-    if common.is_valid_win(self.diff_left_win) then
-        vim.wo[self.diff_left_win].wrap = self.diff_wrap
+    if common.is_valid_win(self.diff_left.win) then
+        vim.wo[self.diff_left.win].wrap = self.diff_wrap
     end
 
-    if common.is_valid_win(self.diff_right_win) then
-        vim.wo[self.diff_right_win].wrap = self.diff_wrap
+    if common.is_valid_win(self.diff_right.win) then
+        vim.wo[self.diff_right.win].wrap = self.diff_wrap
     end
 
     return true
@@ -473,8 +466,8 @@ function M.open_commit_diff(self, commit, opts)
         preview_actions(self)
     )
 
-    if ok and self.diff_buf ~= nil then
-        preview_buffers.clear_goto_code_keymap(self.diff_buf.id)
+    if ok and self.diff_stacked.buf ~= nil then
+        preview_buffers.clear_goto_code_keymap(self.diff_stacked.buf.id)
     end
 
     return ok
@@ -485,18 +478,12 @@ function M.close_diff(self)
     local closed = false
 
     if window_state.has_any_split_diff(self) then
-        closed = window_state.restore_or_close_diff_windows(
-            self,
-            window_state.SPLIT_DIFF_CLOSE_STATES
-        )
+        closed = self.diff_right:restore_or_close(false) or closed
+        closed = self.diff_left:restore_or_close(false) or closed
     end
 
     if window_state.has_open_stacked_diff(self) then
-        closed = window_state.restore_or_close_diff_window(
-            self,
-            window_state.STACKED_DIFF_STATE,
-            false
-        ) or closed
+        closed = self.diff_stacked:restore_or_close(false) or closed
     end
 
     if not closed then
@@ -621,9 +608,9 @@ function M.open_diff(self, entry, section, opts)
             display.focus_open_diff(self)
         end
 
-        if self.diff_buf ~= nil then
+        if self.diff_stacked.buf ~= nil then
             preview_buffers.set_goto_code_keymap(
-                self.diff_buf.id,
+                self.diff_stacked.buf.id,
                 preview_actions(self)
             )
         end
@@ -677,15 +664,15 @@ function M.goto_code(self)
     end
 
     local win = vim.api.nvim_get_current_win()
-    local state = window_state.diff_window_state_for_win(self, win)
+    local dw = window_state.diff_window_for_win(self, win)
 
-    if state == nil then
+    if dw == nil then
         common.notify_warn('Diff preview is not open')
         return false
     end
 
     local diff_buffers, code_win =
-        window_state.close_diff_windows_for_code(self, state)
+        window_state.close_diff_windows_for_code(self, dw)
 
     vim.api.nvim_set_current_win(code_win)
     local finish_related_open = self:begin_related_buffer_open()

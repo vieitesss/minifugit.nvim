@@ -4,9 +4,6 @@ local M = {}
 
 local OWNED_BUFFER_FIELDS = {
     'buf',
-    'diff_buf',
-    'diff_left_buf',
-    'diff_right_buf',
     'help_buf',
 }
 
@@ -50,6 +47,12 @@ local function is_owned_buffer(self, bufnr)
         local buf = self[field]
 
         if buf ~= nil and buf.id == bufnr then
+            return true
+        end
+    end
+
+    for _, dw in ipairs({ self.diff_stacked, self.diff_left, self.diff_right }) do
+        if dw ~= nil and dw.buf ~= nil and dw.buf.id == bufnr then
             return true
         end
     end
