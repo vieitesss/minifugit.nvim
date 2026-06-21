@@ -13,28 +13,10 @@ local display = require('minifugit.ui.status.preview.display')
 local window_state = require('minifugit.ui.status.preview.window_state')
 local preview_util = require('minifugit.ui.status.preview.util')
 local DiffWindow = require('minifugit.ui.status.preview.diff_window')
-
----@class DiffPreviewHostContext
----@field get_status_win fun(): number?
----@field find_target_win fun(): number?
----@field set_target_win fun(win: number)
----@field options MinifugitOptions
----@field groups table<string, string>
----@field get_autocmd_group fun(): integer?
----@field refresh fun(state: GitStatusCursorState?)
----@field begin_related_buffer_open fun(): fun(bufnr: number?)
----@field toggle_help fun()
----@field current_entry_item fun(): GitStatusEntryItem?
----@field current_commit_item fun(): GitStatusCommitItem?
----@field capture_cursor_state fun(): GitStatusCursorState
----@field entry_item_at_row fun(row: integer): GitStatusEntryItem?
----@field commit_item_at_row fun(row: integer): GitStatusCommitItem?
----@field row_for_item_key fun(key: string): integer?
----@field row_for_entry_key fun(key: string): integer?
----@field row_for_commit_key fun(key: string): integer?
+local selection = require('minifugit.ui.status.selection')
 
 ---@class DiffPreview
----@field ctx DiffPreviewHostContext
+---@field host GitStatusWindow
 ---@field options MinifugitOptions
 ---@field groups table<string, string>
 ---@field stacked DiffWindow
@@ -57,43 +39,15 @@ local DiffWindow = require('minifugit.ui.status.preview.diff_window')
 local DiffPreview = {}
 DiffPreview.__index = DiffPreview
 
----@param ctx DiffPreviewHostContext
+---@param host GitStatusWindow
 ---@return DiffPreview
-function DiffPreview.new(ctx)
-    vim.validate('ctx', ctx, 'table')
-    vim.validate('ctx.options', ctx.options, 'table')
-    vim.validate('ctx.options.preview', ctx.options.preview, 'table')
-    vim.validate('ctx.groups', ctx.groups, 'table')
-    vim.validate('ctx.get_status_win', ctx.get_status_win, 'function')
-    vim.validate('ctx.find_target_win', ctx.find_target_win, 'function')
-    vim.validate('ctx.set_target_win', ctx.set_target_win, 'function')
-    vim.validate('ctx.get_autocmd_group', ctx.get_autocmd_group, 'function')
-    vim.validate('ctx.refresh', ctx.refresh, 'function')
-    vim.validate(
-        'ctx.begin_related_buffer_open',
-        ctx.begin_related_buffer_open,
-        'function'
-    )
-    vim.validate('ctx.toggle_help', ctx.toggle_help, 'function')
-    vim.validate('ctx.current_entry_item', ctx.current_entry_item, 'function')
-    vim.validate('ctx.current_commit_item', ctx.current_commit_item, 'function')
-    vim.validate(
-        'ctx.capture_cursor_state',
-        ctx.capture_cursor_state,
-        'function'
-    )
-    vim.validate('ctx.entry_item_at_row', ctx.entry_item_at_row, 'function')
-    vim.validate('ctx.commit_item_at_row', ctx.commit_item_at_row, 'function')
-    vim.validate('ctx.row_for_item_key', ctx.row_for_item_key, 'function')
-    vim.validate('ctx.row_for_entry_key', ctx.row_for_entry_key, 'function')
-    vim.validate('ctx.row_for_commit_key', ctx.row_for_commit_key, 'function')
+function DiffPreview.new(host)
+    local preview_opts = host.options.preview
 
-    local preview_opts = ctx.options.preview
-
-    return setmetatable({
-        ctx = ctx,
-        options = ctx.options,
-        groups = ctx.groups,
+    local obj = setmetatable({
+        host = host,
+        options = host.options,
+        groups = host.groups,
         stacked = DiffWindow.new(false),
         left = DiffWindow.new(true),
         right = DiffWindow.new(true),
@@ -102,6 +56,71 @@ function DiffPreview.new(ctx)
         show_numbers = preview_opts.show_line_numbers,
         layout = preview_opts.diff_layout,
     }, DiffPreview)
+
+    obj.actions = {
+        close_diff = function()
+            obj:close()
+        end,
+        jump_hunk = function(delta)
+            obj:jump_hunk(delta)
+        end,
+        toggle_wrap = function()
+            obj:toggle_wrap()
+        end,
+        toggle_numbers = function()
+            local win = vim.api.nvim_get_current_win()
+            local ok = obj:toggle_numbers()
+            if ok and not common.is_valid_win(win) then
+                display.focus_open_diff(obj)
+            end
+            return ok
+        end,
+        toggle_headers = function()
+            local win = vim.api.nvim_get_current_win()
+            local ok = obj:toggle_headers()
+            if ok and not common.is_valid_win(win) then
+                display.focus_open_diff(obj)
+            end
+            return ok
+        end,
+        toggle_split_numbers = function()
+            obj:toggle_split_numbers()
+        end,
+        stage_current_hunk = function()
+            obj:stage_current_hunk()
+        end,
+        unstage_current_hunk = function()
+            obj:unstage_current_hunk()
+        end,
+        discard_current_hunk = function()
+            obj:discard_current_hunk()
+        end,
+        toggle_layout = function()
+            local win = vim.api.nvim_get_current_win()
+            local ok = obj:toggle_layout()
+            if ok and not common.is_valid_win(win) then
+                display.focus_open_diff(obj)
+            end
+            return ok
+        end,
+        goto_code = function()
+            obj:goto_code()
+        end,
+        toggle_help = function()
+            obj.host:toggle_help()
+        end,
+        has_open_diff = function()
+            return obj:has_open()
+        end,
+        focus_open_diff = function()
+            obj:focus()
+        end,
+        refresh = function(cursor_state)
+            obj.host:refresh(cursor_state)
+        end,
+    }
+
+    return obj
 end
 
 -- ── Internal helpers ─────────────────────────────────────────────────────────
@@ -135,78 +154,10 @@ local function set_context(self, lines, raw_rows, diff_hunks, section, entry)
 end
 
 ---@param self DiffPreview
----@param action fun(): boolean
----@return fun(): boolean
-local function keep_or_focus(self, action)
-    return function()
-        local win = vim.api.nvim_get_current_win()
-        local ok = action()
-
-        if ok and not common.is_valid_win(win) then
-            display.focus_open_diff(self)
-        end
-
-        return ok
-    end
-end
-
----@param self DiffPreview
----@return MiniFugitPreviewActions
-local function preview_actions(self)
-    return {
-        close_diff = function()
-            self:close()
-        end,
-        jump_hunk = function(delta)
-            self:jump_hunk(delta)
-        end,
-        toggle_wrap = function()
-            self:toggle_wrap()
-        end,
-        toggle_numbers = keep_or_focus(self, function()
-            return self:toggle_numbers()
-        end),
-        toggle_headers = keep_or_focus(self, function()
-            return self:toggle_headers()
-        end),
-        toggle_split_numbers = function()
-            self:toggle_split_numbers()
-        end,
-        stage_current_hunk = function()
-            self:stage_current_hunk()
-        end,
-        unstage_current_hunk = function()
-            self:unstage_current_hunk()
-        end,
-        discard_current_hunk = function()
-            self:discard_current_hunk()
-        end,
-        toggle_layout = keep_or_focus(self, function()
-            return self:toggle_layout()
-        end),
-        goto_code = function()
-            self:goto_code()
-        end,
-        toggle_help = function()
-            self.ctx.toggle_help()
-        end,
-        has_open_diff = function()
-            return self:has_open()
-        end,
-        focus_open_diff = function()
-            self:focus()
-        end,
-        refresh = function(cursor_state)
-            self.ctx.refresh(cursor_state)
-        end,
-    }
-end
-
----@param self DiffPreview
 ---@param state GitStatusCursorState?
 ---@return GitStatusEntryItem?
 local function refresh_entry_item(self, state)
-    local item = self.ctx.current_entry_item()
+    local item = selection.current_entry_item(self.host)
 
     if item ~= nil then
         return item
@@ -217,8 +168,9 @@ local function refresh_entry_item(self, state)
     end
 
     if state.item_key ~= nil then
-        local row = self.ctx.row_for_item_key(state.item_key)
-        item = row ~= nil and self.ctx.entry_item_at_row(row) or nil
+        local row = selection.row_for_item_key(self.host, state.item_key)
+        local line = row ~= nil and self.host.lines[row] or nil
+        item = selection.entry_item_from_data(line and line.data)
 
         if item ~= nil then
             return item
@@ -226,8 +178,9 @@ local function refresh_entry_item(self, state)
     end
 
     if state.entry_key ~= nil then
-        local row = self.ctx.row_for_entry_key(state.entry_key)
-        return row ~= nil and self.ctx.entry_item_at_row(row) or nil
+        local row = selection.row_for_entry_key(self.host, state.entry_key)
+        local line = row ~= nil and self.host.lines[row] or nil
+        return selection.entry_item_from_data(line and line.data)
     end
 
     return nil
@@ -237,7 +190,7 @@ end
 ---@param state GitStatusCursorState?
 ---@return GitStatusCommitItem?
 local function refresh_commit_item(self, state)
-    local item = self.ctx.current_commit_item()
+    local item = selection.current_commit_item(self.host)
 
     if item ~= nil then
         return item
@@ -248,8 +201,9 @@ local function refresh_commit_item(self, state)
     end
 
     if state.commit_key ~= nil then
-        local row = self.ctx.row_for_commit_key(state.commit_key)
-        return row ~= nil and self.ctx.commit_item_at_row(row) or nil
+        local row = selection.row_for_commit_key(self.host, state.commit_key)
+        local line = row ~= nil and self.host.lines[row] or nil
+        return selection.commit_item_from_data(line and line.data)
     end
 
     return nil
@@ -312,27 +266,16 @@ function DiffPreview:toggle_wrap()
     return true
 end
 
----@param self DiffPreview
----@param option 'numbers'|'headers'
 ---@return boolean
-local function toggle_render_option(self, option)
-    if option == 'numbers' then
-        self.show_numbers = not self.show_numbers
-    else
-        self.show_headers = not self.show_headers
-    end
-
+function DiffPreview:toggle_numbers()
+    self.show_numbers = not self.show_numbers
     return self:refresh() == true
 end
 
 ---@return boolean
-function DiffPreview:toggle_numbers()
-    return toggle_render_option(self, 'numbers')
-end
-
----@return boolean
 function DiffPreview:toggle_headers()
-    return toggle_render_option(self, 'headers')
+    self.show_headers = not self.show_headers
+    return self:refresh() == true
 end
 
 ---@return boolean
@@ -509,7 +452,7 @@ function DiffPreview:goto_code()
         window_state.close_diff_windows_for_code(self, dw)
 
     vim.api.nvim_set_current_win(code_win)
-    local finish_related_open = self.ctx.begin_related_buffer_open()
+    local finish_related_open = self.host:begin_related_buffer_open()
     local ok, err = pcall(function()
         vim.cmd('keepalt keepjumps edit ' .. vim.fn.fnameescape(path))
     end)
@@ -522,7 +465,7 @@ function DiffPreview:goto_code()
     end
 
     preview_cursor.set_cursor_row(code_win, position.line)
-    self.ctx.set_target_win(code_win)
+    self.host.target_win = code_win
 
     window_state.delete_diff_buffers(diff_buffers)
 
@@ -531,34 +474,22 @@ end
 
 ---@return boolean
 function DiffPreview:stage_current_hunk()
-    return preview_hunks.apply_current_hunk(
-        self,
-        'stage',
-        preview_actions(self)
-    )
+    return preview_hunks.apply_current_hunk(self, 'stage', self.actions)
 end
 
 ---@return boolean
 function DiffPreview:unstage_current_hunk()
-    return preview_hunks.apply_current_hunk(
-        self,
-        'unstage',
-        preview_actions(self)
-    )
+    return preview_hunks.apply_current_hunk(self, 'unstage', self.actions)
 end
 
 ---@return boolean
 function DiffPreview:discard_current_hunk()
-    return preview_hunks.apply_current_hunk(
-        self,
-        'discard',
-        preview_actions(self)
-    )
+    return preview_hunks.apply_current_hunk(self, 'discard', self.actions)
 end
 
 ---@return Buffer
 function DiffPreview:ensure_diff_buf()
-    return preview_buffers.ensure_stacked(self, preview_actions(self))
+    return preview_buffers.ensure_stacked(self, self.actions)
 end
 
 ---@return nil
@@ -611,7 +542,7 @@ function DiffPreview:open_commit(commit, opts)
         diff_lines,
         preview_key,
         commit_diff_title(commit),
-        preview_actions(self)
+        self.actions
     )
 
     if ok and self.stacked.buf ~= nil then
@@ -665,7 +596,7 @@ function DiffPreview:open(entry, section, opts)
                 parsed_hunks,
                 preview_key,
                 diff_title(entry, section),
-                preview_actions(self)
+                self.actions
             )
 
             if ok then
@@ -713,7 +644,7 @@ function DiffPreview:open(entry, section, opts)
         diff_lines,
         preview_key,
         diff_title(entry, section),
-        preview_actions(self)
+        self.actions
     )
 
     if ok then
@@ -726,7 +657,7 @@ function DiffPreview:open(entry, section, opts)
         if self.stacked.buf ~= nil then
             preview_buffers.set_goto_code_keymap(
                 self.stacked.buf.id,
-                preview_actions(self)
+                self.actions
             )
         end
     end
@@ -754,10 +685,8 @@ function DiffPreview:close()
     self.preview_key = nil
     set_context(self, nil, nil, nil, nil, nil)
 
-    local status_win = self.ctx.get_status_win()
-
-    if status_win ~= nil and common.is_valid_win(status_win) then
-        vim.api.nvim_set_current_win(status_win)
+    if self.host.win ~= nil and common.is_valid_win(self.host.win) then
+        vim.api.nvim_set_current_win(self.host.win)
     end
 end
 
@@ -794,7 +723,7 @@ end
 function DiffPreview:preview_current_entry(opts)
     opts = opts or {}
 
-    local item = self.ctx.current_entry_item()
+    local item = selection.current_entry_item(self.host)
 
     if item == nil then
         if opts.notify ~= false then
@@ -815,7 +744,7 @@ end
 function DiffPreview:preview_current_commit(opts)
     opts = opts or {}
 
-    local item = self.ctx.current_commit_item()
+    local item = selection.current_commit_item(self.host)
 
     if item == nil then
         if opts.notify ~= false then

@@ -113,7 +113,7 @@ end
 ---@param self DiffPreview
 ---@param buf integer
 function M.attach_autocmds(self, buf)
-    local ag = self.ctx.get_autocmd_group()
+    local ag = self.host.autocmd_group
 
     if ag == nil then
         return

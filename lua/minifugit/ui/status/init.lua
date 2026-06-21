@@ -687,66 +687,7 @@ function GitStatusWindow.new(opts)
     local buf_opts = { listed = false, scratch = true, name = 'Minifugit' }
     self.buf = Buffer.new(buf_opts)
 
-    ---@type DiffPreviewHostContext
-    local ctx = {
-        get_status_win = function()
-            return self.win
-        end,
-        find_target_win = function()
-            return window.find_target_win(self)
-        end,
-        set_target_win = function(win)
-            self.target_win = win
-        end,
-        options = opts,
-        groups = self.groups,
-        get_autocmd_group = function()
-            return self.autocmd_group
-        end,
-        refresh = function(state)
-            self:refresh(state)
-        end,
-        begin_related_buffer_open = function()
-            return self:begin_related_buffer_open()
-        end,
-        toggle_help = function()
-            self:toggle_help()
-        end,
-        current_entry_item = function()
-            return selection.current_entry_item(self)
-        end,
-        current_commit_item = function()
-            return selection.current_commit_item(self)
-        end,
-        capture_cursor_state = function()
-            return selection.capture_cursor_state(self)
-        end,
-        entry_item_at_row = function(row)
-            local line = self.lines[row]
-            if line == nil then
-                return nil
-            end
-            return selection.entry_item_from_data(line.data)
-        end,
-        commit_item_at_row = function(row)
-            local line = self.lines[row]
-            if line == nil then
-                return nil
-            end
-            return selection.commit_item_from_data(line.data)
-        end,
-        row_for_item_key = function(key)
-            return selection.row_for_item_key(self, key)
-        end,
-        row_for_entry_key = function(key)
-            return selection.row_for_entry_key(self, key)
-        end,
-        row_for_commit_key = function(key)
-            return selection.row_for_commit_key(self, key)
-        end,
-    }
-
-    self.preview = DiffPreview.new(ctx)
+    self.preview = DiffPreview.new(self)
 
     keymaps.attach(self)
     self:render()

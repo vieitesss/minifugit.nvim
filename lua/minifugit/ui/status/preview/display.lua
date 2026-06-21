@@ -62,7 +62,7 @@ end
 ---@param self DiffPreview
 ---@return boolean
 local function has_only_status_window(self)
-    local status_win = self.ctx.get_status_win()
+    local status_win = self.host.win
 
     if not common.is_valid_win(status_win) then
         return false
@@ -76,7 +76,7 @@ end
 ---@param self DiffPreview
 ---@return MiniFugitStatusWinState?
 local function make_status_win_resizable(self)
-    local status_win = self.ctx.get_status_win()
+    local status_win = self.host.win
 
     if not common.is_valid_win(status_win) then
         return nil
@@ -103,7 +103,7 @@ end
 ---@param self DiffPreview
 ---@param state MiniFugitStatusWinState?
 local function restore_status_win_state(self, state)
-    local status_win = self.ctx.get_status_win()
+    local status_win = self.host.win
 
     if state == nil or not common.is_valid_win(status_win) then
         return
@@ -120,7 +120,7 @@ end
 ---@return number?
 local function create_preview_split(self, anchor_win, command, status_win_state)
     local current_win = vim.api.nvim_get_current_win()
-    local status_win = self.ctx.get_status_win()
+    local status_win = self.host.win
     local split_win
     local ok, err = pcall(function()
         local win = common.is_valid_win(anchor_win) and anchor_win or status_win
@@ -176,7 +176,7 @@ local function set_win_buf(self, win, buf, created, status_win_state)
         pcall(vim.api.nvim_win_close, win, true)
     end
 
-    local status_win = self.ctx.get_status_win()
+    local status_win = self.host.win
 
     if status_win ~= nil and common.is_valid_win(status_win) then
         pcall(vim.api.nvim_set_current_win, status_win)
@@ -190,7 +190,7 @@ end
 local function resize_split_windows(self)
     local width = math.max(1, math.floor((vim.o.columns - 2) / 3))
 
-    local status_win = self.ctx.get_status_win()
+    local status_win = self.host.win
 
     for _, win in ipairs({ status_win, self.left.win, self.right.win }) do
         if common.is_valid_win(win) then
@@ -264,10 +264,10 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
     elseif window_state.has_open_stacked_diff(self) then
         target_win = assert(self.stacked.win)
     else
-        target_win = self.ctx.find_target_win()
+        target_win = window.find_target_win(self.host)
 
         if target_win == nil then
-            local status_win = self.ctx.get_status_win()
+            local status_win = self.host.win
             target_win = create_preview_split(
                 self,
                 status_win,
@@ -567,10 +567,10 @@ function M.show_split(
     elseif window_state.has_open_split_diff(self) then
         target_win = assert(self.left.win)
     else
-        target_win = self.ctx.find_target_win()
+        target_win = window.find_target_win(self.host)
 
         if target_win == nil then
-            local status_win = self.ctx.get_status_win()
+            local status_win = self.host.win
             target_win = create_preview_split(
                 self,
                 status_win,
