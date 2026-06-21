@@ -3,16 +3,16 @@ require('minifugit.ui.status.preview.types')
 local common = require('minifugit.ui.status.common')
 local diff_position = require('minifugit.ui.diff.position')
 local git = require('minifugit.git')
-local selection = require('minifugit.ui.status.selection')
 local preview_cursor = require('minifugit.ui.status.preview.cursor')
+local selection = require('minifugit.ui.status.selection')
 
 local M = {}
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@param hunk MiniFugitDiffHunk
 ---@return string[]?
 function M.hunk_patch(self, hunk)
-    local lines = self.diff_raw_lines
+    local lines = self.raw_lines
 
     if lines == nil then
         common.notify_warn('Diff preview is not open')
@@ -50,11 +50,11 @@ function M.hunk_patch(self, hunk)
     return patch
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@param callbacks MiniFugitPreviewActions
 ---@return string[]?
 function M.current_hunk_patch(self, callbacks)
-    if not callbacks.has_open_diff() or self.diff_raw_lines == nil then
+    if not callbacks.has_open_diff() or self.raw_lines == nil then
         common.notify_warn('Diff preview is not open')
         return nil
     end
@@ -66,8 +66,7 @@ function M.current_hunk_patch(self, callbacks)
         return nil
     end
 
-    local hunk =
-        diff_position.hunk_by_index(self.diff_hunks, position.hunk_index)
+    local hunk = diff_position.hunk_by_index(self.hunks, position.hunk_index)
 
     if hunk == nil then
         common.notify_warn('No hunk under cursor')
@@ -77,12 +76,12 @@ function M.current_hunk_patch(self, callbacks)
     return M.hunk_patch(self, hunk)
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@param kind 'stage'|'unstage'|'discard'
 ---@param callbacks MiniFugitPreviewActions
 ---@return boolean
 function M.apply_current_hunk(self, kind, callbacks)
-    local section = self.diff_section
+    local section = self.section
 
     if kind == 'stage' and section ~= 'unstaged' then
         common.notify_warn('No unstaged hunk to stage')
@@ -113,7 +112,7 @@ function M.apply_current_hunk(self, kind, callbacks)
         return false
     end
 
-    local cursor_state = selection.capture_cursor_state(self)
+    local cursor_state = selection.capture_cursor_state(self.host)
     local ok, err = git.apply_hunk(patch, kind)
 
     if not ok then

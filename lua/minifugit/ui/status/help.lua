@@ -150,7 +150,7 @@ function M.toggle(self)
     end
 
     local lines = help_lines({
-        include_status_diff_mappings = self.diff_context_entry ~= nil,
+        include_status_diff_mappings = self.preview.context_entry ~= nil,
     })
     local max_width = math.min(vim.o.columns, math.max(24, vim.o.columns - 4))
     local max_height = math.min(vim.o.lines, math.max(6, vim.o.lines - 4))

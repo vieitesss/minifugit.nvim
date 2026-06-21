@@ -7,32 +7,15 @@ local log = require('minifugit.log')
 local actions = require('minifugit.ui.status.actions')
 local common = require('minifugit.ui.status.common')
 local keymaps = require('minifugit.ui.status.keymaps')
-local preview = require('minifugit.ui.status.preview')
+local DiffPreview = require('minifugit.ui.status.preview.diff_preview')
 local selection = require('minifugit.ui.status.selection')
 local status_tab = require('minifugit.ui.status.tab')
 local window = require('minifugit.ui.status.window')
-local DiffWindow = require('minifugit.ui.status.preview.diff_window')
 local git = require('minifugit.git')
 
 ---@class GitStatusWindow
 ---@field buf Buffer
----@field diff_stacked DiffWindow
----@field diff_left DiffWindow
----@field diff_right DiffWindow
----@field diff_left_rows MiniFugitSplitRow[]?
----@field diff_right_rows MiniFugitSplitRow[]?
----@field diff_anchors table<integer, integer>?
----@field diff_preview_key string?
----@field diff_raw_lines string[]?
----@field diff_raw_rows integer[]?
----@field diff_hunks MiniFugitDiffHunk[]?
----@field diff_section GitStatusSectionName?
----@field diff_context_entry GitStatusEntry?
----@field diff_wrap boolean
----@field diff_show_headers boolean
----@field diff_show_numbers boolean
----@field diff_layout 'stacked'|'split'|'auto'
----@field diff_layout_override 'stacked'|'split'?
+---@field preview DiffPreview
 ---@field help_buf Buffer?
 ---@field help_win number?
 ---@field help_prev_win number?
@@ -286,12 +269,8 @@ local function refresh_highlights(self)
         render.apply(self.buf.id, self.lines)
     end
 
-    if
-        self.diff_stacked.buf ~= nil
-        and self.diff_stacked.buf:is_valid()
-        and preview.has_open_diff(self)
-    then
-        preview.refresh_current_entry(self)
+    if self.preview:has_open() then
+        self.preview:refresh()
     end
 end
 
@@ -409,7 +388,7 @@ function GitStatusWindow:refresh(state)
 
     self:render()
     selection.restore_cursor_state(self, state)
-    preview.refresh_current_entry(self, state)
+    self.preview:refresh(state)
 
     return true
 end
@@ -419,13 +398,13 @@ function GitStatusWindow:diff_entry()
     local commit_item = selection.current_commit_item(self)
 
     if commit_item ~= nil then
-        return preview.preview_current_commit(self, {
+        return self.preview:preview_current_commit({
             force = true,
             notify = true,
         })
     end
 
-    return preview.preview_current_entry(self, {
+    return self.preview:preview_current_entry({
         force = true,
         notify = true,
         focus = true,
@@ -483,7 +462,7 @@ function GitStatusWindow:enter_entry()
     local commit_item = selection.current_commit_item(self)
 
     if commit_item ~= nil then
-        return preview.preview_current_commit(self, {
+        return self.preview:preview_current_commit({
             force = true,
             notify = true,
         })
@@ -496,8 +475,8 @@ function GitStatusWindow:enter_entry()
         return false
     end
 
-    if preview.has_open_diff(self) then
-        preview.close_diff(self)
+    if self.preview:has_open() then
+        self.preview:close()
     end
 
     return window.open_entry(self, entry)
@@ -512,8 +491,8 @@ function GitStatusWindow:close()
     self:stop_loading()
     help.close(self)
 
-    if preview.has_open_diff(self) then
-        preview.close_diff(self)
+    if self.preview:has_open() then
+        self.preview:close()
     end
 
     if self.win ~= nil and common.is_valid_win(self.win) then
@@ -566,10 +545,7 @@ function GitStatusWindow:delete_owned_buffers()
         self[field] = nil
     end
 
-    for _, dw in ipairs({ self.diff_stacked, self.diff_left, self.diff_right }) do
-        delete_owned_buffer(dw.buf)
-        dw.buf = nil
-    end
+    self.preview:delete_owned_buffers()
 end
 
 ---@return boolean destroyed
@@ -700,13 +676,6 @@ function GitStatusWindow.new(opts)
     self.groups = create_highlight_groups()
     self.highlights = create_highlights()
     self.lines = {}
-    self.diff_stacked = DiffWindow.new(false)
-    self.diff_left = DiffWindow.new(true)
-    self.diff_right = DiffWindow.new(true)
-    self.diff_wrap = opts.preview.wrap
-    self.diff_show_headers = opts.preview.show_metadata
-    self.diff_show_numbers = opts.preview.show_line_numbers
-    self.diff_layout = opts.preview.diff_layout
     self.filter = ''
     self.loading_frame = 1
     self.target_win = vim.api.nvim_get_current_win()
@@ -717,6 +686,8 @@ function GitStatusWindow.new(opts)
     ---@type BufferOpts
     local buf_opts = { listed = false, scratch = true, name = 'Minifugit' }
     self.buf = Buffer.new(buf_opts)
+
+    self.preview = DiffPreview.new(self)
 
     keymaps.attach(self)
     self:render()

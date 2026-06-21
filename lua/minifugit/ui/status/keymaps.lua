@@ -1,5 +1,3 @@
-local preview = require('minifugit.ui.status.preview')
-
 local M = {}
 
 ---@param self GitStatusWindow
@@ -136,7 +134,7 @@ function M.attach(self)
     })
 
     vim.keymap.set('n', 'aw', function()
-        preview.toggle_wrap(self)
+        self.preview:toggle_wrap()
     end, {
         buffer = self.buf.id,
         desc = 'Alternate diff preview line wrapping',
@@ -144,7 +142,7 @@ function M.attach(self)
     })
 
     vim.keymap.set('n', 'an', function()
-        preview.toggle_numbers(self)
+        self.preview:toggle_numbers()
     end, {
         buffer = self.buf.id,
         desc = 'Alternate diff preview line numbers',
@@ -152,7 +150,7 @@ function M.attach(self)
     })
 
     vim.keymap.set('n', 'am', function()
-        preview.toggle_headers(self)
+        self.preview:toggle_headers()
     end, {
         buffer = self.buf.id,
         desc = 'Alternate stacked diff preview metadata rows',
@@ -160,7 +158,7 @@ function M.attach(self)
     })
 
     vim.keymap.set('n', 'al', function()
-        preview.toggle_layout(self)
+        self.preview:toggle_layout()
     end, {
         buffer = self.buf.id,
         desc = 'Alternate diff preview between stacked and split layout',
@@ -192,11 +190,11 @@ function M.attach(self)
                 return
             end
 
-            if preview.has_open_diff(self) then
+            if self.preview:has_open() then
                 local opts = { force = false, notify = false }
 
-                if not preview.preview_current_commit(self, opts) then
-                    preview.preview_current_entry(self, opts)
+                if not self.preview:preview_current_commit(opts) then
+                    self.preview:preview_current_entry(opts)
                 end
             end
         end,

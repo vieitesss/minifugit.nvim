@@ -34,21 +34,21 @@ function M.set_split_line_numbers(win, enabled)
     vim.wo[win].statuscolumn = enabled and '%l %s ' or '%s '
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@return boolean
 function M.toggle_split_numbers(self)
     local enabled = false
 
-    for _, win in ipairs({ self.diff_left.win, self.diff_right.win }) do
+    for _, win in ipairs({ self.left.win, self.right.win }) do
         if common.is_valid_win(win) then
             enabled = not vim.wo[win].number
             break
         end
     end
 
-    self.diff_show_numbers = enabled
+    self.show_numbers = enabled
 
-    for _, win in ipairs({ self.diff_left.win, self.diff_right.win }) do
+    for _, win in ipairs({ self.left.win, self.right.win }) do
         M.set_split_line_numbers(win, enabled)
     end
 
@@ -59,26 +59,30 @@ end
 ---@field winfixwidth boolean
 ---@field width integer
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@return boolean
 local function has_only_status_window(self)
-    if not common.is_valid_win(self.win) then
+    local status_win = self.host.win
+
+    if not common.is_valid_win(status_win) then
         return false
     end
 
-    local tabpage = vim.api.nvim_win_get_tabpage(self.win)
+    local tabpage = vim.api.nvim_win_get_tabpage(status_win)
 
     return window.normal_window_count(tabpage) == 1
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@return MiniFugitStatusWinState?
 local function make_status_win_resizable(self)
-    if not common.is_valid_win(self.win) then
+    local status_win = self.host.win
+
+    if not common.is_valid_win(status_win) then
         return nil
     end
 
-    local width = vim.api.nvim_win_get_width(self.win)
+    local width = vim.api.nvim_win_get_width(status_win)
 
     if has_only_status_window(self) then
         width = math.min(
@@ -88,35 +92,38 @@ local function make_status_win_resizable(self)
     end
 
     local state = {
-        winfixwidth = vim.wo[self.win].winfixwidth,
+        winfixwidth = vim.wo[status_win].winfixwidth,
         width = width,
     }
-    vim.wo[self.win].winfixwidth = false
+    vim.wo[status_win].winfixwidth = false
 
     return state
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@param state MiniFugitStatusWinState?
 local function restore_status_win_state(self, state)
-    if state == nil or not common.is_valid_win(self.win) then
+    local status_win = self.host.win
+
+    if state == nil or not common.is_valid_win(status_win) then
         return
     end
 
-    pcall(vim.api.nvim_win_set_width, self.win, state.width)
-    vim.wo[self.win].winfixwidth = state.winfixwidth
+    pcall(vim.api.nvim_win_set_width, status_win, state.width)
+    vim.wo[status_win].winfixwidth = state.winfixwidth
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@param anchor_win number?
 ---@param command string
 ---@param status_win_state MiniFugitStatusWinState?
 ---@return number?
 local function create_preview_split(self, anchor_win, command, status_win_state)
     local current_win = vim.api.nvim_get_current_win()
+    local status_win = self.host.win
     local split_win
     local ok, err = pcall(function()
-        local win = common.is_valid_win(anchor_win) and anchor_win or self.win
+        local win = common.is_valid_win(anchor_win) and anchor_win or status_win
 
         if common.is_valid_win(win) then
             vim.api.nvim_win_call(win, function()
@@ -145,7 +152,7 @@ local function create_preview_split(self, anchor_win, command, status_win_state)
     return split_win
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@param win number
 ---@param buf integer
 ---@param created boolean
@@ -169,47 +176,51 @@ local function set_win_buf(self, win, buf, created, status_win_state)
         pcall(vim.api.nvim_win_close, win, true)
     end
 
-    if self.win ~= nil and common.is_valid_win(self.win) then
-        pcall(vim.api.nvim_set_current_win, self.win)
+    local status_win = self.host.win
+
+    if status_win ~= nil and common.is_valid_win(status_win) then
+        pcall(vim.api.nvim_set_current_win, status_win)
     end
 
     common.notify_error(tostring(err), 'Cannot open diff preview')
     return false
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 local function resize_split_windows(self)
     local width = math.max(1, math.floor((vim.o.columns - 2) / 3))
 
-    for _, win in ipairs({ self.win, self.diff_left.win, self.diff_right.win }) do
+    local status_win = self.host.win
+
+    for _, win in ipairs({ status_win, self.left.win, self.right.win }) do
         if common.is_valid_win(win) then
             pcall(vim.api.nvim_win_set_width, win, width)
         end
     end
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@return boolean
 function M.focus_open_diff(self)
-    if common.is_valid_win(self.diff_stacked.win) then
-        vim.api.nvim_set_current_win(self.diff_stacked.win)
+    if common.is_valid_win(self.stacked.win) then
+        vim.api.nvim_set_current_win(self.stacked.win)
         return true
     end
 
-    if common.is_valid_win(self.diff_right.win) then
-        vim.api.nvim_set_current_win(self.diff_right.win)
+    if common.is_valid_win(self.right.win) then
+        vim.api.nvim_set_current_win(self.right.win)
         return true
     end
 
-    if common.is_valid_win(self.diff_left.win) then
-        vim.api.nvim_set_current_win(self.diff_left.win)
+    if common.is_valid_win(self.left.win) then
+        vim.api.nvim_set_current_win(self.left.win)
         return true
     end
 
     return false
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@param diff_lines MiniFugitRenderLine[]
 ---@param preview_key string
 ---@param title string
@@ -223,16 +234,16 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
     local transition_created_win = false
 
     if window_state.has_any_split_diff(self) then
-        if common.is_valid_win(self.diff_right.win) then
-            self.diff_right:restore_or_close(false)
+        if common.is_valid_win(self.right.win) then
+            self.right:restore_or_close(false)
         end
 
-        if common.is_valid_win(self.diff_left.win) then
-            transition_win = self.diff_left.win
-            transition_prev_buf = self.diff_left.prev_buf
-            transition_prev_winopts = self.diff_left.prev_winopts
-            transition_created_win = self.diff_left.created
-            self.diff_left:clear()
+        if common.is_valid_win(self.left.win) then
+            transition_win = self.left.win
+            transition_prev_buf = self.left.prev_buf
+            transition_prev_winopts = self.left.prev_winopts
+            transition_created_win = self.left.created
+            self.left:clear()
         end
     end
 
@@ -251,14 +262,15 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
     if transition_win ~= nil and common.is_valid_win(transition_win) then
         target_win = transition_win
     elseif window_state.has_open_stacked_diff(self) then
-        target_win = assert(self.diff_stacked.win)
+        target_win = assert(self.stacked.win)
     else
-        target_win = window.find_target_win(self)
+        target_win = window.find_target_win(self.host)
 
         if target_win == nil then
+            local status_win = self.host.win
             target_win = create_preview_split(
                 self,
-                self.win,
+                status_win,
                 'rightbelow vsplit',
                 status_winfixwidth
             )
@@ -274,17 +286,17 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
     target_win = assert(target_win)
     local previous_buf = vim.api.nvim_win_get_buf(target_win)
     local was_diff_preview = previous_buf == buf.id
-        and self.diff_stacked.win == target_win
+        and self.stacked.win == target_win
 
     if transition_win == target_win then
-        self.diff_stacked.prev_buf = transition_prev_buf or previous_buf
-        self.diff_stacked.prev_winopts = transition_prev_winopts
+        self.stacked.prev_buf = transition_prev_buf or previous_buf
+        self.stacked.prev_winopts = transition_prev_winopts
             or window.capture_winopts(target_win)
-        self.diff_stacked.created = transition_created_win
+        self.stacked.created = transition_created_win
     elseif not was_diff_preview then
-        self.diff_stacked.prev_buf = previous_buf
-        self.diff_stacked.prev_winopts = window.capture_winopts(target_win)
-        self.diff_stacked.created = created_win
+        self.stacked.prev_buf = previous_buf
+        self.stacked.prev_winopts = window.capture_winopts(target_win)
+        self.stacked.created = created_win
     end
 
     if
@@ -301,10 +313,10 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
     end
 
     window.configure_diff_win(target_win)
-    vim.wo[target_win].wrap = self.diff_wrap
+    vim.wo[target_win].wrap = self.wrap
     vim.wo[target_win].winbar = title
-    self.diff_stacked.win = target_win
-    self.diff_preview_key = preview_key
+    self.stacked.win = target_win
+    self.preview_key = preview_key
 
     restore_current_win(current_win)
 
@@ -368,7 +380,6 @@ local function apply_split_intraline_highlights(
     local text_hl = side == 'left' and groups.diff_removed_intraline
         or groups.diff_added_intraline
 
-    -- Parse all diff lines once, indexed by raw_row.
     local parsed = diff_parser.parse_lines(raw_diff_lines or {})
     ---@type table<integer, MiniFugitDiffLine>
     local by_raw_row = {}
@@ -447,7 +458,7 @@ local function apply_split_intraline_highlights(
     end
 end
 
----@param self GitStatusWindow
+---@param self DiffPreview
 ---@param split_diff GitSplitDiff
 ---@param diff_lines string[]
 ---@param hunks MiniFugitDiffHunk[]
@@ -474,14 +485,13 @@ function M.show_split(
         window_state.has_open_diff(self)
         and not window_state.has_open_split_diff(self)
     then
-        transition_win = self.diff_stacked.win
-        transition_prev_buf = self.diff_stacked.prev_buf
-        transition_prev_winopts = self.diff_stacked.prev_winopts
-        transition_created_win = self.diff_stacked.created
-        self.diff_stacked:clear()
+        transition_win = self.stacked.win
+        transition_prev_buf = self.stacked.prev_buf
+        transition_prev_winopts = self.stacked.prev_winopts
+        transition_created_win = self.stacked.created
+        self.stacked:clear()
     end
 
-    -- Build hunk-only alignment from split_diff contents and parsed hunks.
     local alignment = split_align.align(
         split_diff.left.lines,
         split_diff.right.lines,
@@ -492,26 +502,24 @@ function M.show_split(
     local left_buf = buffers.ensure_split(
         self,
         'Minifugit diff left',
-        self.diff_left.buf,
+        self.left.buf,
         actions
     )
     local right_buf = buffers.ensure_split(
         self,
         'Minifugit diff right',
-        self.diff_right.buf,
+        self.right.buf,
         actions
     )
 
-    self.diff_left.buf = left_buf
-    self.diff_right.buf = right_buf
+    self.left.buf = left_buf
+    self.right.buf = right_buf
     window_state.attach_autocmds(self, left_buf.id)
     window_state.attach_autocmds(self, right_buf.id)
 
-    -- Write aligned lines (hunks only) to both buffers.
     buffers.set_plain_lines(left_buf, alignment.left_lines)
     buffers.set_plain_lines(right_buf, alignment.right_lines)
 
-    -- Apply line-background and intra-line highlights.
     apply_split_line_highlights(
         left_buf.id,
         alignment.left_rows,
@@ -541,10 +549,9 @@ function M.show_split(
         diff_lines
     )
 
-    -- Store alignment metadata for cursor position lookup.
-    self.diff_left_rows = alignment.left_rows
-    self.diff_right_rows = alignment.right_rows
-    self.diff_anchors = alignment.anchors
+    self.left_rows = alignment.left_rows
+    self.right_rows = alignment.right_rows
+    self.anchors = alignment.anchors
 
     if split_diff.filetype ~= '' then
         left_buf:set_option('filetype', split_diff.filetype)
@@ -558,14 +565,15 @@ function M.show_split(
     if transition_win ~= nil and common.is_valid_win(transition_win) then
         target_win = transition_win
     elseif window_state.has_open_split_diff(self) then
-        target_win = assert(self.diff_left.win)
+        target_win = assert(self.left.win)
     else
-        target_win = window.find_target_win(self)
+        target_win = window.find_target_win(self.host)
 
         if target_win == nil then
+            local status_win = self.host.win
             target_win = create_preview_split(
                 self,
-                self.win,
+                status_win,
                 'rightbelow vsplit',
                 status_winfixwidth
             )
@@ -579,19 +587,19 @@ function M.show_split(
     end
 
     target_win = assert(target_win)
-    local was_left_preview = target_win == self.diff_left.win
+    local was_left_preview = target_win == self.left.win
         and vim.api.nvim_win_get_buf(target_win) == left_buf.id
 
     if transition_win == target_win then
-        self.diff_left.prev_buf = transition_prev_buf
+        self.left.prev_buf = transition_prev_buf
             or vim.api.nvim_win_get_buf(target_win)
-        self.diff_left.prev_winopts = transition_prev_winopts
+        self.left.prev_winopts = transition_prev_winopts
             or window.capture_winopts(target_win)
-        self.diff_left.created = transition_created_win
+        self.left.created = transition_created_win
     elseif not was_left_preview then
-        self.diff_left.prev_buf = vim.api.nvim_win_get_buf(target_win)
-        self.diff_left.prev_winopts = window.capture_winopts(target_win)
-        self.diff_left.created = left_created
+        self.left.prev_buf = vim.api.nvim_win_get_buf(target_win)
+        self.left.prev_winopts = window.capture_winopts(target_win)
+        self.left.created = left_created
     end
 
     if
@@ -608,14 +616,14 @@ function M.show_split(
     end
 
     window.configure_split_diff_win(target_win)
-    M.set_split_line_numbers(target_win, self.diff_show_numbers)
-    vim.wo[target_win].wrap = self.diff_wrap
+    M.set_split_line_numbers(target_win, self.show_numbers)
+    vim.wo[target_win].wrap = self.wrap
     vim.wo[target_win].winbar = title
         .. ' [1/2] '
         .. preview_util.winbar_text(split_diff.left.title)
-    self.diff_left.win = target_win
+    self.left.win = target_win
 
-    local right_win = self.diff_right.win
+    local right_win = self.right.win
     local right_status_winfixwidth = make_status_win_resizable(self)
     local right_created = false
 
@@ -643,9 +651,9 @@ function M.show_split(
         == right_buf.id
 
     if not was_right_preview then
-        self.diff_right.prev_buf = vim.api.nvim_win_get_buf(right_win)
-        self.diff_right.prev_winopts = window.capture_winopts(right_win)
-        self.diff_right.created = right_created
+        self.right.prev_buf = vim.api.nvim_win_get_buf(right_win)
+        self.right.prev_winopts = window.capture_winopts(right_win)
+        self.right.created = right_created
     end
 
     if
@@ -663,15 +671,14 @@ function M.show_split(
     end
 
     window.configure_split_diff_win(right_win)
-    M.set_split_line_numbers(right_win, self.diff_show_numbers)
-    vim.wo[right_win].wrap = self.diff_wrap
+    M.set_split_line_numbers(right_win, self.show_numbers)
+    vim.wo[right_win].wrap = self.wrap
     vim.wo[right_win].winbar = title
         .. ' [2/2] '
         .. preview_util.winbar_text(split_diff.right.title)
-    self.diff_right.win = right_win
+    self.right.win = right_win
     resize_split_windows(self)
 
-    -- Set scrollbind and cursorbind instead of using diffthis.
     vim.wo[target_win].scrollbind = true
     vim.wo[target_win].cursorbind = true
     vim.wo[right_win].scrollbind = true
@@ -681,7 +688,7 @@ function M.show_split(
         vim.cmd('syncbind')
     end)
 
-    self.diff_preview_key = preview_key
+    self.preview_key = preview_key
 
     restore_current_win(current_win)
 
