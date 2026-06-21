@@ -42,6 +42,11 @@ DiffPreview.__index = DiffPreview
 ---@param host GitStatusWindow
 ---@return DiffPreview
 function DiffPreview.new(host)
+    vim.validate('host', host, 'table')
+    vim.validate('host.options', host.options, 'table')
+    vim.validate('host.options.preview', host.options.preview, 'table')
+    vim.validate('host.groups', host.groups, 'table')
+
     local preview_opts = host.options.preview
 
     local obj = setmetatable({
