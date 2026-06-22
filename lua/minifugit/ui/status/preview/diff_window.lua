@@ -66,24 +66,34 @@ function DiffWindow:open(win, buf, opts)
         self.prev_buf = inherit.prev_buf or current_buf
         self.prev_winopts = inherit.prev_winopts or window.capture_winopts(win)
         self.created = inherit.created == true
-        inherit:clear()
     elseif not (current_buf == buf and self.win == win) then
         self.prev_buf = current_buf
         self.prev_winopts = window.capture_winopts(win)
         self.created = opts.created == true
     end
 
+    local prev_winfixwidth = vim.wo[win].winfixwidth
     vim.wo[win].winfixwidth = false
 
     local ok, err = pcall(vim.api.nvim_win_set_buf, win, buf)
 
     if not ok then
+        if common.is_valid_win(win) then
+            pcall(function()
+                vim.wo[win].winfixwidth = prev_winfixwidth
+            end)
+        end
+
         if self.created and #vim.api.nvim_tabpage_list_wins(0) > 1 then
             pcall(vim.api.nvim_win_close, win, true)
         end
 
         self:clear()
         return false, tostring(err)
+    end
+
+    if inherit ~= nil then
+        inherit:clear()
     end
 
     self.win = win
