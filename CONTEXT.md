@@ -7,6 +7,9 @@
 - **Status buffer**: Plugin-owned text buffer listing Git state and actions.
 - **Diff buffer**: Plugin-owned text buffer showing staged/unstaged/commit diffs.
 - **Related buffer**: Real user file buffer opened from minifugit.
+- **Target window**: The status window (or a preview split derived from it) that a diff preview opens into and restores on close.
+- **Stacked layout**: Single-window diff preview showing one combined diff in the target window.
+- **Split layout**: Two-window diff preview showing the two sides of a diff side by side.
 
 ## Commands
 - Test: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedDirectory tests { minimal_init = 'tests/minimal_init.lua' }"`
