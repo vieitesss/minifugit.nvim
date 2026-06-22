@@ -155,6 +155,33 @@ describe('minifugit.ui.status.preview.diff_window', function()
             assert.is_nil(dw.win)
         end)
 
+        it('keeps inherited state when the buffer swap fails', function()
+            local win = vim.api.nvim_get_current_win()
+            local original_buf = vim.api.nvim_create_buf(false, true)
+            local inherited_opts = { wrap = true }
+            vim.api.nvim_win_set_buf(win, original_buf)
+            vim.wo[win].winfixwidth = true
+
+            local outgoing = DiffWindow.new(false)
+            outgoing.win = win
+            outgoing.prev_buf = original_buf
+            outgoing.prev_winopts = inherited_opts
+            outgoing.created = false
+
+            local dw = DiffWindow.new(true)
+            local ok = dw:open(win, -1, { inherit_from = outgoing })
+
+            assert.is_false(ok)
+            assert.are.equal(win, outgoing.win)
+            assert.are.equal(original_buf, outgoing.prev_buf)
+            assert.are.equal(inherited_opts, outgoing.prev_winopts)
+            assert.is_true(vim.wo[win].winfixwidth)
+            assert.is_nil(dw.win)
+
+            vim.wo[win].winfixwidth = false
+            vim.api.nvim_buf_delete(original_buf, { force = true })
+        end)
+
         it(
             'keeps the original buffer when reopening the same preview',
             function()
