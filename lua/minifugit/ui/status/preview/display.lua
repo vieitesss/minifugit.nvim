@@ -243,7 +243,7 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
     end
 
     target_win = assert(target_win)
-    local ok = self.stacked:open(target_win, buf.id, {
+    local ok, err = self.stacked:open(target_win, buf.id, {
         created = created_win,
         inherit_from = (outgoing ~= nil and target_win == outgoing.win)
                 and outgoing
@@ -253,10 +253,9 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
 
     if not ok then
         common.notify_error(
-            'Could not set diff buffer',
+            err or 'Could not set diff buffer',
             'Cannot open diff preview'
         )
-        -- ponytail: restore caller focus; add status refocus only if a test needs it.
         restore_current_win(current_win)
         return false
     end
@@ -528,7 +527,7 @@ function M.show_split(
     end
 
     target_win = assert(target_win)
-    local ok = self.left:open(target_win, left_buf.id, {
+    local ok, err = self.left:open(target_win, left_buf.id, {
         created = left_created,
         inherit_from = (outgoing ~= nil and target_win == outgoing.win)
                 and outgoing
@@ -538,7 +537,7 @@ function M.show_split(
 
     if not ok then
         common.notify_error(
-            'Could not set diff buffer',
+            err or 'Could not set diff buffer',
             'Cannot open diff preview'
         )
         restore_current_win(current_win)
@@ -576,12 +575,13 @@ function M.show_split(
     end
 
     right_win = assert(right_win)
-    ok = self.right:open(right_win, right_buf.id, { created = right_created })
+    ok, err =
+        self.right:open(right_win, right_buf.id, { created = right_created })
     restore_status_win_state(self, right_status_winfixwidth)
 
     if not ok then
         common.notify_error(
-            'Could not set diff buffer',
+            err or 'Could not set diff buffer',
             'Cannot open diff preview'
         )
         actions.close_diff()

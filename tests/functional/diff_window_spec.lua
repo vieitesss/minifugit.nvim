@@ -146,6 +146,15 @@ describe('minifugit.ui.status.preview.diff_window', function()
             end)
         end)
 
+        it('returns the buffer swap error', function()
+            local dw = DiffWindow.new(false)
+            local ok, err = dw:open(vim.api.nvim_get_current_win(), -1, {})
+
+            assert.is_false(ok)
+            assert.is_string(err)
+            assert.is_nil(dw.win)
+        end)
+
         it(
             'keeps the original buffer when reopening the same preview',
             function()

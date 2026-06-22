@@ -49,7 +49,8 @@ end
 ---@param win number
 ---@param buf integer
 ---@param opts? { created: boolean?, inherit_from: DiffWindow? }
----@return boolean
+---@return boolean ok
+---@return string? err
 function DiffWindow:open(win, buf, opts)
     vim.validate('win', win, 'number')
     vim.validate('buf', buf, 'number')
@@ -74,7 +75,7 @@ function DiffWindow:open(win, buf, opts)
 
     vim.wo[win].winfixwidth = false
 
-    local ok = pcall(vim.api.nvim_win_set_buf, win, buf)
+    local ok, err = pcall(vim.api.nvim_win_set_buf, win, buf)
 
     if not ok then
         if self.created and #vim.api.nvim_tabpage_list_wins(0) > 1 then
@@ -82,7 +83,7 @@ function DiffWindow:open(win, buf, opts)
         end
 
         self:clear()
-        return false
+        return false, tostring(err)
     end
 
     self.win = win
