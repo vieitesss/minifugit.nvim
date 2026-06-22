@@ -1,7 +1,8 @@
 # Diff preview reuses and restores the status target window
 
-We decided diff previews open into the **target window** (the status window, or a
-preview split derived from it) and own a save/restore invariant for that window:
+We decided diff previews open into the **target window**: a normal edit window
+selected by the status UI, or a preview split anchored to the status window when
+no edit window is available. Previews own a save/restore invariant for that window:
 before swapping in a plugin-owned diff buffer we capture the window's previous
 buffer, its window-local options, and whether we created the window
 (`{prev_buf, prev_winopts, created}`). On close we restore the captured buffer
