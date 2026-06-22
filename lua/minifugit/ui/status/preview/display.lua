@@ -261,6 +261,8 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
     end
 
     window.configure_diff_win(target_win)
+    vim.wo[target_win].scrollbind = false
+    vim.wo[target_win].cursorbind = false
     vim.wo[target_win].wrap = self.wrap
     vim.wo[target_win].winbar = title
     self.preview_key = preview_key

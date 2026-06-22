@@ -57,7 +57,9 @@ function DiffWindow:open(win, buf, opts)
     vim.validate('opts', opts, 'table', true)
     opts = opts or {}
     vim.validate('opts.created', opts.created, 'boolean', true)
-    vim.validate('opts.inherit_from', opts.inherit_from, 'table', true)
+    vim.validate('opts.inherit_from', opts.inherit_from, function(value)
+        return getmetatable(value) == DiffWindow
+    end, true, '`opts.inherit_from` should be a DiffWindow')
 
     local current_buf = vim.api.nvim_win_get_buf(win)
     local inherit = opts.inherit_from

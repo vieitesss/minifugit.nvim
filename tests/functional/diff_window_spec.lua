@@ -144,6 +144,11 @@ describe('minifugit.ui.status.preview.diff_window', function()
             assert.has_error(function()
                 dw:open(vim.api.nvim_get_current_win(), 1, 'bad')
             end)
+            assert.has_error(function()
+                dw:open(vim.api.nvim_get_current_win(), 1, {
+                    inherit_from = {},
+                })
+            end)
         end)
 
         it('returns the buffer swap error', function()

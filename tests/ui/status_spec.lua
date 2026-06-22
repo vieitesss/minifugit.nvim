@@ -1159,6 +1159,8 @@ describe('minifugit status UI', function()
                 2,
                 #normal_windows(vim.api.nvim_get_current_tabpage())
             )
+            assert.is_false(vim.wo[reopened_win].scrollbind)
+            assert.is_false(vim.wo[reopened_win].cursorbind)
 
             minifugit.gsw.preview:close()
 
