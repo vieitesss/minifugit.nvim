@@ -1092,6 +1092,89 @@ describe('minifugit status UI', function()
         end
     )
 
+    it(
+        'round-trips the target window through stacked and split previews',
+        function()
+            helpers.write_file(
+                vim.fs.joinpath(repo, 'tracked.txt'),
+                { 'one', 'two' }
+            )
+            vim.cmd.edit(
+                vim.fn.fnameescape(vim.fs.joinpath(repo, 'tracked.txt'))
+            )
+            local file_buf = vim.api.nvim_get_current_buf()
+            vim.wo.number = true
+            vim.wo.relativenumber = true
+            vim.wo.signcolumn = 'yes:2'
+            vim.wo.foldcolumn = '2'
+            vim.wo.wrap = true
+            vim.wo.cursorline = true
+            vim.wo.winbar = 'real file transition'
+            vim.wo.statuscolumn = 'transition-statuscolumn'
+            vim.wo.scrollbind = false
+            vim.wo.cursorbind = false
+
+            minifugit.options.preview.diff_layout = 'stacked'
+            minifugit.status()
+            local status_win = assert(minifugit.gsw.win)
+            local file_win = assert(win_showing_buf(file_buf))
+            local before = capture_winopts(file_win)
+
+            vim.api.nvim_set_current_win(status_win)
+            vim.api.nvim_win_set_cursor(
+                status_win,
+                { row_containing(minifugit.gsw.buf.id, 'tracked.txt'), 0 }
+            )
+            assert.is_true(
+                minifugit.gsw.preview:preview_current_entry({ force = true })
+            )
+
+            local stacked_win = diff_win_named('Minifugit diff')
+            assert.are.equal(file_win, stacked_win)
+            assert.are.equal(status_win, vim.api.nvim_get_current_win())
+            assert.are.equal(
+                2,
+                #normal_windows(vim.api.nvim_get_current_tabpage())
+            )
+
+            assert.is_true(minifugit.gsw.preview:toggle_layout())
+            local left_win = diff_win_named('Minifugit diff left')
+            local right_win = diff_win_named('Minifugit diff right')
+            assert.are.equal(file_win, left_win)
+            assert.are.equal(status_win, vim.api.nvim_get_current_win())
+            assert.are.equal(
+                3,
+                #normal_windows(vim.api.nvim_get_current_tabpage())
+            )
+            assert.is_true(vim.wo[left_win].scrollbind)
+            assert.is_true(vim.wo[left_win].cursorbind)
+            assert.is_true(vim.wo[right_win].scrollbind)
+            assert.is_true(vim.wo[right_win].cursorbind)
+
+            assert.is_true(minifugit.gsw.preview:toggle_layout())
+            local reopened_win = diff_win_named('Minifugit diff')
+            assert.are.equal(file_win, reopened_win)
+            assert.are.equal(status_win, vim.api.nvim_get_current_win())
+            assert.are.equal(
+                2,
+                #normal_windows(vim.api.nvim_get_current_tabpage())
+            )
+
+            minifugit.gsw.preview:close()
+
+            assert.are.equal(status_win, vim.api.nvim_get_current_win())
+            assert.are.equal(
+                2,
+                #normal_windows(vim.api.nvim_get_current_tabpage())
+            )
+            assert.has_error(function()
+                diff_win_named('Minifugit diff')
+            end)
+            assert.are.equal(file_buf, vim.api.nvim_win_get_buf(file_win))
+            assert_winopts(capture_winopts(file_win), before)
+        end
+    )
+
     it('uses the target file window for split diff and restores it', function()
         helpers.write_file(
             vim.fs.joinpath(repo, 'tracked.txt'),

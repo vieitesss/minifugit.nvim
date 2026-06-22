@@ -46,6 +46,49 @@ function DiffWindow:clear()
     self.created = false
 end
 
+---@param win number
+---@param buf integer
+---@param opts? { created: boolean?, inherit_from: DiffWindow? }
+---@return boolean
+function DiffWindow:open(win, buf, opts)
+    vim.validate('win', win, 'number')
+    vim.validate('buf', buf, 'number')
+    vim.validate('opts', opts, 'table', true)
+    opts = opts or {}
+    vim.validate('opts.created', opts.created, 'boolean', true)
+    vim.validate('opts.inherit_from', opts.inherit_from, 'table', true)
+
+    local current_buf = vim.api.nvim_win_get_buf(win)
+    local inherit = opts.inherit_from
+
+    if inherit ~= nil then
+        self.prev_buf = inherit.prev_buf or current_buf
+        self.prev_winopts = inherit.prev_winopts or window.capture_winopts(win)
+        self.created = inherit.created == true
+        inherit:clear()
+    elseif not (current_buf == buf and self.win == win) then
+        self.prev_buf = current_buf
+        self.prev_winopts = window.capture_winopts(win)
+        self.created = opts.created == true
+    end
+
+    vim.wo[win].winfixwidth = false
+
+    local ok = pcall(vim.api.nvim_win_set_buf, win, buf)
+
+    if not ok then
+        if self.created and #vim.api.nvim_tabpage_list_wins(0) > 1 then
+            pcall(vim.api.nvim_win_close, win, true)
+        end
+
+        self:clear()
+        return false
+    end
+
+    self.win = win
+    return true
+end
+
 ---@param keep_win boolean
 ---@return boolean
 function DiffWindow:restore_or_close(keep_win)
