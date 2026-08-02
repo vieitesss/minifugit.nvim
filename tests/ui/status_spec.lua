@@ -299,6 +299,33 @@ describe('minifugit status UI', function()
         )
     end)
 
+    it(
+        'keeps the status window focused when opening a preview with =',
+        function()
+            helpers.write_file(vim.fs.joinpath(repo, 'tracked.txt'), {
+                'one',
+                'two',
+            })
+            minifugit.options.preview.diff_layout = 'stacked'
+            minifugit.status()
+
+            ---@type GitStatusWindow
+            local gsw = minifugit.gsw
+            local status_win = assert(gsw.win)
+            vim.api.nvim_set_current_win(status_win)
+            vim.api.nvim_win_set_cursor(
+                status_win,
+                { row_containing(gsw.buf.id, 'tracked.txt'), 0 }
+            )
+
+            mapped_normal_keys('=')
+
+            assert.is_true(gsw.preview:has_open())
+            assert.are.equal(status_win, vim.api.nvim_get_current_win())
+            diff_win_named('Minifugit diff')
+        end
+    )
+
     it('uses the target window for stacked previews', function()
         helpers.write_file(vim.fs.joinpath(repo, 'tracked.txt'), {
             'one',
@@ -1026,7 +1053,7 @@ describe('minifugit status UI', function()
     )
 
     it(
-        'focuses an already open diff when showing the same entry diff',
+        'keeps the status window focused when showing the same entry diff',
         function()
             helpers.write_file(
                 vim.fs.joinpath(repo, 'tracked.txt'),
@@ -1045,8 +1072,8 @@ describe('minifugit status UI', function()
             vim.api.nvim_set_current_win(minifugit.gsw.win)
             assert.is_true(minifugit.gsw:diff_entry())
 
-            local diff_win = diff_win_named('Minifugit diff')
-            assert.are.equal(diff_win, vim.api.nvim_get_current_win())
+            diff_win_named('Minifugit diff')
+            assert.are.equal(minifugit.gsw.win, vim.api.nvim_get_current_win())
         end
     )
 
