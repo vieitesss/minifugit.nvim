@@ -51,16 +51,27 @@ local function entry_path(entry)
     return vim.fs.normalize(vim.fs.joinpath(root, entry.path))
 end
 
+---Set a window-local option WITHOUT touching the global default.
+---`vim.wo[win].opt = val` clobbers the global value of a window-local option
+---when `win` is the current window, which would leak the status/diff window's
+---stripped settings (nonumber, etc.) onto every window opened afterwards.
+---@param win number
+---@param name string
+---@param value any
+local function set_win_local(win, name, value)
+    vim.api.nvim_set_option_value(name, value, { scope = 'local', win = win })
+end
+
 ---@param win number
 function M.configure_status_win(win)
-    vim.wo[win].number = false
-    vim.wo[win].relativenumber = false
-    vim.wo[win].signcolumn = 'no'
-    vim.wo[win].foldcolumn = '0'
-    vim.wo[win].wrap = false
-    vim.wo[win].cursorline = true
-    vim.wo[win].winfixwidth = true
-    vim.wo[win].winbar = ''
+    set_win_local(win, 'number', false)
+    set_win_local(win, 'relativenumber', false)
+    set_win_local(win, 'signcolumn', 'no')
+    set_win_local(win, 'foldcolumn', '0')
+    set_win_local(win, 'wrap', false)
+    set_win_local(win, 'cursorline', true)
+    set_win_local(win, 'winfixwidth', true)
+    set_win_local(win, 'winbar', '')
 end
 
 ---@param buf Buffer
@@ -125,7 +136,7 @@ local function is_normal_edit_window(win)
     local buftype = vim.bo[buf].buftype
     local filetype = vim.bo[buf].filetype
 
-    if buftype ~= '' then
+    if buftype ~= '' and buftype ~= 'acwrite' then
         return false
     end
 
@@ -255,25 +266,25 @@ end
 
 ---@param win number
 function M.configure_diff_win(win)
-    vim.wo[win].number = false
-    vim.wo[win].relativenumber = false
-    vim.wo[win].signcolumn = 'no'
-    vim.wo[win].foldcolumn = '0'
-    vim.wo[win].wrap = false
-    vim.wo[win].cursorline = false
-    vim.wo[win].winfixwidth = false
+    set_win_local(win, 'number', false)
+    set_win_local(win, 'relativenumber', false)
+    set_win_local(win, 'signcolumn', 'no')
+    set_win_local(win, 'foldcolumn', '0')
+    set_win_local(win, 'wrap', false)
+    set_win_local(win, 'cursorline', false)
+    set_win_local(win, 'winfixwidth', false)
 end
 
 ---@param win number
 function M.configure_split_diff_win(win)
-    vim.wo[win].number = true
-    vim.wo[win].relativenumber = false
-    vim.wo[win].signcolumn = 'yes:1'
-    vim.wo[win].foldcolumn = '0'
-    vim.wo[win].statuscolumn = '%l %s '
-    vim.wo[win].wrap = false
-    vim.wo[win].cursorline = false
-    vim.wo[win].winfixwidth = false
+    set_win_local(win, 'number', true)
+    set_win_local(win, 'relativenumber', false)
+    set_win_local(win, 'signcolumn', 'yes:1')
+    set_win_local(win, 'foldcolumn', '0')
+    set_win_local(win, 'statuscolumn', '%l %s ')
+    set_win_local(win, 'wrap', false)
+    set_win_local(win, 'cursorline', false)
+    set_win_local(win, 'winfixwidth', false)
 end
 
 ---@param win number
@@ -303,19 +314,19 @@ function M.restore_winopts(win, opts)
         return
     end
 
-    vim.wo[win].number = opts.number
-    vim.wo[win].relativenumber = opts.relativenumber
-    vim.wo[win].signcolumn = opts.signcolumn
-    vim.wo[win].foldcolumn = opts.foldcolumn
-    vim.wo[win].wrap = opts.wrap
-    vim.wo[win].cursorline = opts.cursorline
-    vim.wo[win].winfixwidth = opts.winfixwidth
-    vim.wo[win].winbar = opts.winbar
-    vim.wo[win].diff = opts.diff
-    vim.wo[win].fillchars = opts.fillchars
-    vim.wo[win].statuscolumn = opts.statuscolumn
-    vim.wo[win].scrollbind = opts.scrollbind
-    vim.wo[win].cursorbind = opts.cursorbind
+    set_win_local(win, 'number', opts.number)
+    set_win_local(win, 'relativenumber', opts.relativenumber)
+    set_win_local(win, 'signcolumn', opts.signcolumn)
+    set_win_local(win, 'foldcolumn', opts.foldcolumn)
+    set_win_local(win, 'wrap', opts.wrap)
+    set_win_local(win, 'cursorline', opts.cursorline)
+    set_win_local(win, 'winfixwidth', opts.winfixwidth)
+    set_win_local(win, 'winbar', opts.winbar)
+    set_win_local(win, 'diff', opts.diff)
+    set_win_local(win, 'fillchars', opts.fillchars)
+    set_win_local(win, 'statuscolumn', opts.statuscolumn)
+    set_win_local(win, 'scrollbind', opts.scrollbind)
+    set_win_local(win, 'cursorbind', opts.cursorbind)
 end
 
 return M

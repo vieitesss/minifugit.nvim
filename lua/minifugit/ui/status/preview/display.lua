@@ -30,8 +30,16 @@ function M.set_split_line_numbers(win, enabled)
         return
     end
 
-    vim.wo[win].number = enabled
-    vim.wo[win].statuscolumn = enabled and '%l %s ' or '%s '
+    vim.api.nvim_set_option_value(
+        'number',
+        enabled,
+        { scope = 'local', win = win }
+    )
+    vim.api.nvim_set_option_value(
+        'statuscolumn',
+        enabled and '%l %s ' or '%s ',
+        { scope = 'local', win = win }
+    )
 end
 
 ---@param self DiffPreview
@@ -147,6 +155,28 @@ local function create_preview_split(self, anchor_win, command, status_win_state)
         restore_status_win_state(self, status_win_state)
         common.notify_error(tostring(err), 'Cannot open diff preview')
         return nil
+    end
+
+    -- The split is created off the status window, so it inherits the status
+    -- window's stripped local options (nonumber, no signcolumn, ...). That
+    -- becomes the "previous" baseline captured for this window and restored
+    -- into it when the user opens the file (goto_code), leaving a real file
+    -- with no line numbers. There is no prior editor window to restore here,
+    -- so reset the split's locals to the global editor defaults.
+    if common.is_valid_win(split_win) then
+        for _, name in ipairs({
+            'number',
+            'relativenumber',
+            'signcolumn',
+            'foldcolumn',
+            'wrap',
+            'cursorline',
+        }) do
+            vim.api.nvim_set_option_value(name, vim.go[name], {
+                scope = 'local',
+                win = split_win,
+            })
+        end
     end
 
     return split_win
