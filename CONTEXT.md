@@ -7,7 +7,7 @@
 - **Status buffer**: Plugin-owned text buffer listing Git state and actions.
 - **Diff buffer**: Plugin-owned text buffer showing staged/unstaged/commit diffs.
 - **Related buffer**: Real user file buffer opened from minifugit.
-- **Target window**: A normal edit window selected by the status UI, or a preview split anchored to the status window when no edit window is available.
+- **Target window**: A normal edit or explorer window selected by the status UI, or a preview split anchored to the status window when no edit window is available.
 - **Stacked layout**: Single-window diff preview showing one combined diff in the target window.
 - **Split layout**: Two-window diff preview showing the two sides of a diff side by side.
 

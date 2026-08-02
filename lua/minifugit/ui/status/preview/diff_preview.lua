@@ -39,6 +39,40 @@ local selection = require('minifugit.ui.status.selection')
 local DiffPreview = {}
 DiffPreview.__index = DiffPreview
 
+---@param buf number?
+---@return boolean
+local function is_regular_file_buffer(buf)
+    if buf == nil or not vim.api.nvim_buf_is_valid(buf) then
+        return false
+    end
+
+    local name = vim.api.nvim_buf_get_name(buf)
+    return name ~= '' and vim.fn.filereadable(name) == 1
+end
+
+---@param win number
+---@param previous_buf number?
+local function reset_code_winopts_after_non_file(win, previous_buf)
+    if is_regular_file_buffer(previous_buf) then
+        return
+    end
+
+    for _, name in ipairs({
+        'number',
+        'relativenumber',
+        'signcolumn',
+        'foldcolumn',
+        'wrap',
+        'cursorline',
+        'statuscolumn',
+    }) do
+        vim.api.nvim_set_option_value(name, vim.go[name], {
+            scope = 'local',
+            win = win,
+        })
+    end
+end
+
 ---@param host GitStatusWindow
 ---@return DiffPreview
 function DiffPreview.new(host)
@@ -453,6 +487,7 @@ function DiffPreview:goto_code()
         return false
     end
 
+    local previous_buf = dw.prev_buf
     local diff_buffers, code_win =
         window_state.close_diff_windows_for_code(self, dw)
 
@@ -469,6 +504,7 @@ function DiffPreview:goto_code()
         return false
     end
 
+    reset_code_winopts_after_non_file(code_win, previous_buf)
     preview_cursor.set_cursor_row(code_win, position.line)
     self.host.target_win = code_win
 
