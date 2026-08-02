@@ -407,7 +407,6 @@ function GitStatusWindow:diff_entry()
     return self.preview:preview_current_entry({
         force = true,
         notify = true,
-        focus = true,
     })
 end
 
