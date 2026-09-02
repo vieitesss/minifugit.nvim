@@ -36,6 +36,7 @@ local selection = require('minifugit.ui.status.selection')
 ---@field show_numbers boolean
 ---@field layout 'stacked'|'split'|'auto'
 ---@field layout_override 'stacked'|'split'?
+---@field follow_gen integer
 local DiffPreview = {}
 DiffPreview.__index = DiffPreview
 
@@ -94,6 +95,7 @@ function DiffPreview.new(host)
         show_headers = preview_opts.show_metadata,
         show_numbers = preview_opts.show_line_numbers,
         layout = preview_opts.diff_layout,
+        follow_gen = 0,
     }, DiffPreview)
 
     obj.actions = {
@@ -256,6 +258,28 @@ local function commit_diff_title(commit)
     )
 end
 
+---@param self DiffPreview
+---@return string?
+local function cursor_preview_key(self)
+    local commit_item = selection.current_commit_item(self.host)
+
+    if commit_item ~= nil then
+        return 'commit:' .. commit_item.commit.hash
+    end
+
+    local item = selection.current_entry_item(self.host)
+
+    if item == nil then
+        return nil
+    end
+
+    return table.concat({
+        item.section or '',
+        item.entry.orig_path or '',
+        item.entry.path,
+    }, '\0')
+end
+
 ---@param entry GitStatusEntry
 ---@param section GitStatusSectionName?
 ---@return string
@@ -266,6 +290,71 @@ local function diff_title(entry, section)
         or entry.path
 
     return preview_util.winbar_text(prefix .. ': ' .. path)
+end
+
+---@param self DiffPreview
+---@param gen integer
+---@param preview_key string
+---@return boolean
+local function stacked_syntax_current(self, gen, preview_key)
+    return gen == self.follow_gen
+        and self.preview_key == preview_key
+        and window_state.has_open_stacked_diff(self)
+        and self.stacked.buf ~= nil
+        and vim.api.nvim_buf_is_valid(self.stacked.buf.id)
+end
+
+---Overlay source syntax onto the stacked preview without replacing buffer
+---text (avoids cursor jumps). Scheduled after the fast unified-patch paint
+---so CursorMoved is never blocked by split_diff + treesitter.
+---@param self DiffPreview
+---@param lines string[]
+---@param entry GitStatusEntry
+---@param section GitStatusSectionName?
+---@param preview_key string
+local function schedule_stacked_syntax(self, lines, entry, section, preview_key)
+    if #lines == 0 then
+        return
+    end
+
+    self.follow_gen = self.follow_gen + 1
+    local gen = self.follow_gen
+    local show_headers = self.show_headers
+    local show_numbers = self.show_numbers
+
+    vim.schedule(function()
+        if not stacked_syntax_current(self, gen, preview_key) then
+            return
+        end
+
+        local split_diff = git.split_diff(entry, section)
+
+        if split_diff == nil then
+            return
+        end
+
+        if not stacked_syntax_current(self, gen, preview_key) then
+            return
+        end
+
+        local diff_lines = diff_render.render_lines(lines, self.groups, {
+            show_headers = show_headers,
+            show_numbers = show_numbers,
+            syntax = {
+                filetype = split_diff.filetype,
+                left_lines = split_diff.left.lines,
+                right_lines = split_diff.right.lines,
+            },
+        })
+
+        local buf = self.stacked.buf.id
+
+        if vim.api.nvim_buf_line_count(buf) ~= #diff_lines then
+            return
+        end
+
+        render.apply(buf, diff_lines)
+    end)
 end
 
 -- ── Public interface ──────────────────────────────────────────────────────────
@@ -626,9 +715,13 @@ function DiffPreview:open(entry, section, opts)
     end
 
     local parsed_hunks = diff_parser.parse_hunks(lines)
-    local split_diff, split_err = git.split_diff(entry, section)
 
+    -- Split layout needs both file sides. Stacked only needs the unified
+    -- patch; source syntax is overlaid asynchronously after the first paint
+    -- (fetching full file contents synchronously made cursor-follow laggy).
     if layout == 'split' then
+        local split_diff, split_err = git.split_diff(entry, section)
+
         if split_diff ~= nil then
             local ok = display.show_split(
                 self,
@@ -658,15 +751,6 @@ function DiffPreview:open(entry, section, opts)
 
     local diff_lines
     local raw_rows
-    local syntax
-
-    if split_diff ~= nil then
-        syntax = {
-            filetype = split_diff.filetype,
-            left_lines = split_diff.left.lines,
-            right_lines = split_diff.right.lines,
-        }
-    end
 
     if #lines == 0 then
         diff_lines = { render.line('No diff for ' .. entry.path) }
@@ -674,7 +758,6 @@ function DiffPreview:open(entry, section, opts)
         diff_lines, raw_rows = diff_render.render_lines(lines, self.groups, {
             show_headers = self.show_headers,
             show_numbers = self.show_numbers,
-            syntax = syntax,
         })
     end
 
@@ -690,6 +773,7 @@ function DiffPreview:open(entry, section, opts)
 
     if ok then
         set_context(self, lines, raw_rows, parsed_hunks, section, entry)
+        schedule_stacked_syntax(self, lines, entry, section, preview_key)
 
         if opts.focus then
             display.focus_open_diff(self)
@@ -723,6 +807,7 @@ function DiffPreview:close()
     end
 
     window_state.clear_missing_diff_window_states(self)
+    self.follow_gen = self.follow_gen + 1
     self.preview_key = nil
     set_context(self, nil, nil, nil, nil, nil)
 
@@ -796,6 +881,35 @@ function DiffPreview:preview_current_commit(opts)
     end
 
     return self:open_commit(item.commit, { force = opts.force })
+end
+
+---Update the open preview for the status row under the cursor without
+---blocking CursorMoved. Stale scheduled follows are ignored.
+function DiffPreview:follow_cursor()
+    if not self:has_open() then
+        return
+    end
+
+    local key = cursor_preview_key(self)
+
+    if key == nil or key == self.preview_key then
+        return
+    end
+
+    self.follow_gen = self.follow_gen + 1
+    local gen = self.follow_gen
+
+    vim.schedule(function()
+        if gen ~= self.follow_gen or not self:has_open() then
+            return
+        end
+
+        local opts = { force = false, notify = false }
+
+        if not self:preview_current_commit(opts) then
+            self:preview_current_entry(opts)
+        end
+    end)
 end
 
 return DiffPreview

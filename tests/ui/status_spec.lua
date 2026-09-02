@@ -166,6 +166,28 @@ local function diff_win_named(name)
     error('Expected visible diff buffer: ' .. name)
 end
 
+---@param buf integer
+---@return boolean
+local function has_source_syntax_extmarks(buf)
+    local ns = vim.api.nvim_create_namespace('minifugit.ui.render')
+    local marks =
+        vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })
+
+    for _, mark in ipairs(marks) do
+        local details = mark[4]
+        local group = details and details.hl_group
+
+        if
+            type(group) == 'string'
+            and (group:sub(1, 1) == '@' or group:match('^lua') ~= nil)
+        then
+            return true
+        end
+    end
+
+    return false
+end
+
 describe('minifugit status UI', function()
     ---@type string
     local original_cwd
@@ -296,6 +318,145 @@ describe('minifugit status UI', function()
         helpers.assert_has_line_containing(
             buffer_lines(diff_buf),
             'new content'
+        )
+    end)
+
+    it('updates the stacked preview after moving to another file', function()
+        helpers.write_file(vim.fs.joinpath(repo, 'tracked.txt'), {
+            'tracked-unique-aaa',
+        })
+        helpers.write_file(vim.fs.joinpath(repo, 'other.txt'), {
+            'other-unique-bbb',
+        })
+        helpers.run({ 'git', 'add', 'other.txt' }, repo)
+        helpers.run({ 'git', 'commit', '-m', 'add other' }, repo)
+        helpers.write_file(vim.fs.joinpath(repo, 'other.txt'), {
+            'other-unique-bbb',
+            'other-changed',
+        })
+
+        minifugit.options.preview.diff_layout = 'stacked'
+        minifugit.status()
+
+        ---@type GitStatusWindow
+        local gsw = minifugit.gsw
+        vim.api.nvim_set_current_win(gsw.win)
+        vim.api.nvim_win_set_cursor(
+            gsw.win,
+            { row_containing(gsw.buf.id, 'tracked.txt'), 0 }
+        )
+        assert.is_true(gsw:diff_entry())
+        local _, diff_buf = diff_win_named('Minifugit diff')
+        helpers.assert_has_line_containing(
+            buffer_lines(diff_buf),
+            'tracked-unique-aaa'
+        )
+
+        vim.api.nvim_set_current_win(gsw.win)
+        vim.api.nvim_win_set_cursor(
+            gsw.win,
+            { row_containing(gsw.buf.id, 'other.txt'), 0 }
+        )
+        vim.api.nvim_exec_autocmds('CursorMoved', { buffer = gsw.buf.id })
+
+        local updated = vim.wait(1000, function()
+            for _, line in ipairs(buffer_lines(diff_buf)) do
+                if line:find('other-changed', 1, true) ~= nil then
+                    return true
+                end
+            end
+
+            return false
+        end)
+
+        if not updated then
+            assert.fail(
+                'preview did not follow cursor:\n'
+                    .. table.concat(buffer_lines(diff_buf), '\n')
+            )
+        end
+    end)
+
+    it(
+        'overlays source syntax on the stacked preview asynchronously',
+        function()
+            helpers.write_file(vim.fs.joinpath(repo, 'script.lua'), {
+                'local function answer()',
+                '    return 42',
+                'end',
+            })
+            minifugit.options.preview.diff_layout = 'stacked'
+            minifugit.status()
+
+            ---@type GitStatusWindow
+            local gsw = minifugit.gsw
+            vim.api.nvim_set_current_win(gsw.win)
+            vim.api.nvim_win_set_cursor(
+                gsw.win,
+                { row_containing(gsw.buf.id, 'script.lua'), 0 }
+            )
+
+            assert.is_true(gsw:diff_entry())
+            local _, diff_buf = diff_win_named('Minifugit diff')
+            helpers.assert_has_line_containing(
+                buffer_lines(diff_buf),
+                'return 42'
+            )
+
+            -- First paint shows the unified patch immediately; source syntax is
+            -- overlaid a moment later, so it must not be there right away.
+            assert.is_false(has_source_syntax_extmarks(diff_buf))
+
+            local highlighted = vim.wait(2000, function()
+                return has_source_syntax_extmarks(diff_buf)
+            end)
+
+            if not highlighted then
+                assert.fail('source syntax was not overlaid on stacked preview')
+            end
+        end
+    )
+
+    it('opens the stacked preview without blocking on source syntax', function()
+        local lines = { 'local M = {}' }
+        for index = 1, 300 do
+            table.insert(
+                lines,
+                string.format(
+                    'local function fn_%d() return %d end',
+                    index,
+                    index
+                )
+            )
+        end
+        table.insert(lines, 'return M')
+        helpers.write_file(vim.fs.joinpath(repo, 'big.lua'), lines)
+        minifugit.options.preview.diff_layout = 'stacked'
+        minifugit.status()
+
+        ---@type GitStatusWindow
+        local gsw = minifugit.gsw
+        vim.api.nvim_set_current_win(gsw.win)
+        vim.api.nvim_win_set_cursor(
+            gsw.win,
+            { row_containing(gsw.buf.id, 'big.lua'), 0 }
+        )
+
+        local start = vim.uv.hrtime()
+        assert.is_true(gsw:diff_entry())
+        local elapsed_ms = (vim.uv.hrtime() - start) / 1e6
+
+        local _, diff_buf = diff_win_named('Minifugit diff')
+        helpers.assert_has_line_containing(buffer_lines(diff_buf), 'fn_300')
+
+        -- Syntax highlighting arrives later; the first paint must stay fast.
+        assert.is_false(has_source_syntax_extmarks(diff_buf))
+        assert(
+            elapsed_ms < 150,
+            string.format(
+                'stacked preview open took %.1fms (source syntax blocking?)',
+                elapsed_ms
+            )
         )
     end)
 

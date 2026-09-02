@@ -191,11 +191,7 @@ function M.attach(self)
             end
 
             if self.preview:has_open() then
-                local opts = { force = false, notify = false }
-
-                if not self.preview:preview_current_commit(opts) then
-                    self.preview:preview_current_entry(opts)
-                end
+                self.preview:follow_cursor()
             end
         end,
     })
