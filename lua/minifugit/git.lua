@@ -551,12 +551,6 @@ local function entry_pathspecs(entry)
     return { entry.orig_path, entry.path }
 end
 
----@param entry GitStatusEntry
----@return string
-local function entry_worktree_path(entry)
-    return entry.path
-end
-
 ---@param entries GitStatusEntry[]
 ---@return string[]
 local function entries_worktree_paths(entries)
@@ -564,7 +558,7 @@ local function entries_worktree_paths(entries)
     local seen = {}
 
     for _, entry in ipairs(entries) do
-        local path = entry_worktree_path(entry)
+        local path = entry.path
 
         if not seen[path] then
             table.insert(pathspecs, path)
