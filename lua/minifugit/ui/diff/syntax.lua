@@ -82,15 +82,43 @@ local function add_span(spans, lines, row, start_col, end_col, group)
     })
 end
 
----@param buf integer
+---Contiguous 1-indexed row ranges covering `rows`, or the whole file.
+---@param rows table<integer, true>?
+---@param line_count integer
+---@return integer[][]
+local function row_runs(rows, line_count)
+    if rows == nil then
+        return { { 1, line_count } }
+    end
+
+    local sorted = vim.tbl_keys(rows)
+    table.sort(sorted)
+
+    local runs = {}
+
+    for _, row in ipairs(sorted) do
+        local last = runs[#runs]
+
+        if last ~= nil and row == last[2] + 1 then
+            last[2] = row
+        else
+            table.insert(runs, { row, row })
+        end
+    end
+
+    return runs
+end
+
+---Parses `lines` from a string, so no scratch buffer, filetype autocmds, or
+---highlighter attach run, and queries captures only over the requested rows.
 ---@param filetype string
 ---@param lines string[]
 ---@param rows table<integer, true>?
 ---@return table<integer, MiniFugitSyntaxSpan[]>?
-local function treesitter_spans(buf, filetype, lines, rows)
+local function treesitter_spans(filetype, lines, rows)
     if
         vim.treesitter == nil
-        or vim.treesitter.get_parser == nil
+        or vim.treesitter.get_string_parser == nil
         or vim.treesitter.query == nil
         or vim.treesitter.query.get == nil
     then
@@ -108,15 +136,17 @@ local function treesitter_spans(buf, filetype, lines, rows)
         end
     end
 
-    local ok_parser, parser = pcall(vim.treesitter.get_parser, buf, lang)
-
-    if not ok_parser or parser == nil then
-        return nil
-    end
-
     local ok_query, query = pcall(vim.treesitter.query.get, lang, 'highlights')
 
     if not ok_query or query == nil then
+        return nil
+    end
+
+    local source = table.concat(lines, '\n')
+    local ok_parser, parser =
+        pcall(vim.treesitter.get_string_parser, source, lang)
+
+    if not ok_parser or parser == nil then
         return nil
     end
 
@@ -129,34 +159,19 @@ local function treesitter_spans(buf, filetype, lines, rows)
     end
 
     local spans = empty_spans(lines)
-    ---@type integer?
-    local start_row = 0
-    ---@type integer?
-    local end_row = -1
 
-    if rows ~= nil then
-        start_row = nil
-        end_row = nil
+    for _, run in ipairs(row_runs(rows, #lines)) do
+        local first, last = run[1], run[2]
 
-        for row in pairs(rows) do
-            local zero_indexed = row - 1
-            start_row = start_row == nil and zero_indexed
-                or math.min(start_row, zero_indexed)
-            end_row = end_row == nil and row or math.max(end_row, row)
-        end
-    end
+        for _, tree in ipairs(trees) do
+            for id, node in
+                query:iter_captures(tree:root(), source, first - 1, last)
+            do
+                local group = treesitter_capture_group(query.captures[id], lang)
+                local node_start_row, start_col, node_end_row, end_col =
+                    node:range()
 
-    for _, tree in ipairs(trees) do
-        for id, node in
-            query:iter_captures(tree:root(), buf, start_row or 0, end_row or -1)
-        do
-            local capture = query.captures[id]
-            local group = treesitter_capture_group(capture, lang)
-            local node_start_row, start_col, node_end_row, end_col =
-                node:range()
-
-            for row = node_start_row + 1, node_end_row + 1 do
-                if rows == nil or rows[row] then
+                for row = math.max(node_start_row + 1, first), math.min(node_end_row + 1, last) do
                     add_span(
                         spans,
                         lines,
@@ -264,6 +279,12 @@ local function spans_by_line(filetype, lines, rows)
         return empty_spans(lines)
     end
 
+    local ts_spans = treesitter_spans(filetype, lines, rows)
+
+    if ts_spans ~= nil then
+        return ts_spans
+    end
+
     local buf = vim.api.nvim_create_buf(false, true)
 
     Buffer.set_buf_option(buf, 'buftype', 'nofile')
@@ -272,8 +293,7 @@ local function spans_by_line(filetype, lines, rows)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     Buffer.set_buf_option(buf, 'filetype', filetype)
 
-    local spans = treesitter_spans(buf, filetype, lines, rows)
-        or vim_spans(buf, filetype, lines, rows)
+    local spans = vim_spans(buf, filetype, lines, rows)
 
     pcall(vim.api.nvim_buf_delete, buf, { force = true })
 
