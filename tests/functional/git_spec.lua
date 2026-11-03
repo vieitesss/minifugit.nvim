@@ -23,9 +23,13 @@ describe('minifugit.git', function()
     local original_cwd
     ---@type string
     local repo
+    local original_git_dir
+    local original_git_work_tree
 
     before_each(function()
         original_cwd = vim.fn.getcwd()
+        original_git_dir = vim.env.GIT_DIR
+        original_git_work_tree = vim.env.GIT_WORK_TREE
         repo = vim.fn.tempname()
         vim.fn.mkdir(repo, 'p')
 
@@ -44,6 +48,8 @@ describe('minifugit.git', function()
     end)
 
     after_each(function()
+        vim.env.GIT_DIR = original_git_dir
+        vim.env.GIT_WORK_TREE = original_git_work_tree
         vim.cmd.cd(vim.fn.fnameescape(original_cwd))
         if repo ~= nil then
             vim.fn.delete(repo, 'rf')
@@ -65,6 +71,96 @@ describe('minifugit.git', function()
 
         vim.cmd.cd(vim.fn.fnameescape(repo))
         vim.fn.delete(not_repo, 'rf')
+    end)
+
+    it('finds the root again when the repository changes', function()
+        local dir = vim.fn.tempname()
+        vim.fn.mkdir(dir, 'p')
+        vim.cmd.cd(vim.fn.fnameescape(dir))
+
+        assert.are.equal('', git.root())
+
+        helpers.run({ 'git', 'init', '-b', 'main' }, dir)
+        assert.are.equal(vim.fn.resolve(dir), vim.fn.resolve(git.root()))
+
+        vim.fn.delete(vim.fs.joinpath(dir, '.git'), 'rf')
+        assert.are_not.equal(vim.fn.resolve(dir), vim.fn.resolve(git.root()))
+
+        vim.cmd.cd(vim.fn.fnameescape(repo))
+        assert.are.equal(vim.fn.resolve(repo), vim.fn.resolve(git.root()))
+        vim.fn.delete(dir, 'rf')
+    end)
+
+    it('finds newly created nested repositories', function()
+        local child = vim.fs.joinpath(repo, 'child')
+        local inner = vim.fs.joinpath(child, 'inner')
+        vim.fn.mkdir(inner, 'p')
+        vim.cmd.cd(vim.fn.fnameescape(inner))
+
+        assert.are.equal(vim.fn.resolve(repo), vim.fn.resolve(git.root()))
+
+        helpers.run({ 'git', 'init', '-b', 'main' }, child)
+        assert.are.equal(vim.fn.resolve(child), vim.fn.resolve(git.root()))
+
+        helpers.run({ 'git', 'init', '-b', 'main' }, inner)
+        assert.are.equal(vim.fn.resolve(inner), vim.fn.resolve(git.root()))
+    end)
+
+    it('finds the root again when Git discovery environment changes', function()
+        vim.env.GIT_DIR = nil
+        vim.env.GIT_WORK_TREE = nil
+        local other = vim.fs.joinpath(repo, 'other')
+        vim.fn.mkdir(other, 'p')
+        helpers.run({ 'git', 'init', '-b', 'main' }, other)
+
+        assert.are.equal(vim.fn.resolve(repo), vim.fn.resolve(git.root()))
+
+        vim.env.GIT_DIR = vim.fs.joinpath(other, '.git')
+        vim.env.GIT_WORK_TREE = other
+        assert.are.equal(vim.fn.resolve(other), vim.fn.resolve(git.root()))
+
+        vim.env.GIT_WORK_TREE = repo
+        assert.are.equal(vim.fn.resolve(repo), vim.fn.resolve(git.root()))
+
+        vim.env.GIT_WORK_TREE = other
+        assert.are.equal(vim.fn.resolve(other), vim.fn.resolve(git.root()))
+
+        vim.env.GIT_WORK_TREE = repo
+        assert.are.equal(vim.fn.resolve(repo), vim.fn.resolve(git.root()))
+        vim.env.GIT_DIR = vim.fs.joinpath(repo, 'missing-git-dir')
+        assert.are.equal('', git.root())
+    end)
+
+    it('finds an explicit worktree from outside it without hanging', function()
+        local outside = vim.fn.tempname()
+        vim.fn.mkdir(outside, 'p')
+        local script = vim.fs.joinpath(outside, 'check_root.lua')
+        vim.fn.writefile({
+            "local git = require('minifugit.git')",
+            'local expected = vim.fn.resolve(vim.env.GIT_WORK_TREE)',
+            'assert(vim.fn.resolve(git.root()) == expected)',
+            'assert(vim.fn.resolve(git.root()) == expected)',
+        }, script)
+
+        local result = vim.system({
+            vim.v.progpath,
+            '--headless',
+            '--noplugin',
+            '-u',
+            vim.fs.joinpath(vim.fs.dirname(spec_dir), 'minimal_init.lua'),
+            '-l',
+            script,
+        }, {
+            cwd = outside,
+            env = {
+                GIT_DIR = vim.fs.joinpath(repo, '.git'),
+                GIT_WORK_TREE = repo,
+            },
+            text = true,
+        }):wait(5000)
+        vim.fn.delete(outside, 'rf')
+
+        assert.are.equal(0, result.code, result.stderr)
     end)
 
     it('collects branch, root, and porcelain status entries', function()

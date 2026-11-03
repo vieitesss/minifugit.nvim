@@ -95,11 +95,24 @@ local function parse_status(output)
     return entries
 end
 
+---Absolute path of the git executable, resolved once. Spawning by bare name
+---makes every call search PATH, which is slow when PATH holds slow mounts.
+---@type string?
+local git_path
+
+---@return string?
+local function git_executable()
+    if git_path == nil then
+        local path = vim.fn.exepath('git')
+        git_path = path ~= '' and path or nil
+    end
+
+    return git_path
+end
+
 ---@return boolean
 local function ensure_git()
-    local ok = vim.fn.executable('git')
-
-    if ok == 0 then
+    if git_executable() == nil then
         log.error('`git` is not executable')
         vim.print('[minifugit] `git` is not executable')
         return false
@@ -142,7 +155,7 @@ function git.run(args, opts)
         }
     end
 
-    local cmd = { 'git' }
+    local cmd = { git_executable() }
     vim.list_extend(cmd, args)
 
     local cwd = opts.cwd or vim.fn.getcwd()
@@ -193,7 +206,7 @@ function git.run_async(args, opts, callback)
         return
     end
 
-    local cmd = { 'git' }
+    local cmd = { git_executable() }
     vim.list_extend(cmd, args)
 
     local cwd = opts.cwd or vim.fn.getcwd()
@@ -255,20 +268,67 @@ function git.branch()
     return return_result(out)
 end
 
+---Repository roots by working directory and Git discovery environment.
+---Only found roots are cached; missing or nested `.git` entries trigger lookup.
+---@type table<string, string>
+local roots_by_context = {}
+
 ---@return string
 function git.root()
-    ensure_git()
+    if not ensure_git() then
+        return ''
+    end
+
+    local cwd = vim.fn.getcwd()
+    local git_dir = vim.env.GIT_DIR
+    local git_work_tree = vim.env.GIT_WORK_TREE
+    local key = table.concat({
+        cwd,
+        git_dir == nil and '0' or '1' .. git_dir,
+        git_work_tree == nil and '0' or '1' .. git_work_tree,
+    }, '\0')
+    local cached = roots_by_context[key]
+
+    if cached ~= nil and vim.uv.fs_stat(cached .. '/.git') ~= nil then
+        local dir = vim.fs.normalize(cwd)
+        local cached_dir = vim.fs.normalize(cached)
+        local prefix = cached_dir:sub(-1) == '/' and cached_dir
+            or cached_dir .. '/'
+
+        if dir == cached_dir or vim.startswith(dir, prefix) then
+            while dir ~= cached_dir do
+                if vim.uv.fs_stat(dir .. '/.git') ~= nil then
+                    break
+                end
+
+                local parent = vim.fs.dirname(dir)
+                if parent == nil or parent == dir then
+                    break
+                end
+                dir = parent
+            end
+
+            if dir == cached_dir then
+                return cached
+            end
+        end
+    end
+
+    roots_by_context[key] = nil
 
     local out = git.run(
         { 'rev-parse', '--show-toplevel' },
-        { ignore_error = true }
+        { cwd = cwd, ignore_error = true }
     )
 
     if out.exit_code ~= 0 then
         return ''
     end
 
-    return return_result(out)
+    local root = return_result(out)
+    roots_by_context[key] = root
+
+    return root
 end
 
 ---@return GitStatusEntry[]
