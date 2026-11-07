@@ -113,7 +113,7 @@ function M.apply_current_hunk(self, kind, callbacks)
     end
 
     local cursor_state = selection.capture_cursor_state(self.host)
-    local ok, err = git.apply_hunk(patch, kind)
+    local ok, err = git.apply_hunk(patch, kind, self.host.root)
 
     if not ok then
         common.notify_error(err, 'Git hunk action failed')

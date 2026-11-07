@@ -72,22 +72,23 @@ local function discard_message(item)
 end
 
 ---@param item GitStatusEntryItem
+---@param root string
 ---@return boolean
 ---@return string?
-local function discard_item(item)
+local function discard_item(item, root)
     if item.section == 'unstaged' then
-        return git.discard_unstaged_entries({ item.entry })
+        return git.discard_unstaged_entries({ item.entry }, root)
     end
 
     if item.section == 'untracked' then
-        return git.discard_untracked_entries({ item.entry })
+        return git.discard_untracked_entries({ item.entry }, root)
     end
 
     return false, 'Nothing to discard'
 end
 
 ---@param self GitStatusWindow
----@param action fun(entries: GitStatusEntry[]): boolean, string?
+---@param action fun(entries: GitStatusEntry[], root: string?): boolean, string?
 ---@param entries GitStatusEntry[]
 ---@return boolean
 function M.update_entries(self, action, entries)
@@ -105,7 +106,7 @@ function M.update_entries(self, action, entries)
 
     local cursor_state = selection.capture_cursor_state(self)
     cursor_state.follow_entry = false
-    local ok, err = action(entries)
+    local ok, err = action(entries, self.root)
 
     if not ok then
         common.notify_error(err, 'Git action failed')
@@ -118,7 +119,7 @@ function M.update_entries(self, action, entries)
 end
 
 ---@param self GitStatusWindow
----@param action fun(entries: GitStatusEntry[]): boolean, string?
+---@param action fun(entries: GitStatusEntry[], root: string?): boolean, string?
 ---@param items GitStatusEntryItem[]
 ---@param kind 'stage'|'unstage'
 ---@return boolean
@@ -144,7 +145,7 @@ function M.update_entry_items(self, action, items, kind)
 end
 
 ---@param self GitStatusWindow
----@param action fun(entries: GitStatusEntry[]): boolean, string?
+---@param action fun(entries: GitStatusEntry[], root: string?): boolean, string?
 ---@param kind 'stage'|'unstage'
 ---@return boolean
 function M.update_entry(self, action, kind)
@@ -254,7 +255,7 @@ function M.discard_entry(self, force)
     end
 
     local cursor_state = selection.capture_cursor_state(self)
-    local ok, err = discard_item(item)
+    local ok, err = discard_item(item, self.root)
 
     if not ok then
         common.notify_error(err, 'Cannot discard changes')
@@ -455,7 +456,7 @@ function M.commit(self)
         return false
     end
 
-    local has_staged_changes, err = git.has_staged_changes()
+    local has_staged_changes, err = git.has_staged_changes(self.root)
 
     if err ~= nil then
         common.notify_error(err, 'Cannot inspect staged changes')
@@ -468,7 +469,7 @@ function M.commit(self)
     end
 
     local path = vim.fn.tempname() .. '.gitcommit'
-    vim.fn.writefile(git.commit_template(), path)
+    vim.fn.writefile(git.commit_template(self.root), path)
 
     vim.api.nvim_set_current_win(self.win)
     vim.wo[self.win].winbar = ''
@@ -505,7 +506,7 @@ function M.commit(self)
     vim.api.nvim_create_autocmd('BufWritePost', {
         buffer = buf,
         callback = function()
-            local ok, output = git.commit_file(path)
+            local ok, output = git.commit_file(path, self.root)
             local level = ok and vim.log.levels.INFO or vim.log.levels.ERROR
 
             vim.notify('[minifugit] ' .. output, level)
@@ -566,7 +567,7 @@ function M.push(self)
             vim.log.levels.INFO
         )
         self:refresh()
-    end)
+    end, self.root)
 
     return true
 end

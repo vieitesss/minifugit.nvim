@@ -23,11 +23,14 @@ describe('minifugit.git', function()
     local original_cwd
     ---@type string
     local repo
+    ---@type string?
+    local other_repo
     local original_git_dir
     local original_git_work_tree
 
     before_each(function()
         original_cwd = vim.fn.getcwd()
+        other_repo = nil
         original_git_dir = vim.env.GIT_DIR
         original_git_work_tree = vim.env.GIT_WORK_TREE
         repo = vim.fn.tempname()
@@ -54,7 +57,292 @@ describe('minifugit.git', function()
         if repo ~= nil then
             vim.fn.delete(repo, 'rf')
         end
+        if other_repo ~= nil then
+            vim.fn.delete(other_repo, 'rf')
+        end
     end)
+
+    local function change_to_other_repo()
+        other_repo = vim.fn.tempname()
+        helpers.run({ 'git', 'clone', '--local', repo, other_repo }, repo)
+        helpers.run({ 'git', 'checkout', '-b', 'other' }, other_repo)
+        helpers.write_file(
+            vim.fs.joinpath(other_repo, 'tracked.txt'),
+            { 'changed in B' }
+        )
+        vim.cmd.cd(vim.fn.fnameescape(other_repo))
+    end
+
+    it('honours an explicit root for snapshots after cwd changes', function()
+        helpers.write_file(vim.fs.joinpath(repo, 'only-a.txt'), { 'A' })
+        change_to_other_repo()
+
+        local snapshot = git.status_snapshot(repo)
+
+        assert.are.equal('main', snapshot.branch)
+        assert.are.equal(repo, snapshot.root)
+        assert.are.same({
+            { staged = '?', unstaged = '?', path = 'only-a.txt' },
+        }, snapshot.entries)
+        assert.are.equal('initial commit', snapshot.unpushed_commits[1].message)
+    end)
+
+    for _, methods in ipairs({
+        { stage = 'stage', unstage = 'unstage' },
+        { stage = 'stage_entries', unstage = 'unstage_entries' },
+    }) do
+        it('honours an explicit root for ' .. methods.unstage, function()
+            helpers.write_file(
+                vim.fs.joinpath(repo, 'tracked.txt'),
+                { 'changed in A' }
+            )
+            local entry = { staged = 'M', unstaged = ' ', path = 'tracked.txt' }
+            local selected = methods.stage == 'stage' and entry or { entry }
+            change_to_other_repo()
+
+            assert.is_true(git[methods.stage](selected, repo))
+            assert.are.equal(
+                'M  tracked.txt\n',
+                helpers.run({ 'git', 'status', '--short' }, repo)
+            )
+            assert.is_true(git[methods.unstage](selected, repo))
+            assert.are.equal(
+                ' M tracked.txt\n',
+                helpers.run({ 'git', 'status', '--short' }, repo)
+            )
+            assert.are.equal(
+                ' M tracked.txt\n',
+                helpers.run({ 'git', 'status', '--short' }, other_repo)
+            )
+        end)
+    end
+
+    for _, section in ipairs({ 'staged', 'unstaged', 'untracked' }) do
+        it('reads ' .. section .. ' diffs from an explicit root', function()
+            local name = section == 'untracked' and 'new.txt' or 'tracked.txt'
+            helpers.write_file(vim.fs.joinpath(repo, name), { 'changed in A' })
+            if section == 'staged' then
+                helpers.run({ 'git', 'add', name }, repo)
+            end
+            local entry = entry_by_path(git.status(), name)
+            change_to_other_repo()
+            helpers.write_file(
+                vim.fs.joinpath(other_repo, name),
+                { 'changed in B' }
+            )
+
+            local lines, err = git.diff(entry, section, repo)
+            assert.is_nil(err)
+            helpers.assert_has_line_containing(lines, '+changed in A')
+            local split, split_err = git.split_diff(entry, section, repo)
+            assert.is_nil(split_err)
+            assert.are.same({ 'changed in A' }, split.right.lines)
+            assert.are.same(
+                section == 'untracked' and {} or { 'one' },
+                split.left.lines
+            )
+        end)
+    end
+
+    for _, kind in ipairs({ 'stage', 'unstage', 'discard' }) do
+        it('applies a ' .. kind .. ' hunk in an explicit root', function()
+            helpers.write_file(
+                vim.fs.joinpath(repo, 'tracked.txt'),
+                { 'changed in A' }
+            )
+            local patch = vim.split(
+                vim.trim(
+                    helpers.run({ 'git', 'diff', '--', 'tracked.txt' }, repo)
+                ),
+                '\n',
+                { plain = true }
+            )
+            if kind == 'unstage' then
+                helpers.run({ 'git', 'add', 'tracked.txt' }, repo)
+            end
+            change_to_other_repo()
+
+            local ok, err = git.apply_hunk(patch, kind, repo)
+            assert.is_true(ok, err)
+            local expected = ({
+                stage = 'M  tracked.txt\n',
+                unstage = ' M tracked.txt\n',
+                discard = '',
+            })[kind]
+            assert.are.equal(
+                expected,
+                helpers.run({ 'git', 'status', '--short' }, repo)
+            )
+            assert.are.equal(
+                ' M tracked.txt\n',
+                helpers.run({ 'git', 'status', '--short' }, other_repo)
+            )
+            assert.are.same(
+                { 'changed in B' },
+                vim.fn.readfile(vim.fs.joinpath(other_repo, 'tracked.txt'))
+            )
+        end)
+    end
+
+    it('inspects staged changes in an explicit root', function()
+        helpers.write_file(vim.fs.joinpath(repo, 'only-a.txt'), { 'A' })
+        helpers.run({ 'git', 'add', 'only-a.txt' }, repo)
+        change_to_other_repo()
+
+        local has_changes, err = git.has_staged_changes(repo)
+
+        assert.is_nil(err)
+        assert.is_true(has_changes)
+    end)
+
+    it('builds a commit template from an explicit root', function()
+        helpers.write_file(vim.fs.joinpath(repo, 'only-a.txt'), { 'A' })
+        helpers.run({ 'git', 'add', 'only-a.txt' }, repo)
+        change_to_other_repo()
+
+        local lines = git.commit_template(repo)
+
+        helpers.assert_has_line_containing(lines, 'only-a.txt')
+        helpers.assert_has_line_containing(lines, 'On branch main')
+        for _, line in ipairs(lines) do
+            assert.is_nil(line:find('tracked.txt', 1, true))
+        end
+    end)
+
+    it('commits a message file in an explicit root', function()
+        helpers.write_file(vim.fs.joinpath(repo, 'only-a.txt'), { 'A' })
+        helpers.run({ 'git', 'add', 'only-a.txt' }, repo)
+        change_to_other_repo()
+        local path = vim.fs.joinpath(repo, '.git', 'test-message')
+        helpers.write_file(path, { 'commit in A' })
+
+        local ok, err = git.commit_file(path, repo)
+
+        assert.is_true(ok, err)
+        assert.are.equal(
+            'commit in A\n',
+            helpers.run({ 'git', 'log', '-1', '--pretty=%s' }, repo)
+        )
+        assert.are.equal(
+            'initial commit\n',
+            helpers.run({ 'git', 'log', '-1', '--pretty=%s' }, other_repo)
+        )
+        assert.are.equal(
+            ' M tracked.txt\n',
+            helpers.run({ 'git', 'status', '--short' }, other_repo)
+        )
+    end)
+
+    it('shows a commit from an explicit root', function()
+        change_to_other_repo()
+        helpers.write_file(vim.fs.joinpath(repo, 'only-a.txt'), { 'commit A' })
+        helpers.run({ 'git', 'add', 'only-a.txt' }, repo)
+        helpers.run({ 'git', 'commit', '-m', 'only in A' }, repo)
+        local hash = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
+
+        local lines, err = git.show_commit({ hash = hash }, repo)
+
+        assert.is_nil(err)
+        helpers.assert_has_line_containing(lines, 'only in A')
+        helpers.assert_has_line_containing(lines, '+commit A')
+    end)
+
+    it('scopes upstream error messages to the explicit root', function()
+        change_to_other_repo()
+
+        local upstream, upstream_err = git.upstream(repo)
+        local destination, destination_err = git.push_destination(repo)
+
+        assert.is_nil(upstream)
+        assert.is_nil(destination)
+        local expected = 'No upstream configured. Run git push -u origin main'
+        assert.are.equal(expected, upstream_err)
+        assert.are.equal(expected, destination_err)
+    end)
+
+    for _, async in ipairs({ false, true }) do
+        it(
+            'pushes from an explicit root'
+                .. (async and ' asynchronously' or ''),
+            function()
+                local remote = vim.fs.joinpath(repo, '.git', 'test-remote.git')
+                helpers.run({ 'git', 'init', '--bare', remote }, repo)
+                helpers.run({ 'git', 'remote', 'add', 'origin', remote }, repo)
+                helpers.run({ 'git', 'push', '-u', 'origin', 'main' }, repo)
+                change_to_other_repo()
+                helpers.write_file(vim.fs.joinpath(repo, 'only-a.txt'), { 'A' })
+                helpers.run({ 'git', 'add', 'only-a.txt' }, repo)
+                helpers.run({ 'git', 'commit', '-m', 'push from A' }, repo)
+
+                local ok, output
+                if async then
+                    git.push_async(function(success, message)
+                        ok, output = success, message
+                    end, repo)
+                    assert.is_true(vim.wait(2000, function()
+                        return ok ~= nil
+                    end))
+                else
+                    ok, output = git.push(repo)
+                end
+
+                assert.is_true(ok, output)
+                assert.are.equal(
+                    'push from A\n',
+                    helpers.run({
+                        'git',
+                        '--git-dir=' .. remote,
+                        'log',
+                        'main',
+                        '-1',
+                        '--pretty=%s',
+                    }, repo)
+                )
+                assert.are.equal(
+                    ' M tracked.txt\n',
+                    helpers.run({ 'git', 'status', '--short' }, other_repo)
+                )
+                assert.are.equal(
+                    'initial commit\n',
+                    helpers.run(
+                        { 'git', 'log', '-1', '--pretty=%s' },
+                        other_repo
+                    )
+                )
+            end
+        )
+    end
+
+    for _, kind in ipairs({ 'unstaged', 'untracked' }) do
+        it('discards ' .. kind .. ' files in an explicit root', function()
+            local name = kind == 'untracked' and 'new.txt' or 'tracked.txt'
+            helpers.write_file(vim.fs.joinpath(repo, name), { 'changed in A' })
+            local entries = git.status()
+            change_to_other_repo()
+            helpers.write_file(
+                vim.fs.joinpath(other_repo, name),
+                { 'changed in B' }
+            )
+            local other_status =
+                helpers.run({ 'git', 'status', '--short' }, other_repo)
+
+            local ok, err = git['discard_' .. kind .. '_entries'](entries, repo)
+
+            assert.is_true(ok, err)
+            assert.are.equal(
+                '',
+                helpers.run({ 'git', 'status', '--short' }, repo)
+            )
+            assert.are.equal(
+                other_status,
+                helpers.run({ 'git', 'status', '--short' }, other_repo)
+            )
+            assert.are.same(
+                { 'changed in B' },
+                vim.fn.readfile(vim.fs.joinpath(other_repo, name))
+            )
+        end)
+    end
 
     it('returns a safe snapshot outside a git repository', function()
         local not_repo = vim.fn.tempname()

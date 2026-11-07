@@ -14,6 +14,7 @@ local window = require('minifugit.ui.status.window')
 local git = require('minifugit.git')
 
 ---@class GitStatusWindow
+---@field root string Pinned repository root, captured when the window is created.
 ---@field buf Buffer
 ---@field preview DiffPreview
 ---@field help_buf Buffer?
@@ -595,7 +596,7 @@ function GitStatusWindow:render_cached()
     assert(self.buf:is_valid())
     assert(self.groups ~= nil)
 
-    self.snapshot = self.snapshot or git.status_snapshot()
+    self.snapshot = self.snapshot or git.status_snapshot(self.root)
     local loading_frame
 
     if self.loading_message ~= nil then
@@ -615,7 +616,7 @@ function GitStatusWindow:render_cached()
 end
 
 function GitStatusWindow:render()
-    self.snapshot = git.status_snapshot()
+    self.snapshot = git.status_snapshot(self.root)
     self:render_cached()
 end
 
@@ -671,6 +672,7 @@ end
 function GitStatusWindow.new(opts)
     local self = setmetatable({}, GitStatusWindow)
 
+    self.root = git.root()
     self.options = opts
     self.groups = create_highlight_groups()
     self.highlights = create_highlights()
