@@ -305,7 +305,10 @@ local function open_status_window(root, open_in_tab)
     local tabpage
     local gsw
     local reusable_tab
+    local exposed = false
     -- Destroying an owned tab can expose another registered status window.
+    -- Only the instance selected first may be replaced; an exposed one is
+    -- reused when it matches and otherwise left alone.
     repeat
         tabpage = vim.api.nvim_get_current_tabpage()
         gsw = status_window(tabpage)
@@ -322,25 +325,33 @@ local function open_status_window(root, open_in_tab)
                         and gsw.options.status.open_in_tab ~= open_in_tab
                     )
                 then
-                    local owned_tab = gsw.tabpage
-                    local foreign_buffer = gsw.tab_foreign_buffer
-                    local repinned = root ~= gsw.root
-                    unregister_window(tabpage, gsw)
-                    gsw = nil
-                    if
-                        repinned
-                        and open_in_tab
-                        and owned_tab ~= nil
-                        and vim.api.nvim_tabpage_is_valid(owned_tab)
-                    then
-                        reusable_tab = {
-                            tabpage = owned_tab,
-                            foreign_buffer = foreign_buffer,
-                        }
+                    if exposed then
+                        gsw = nil
+                        -- The exposed tab keeps its window, so the new one
+                        -- needs a tab of its own.
+                        open_in_tab = true
+                    else
+                        local owned_tab = gsw.tabpage
+                        local foreign_buffer = gsw.tab_foreign_buffer
+                        local repinned = root ~= gsw.root
+                        unregister_window(tabpage, gsw)
+                        gsw = nil
+                        if
+                            repinned
+                            and open_in_tab
+                            and owned_tab ~= nil
+                            and vim.api.nvim_tabpage_is_valid(owned_tab)
+                        then
+                            reusable_tab = {
+                                tabpage = owned_tab,
+                                foreign_buffer = foreign_buffer,
+                            }
+                        end
                     end
                 end
             end
         end
+        exposed = true
     until tabpage == vim.api.nvim_get_current_tabpage()
 
     if gsw == nil and open_in_tab then

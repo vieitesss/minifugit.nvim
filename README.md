@@ -148,7 +148,9 @@ another root replaces the current visible status window; omitting it preserves
 that window's pin. `status()` calls `open({})` and ignores its return value.
 
 Each tabpage has its own status window. With `status.open_in_tab = true`, calls
-for a repository reuse its existing minifugit tab.
+for a repository reuse its existing minifugit tab. Replacing a status window
+never closes another tab's window: if closing the replaced tab lands on a tab
+whose status window cannot be reused, the new window opens in its own tab.
 
 The status header shows the pinned repository root. Changing cwd does not
 redirect an open window's actions; close and reopen status in another repository

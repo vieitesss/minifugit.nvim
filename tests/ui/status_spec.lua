@@ -227,6 +227,8 @@ describe('minifugit status UI', function()
     local repo
     ---@type string?
     local other_repo
+    ---@type string?
+    local third_repo
     ---@type Minifugit
     local minifugit
     local status_window
@@ -254,6 +256,7 @@ describe('minifugit status UI', function()
         end
         original_cwd = vim.fn.getcwd()
         other_repo = nil
+        third_repo = nil
         repo = vim.fn.tempname()
         vim.fn.mkdir(repo, 'p')
 
@@ -292,6 +295,9 @@ describe('minifugit status UI', function()
         end
         if other_repo ~= nil then
             vim.fn.delete(other_repo, 'rf')
+        end
+        if third_repo ~= nil then
+            vim.fn.delete(third_repo, 'rf')
         end
     end)
 
@@ -1152,6 +1158,81 @@ describe('minifugit status UI', function()
         assert.are.equal(wins, #vim.api.nvim_list_wins())
         assert.are.equal(tabs, #vim.api.nvim_list_tabpages())
     end)
+
+    for _, open_in_tab in ipairs({ false, true }) do
+        it(
+            'keeps an unrelated status window exposed by re-pinning an owned tab with open_in_tab='
+                .. tostring(open_in_tab),
+            function()
+                other_repo = helpers.clone_repo_with_changed_file(
+                    repo,
+                    'only-b.txt',
+                    { 'B' }
+                )
+                third_repo = helpers.clone_repo_with_changed_file(
+                    repo,
+                    'only-c.txt',
+                    { 'C' }
+                )
+                local tabs = #vim.api.nvim_list_tabpages()
+                local tab_a = vim.api.nvim_get_current_tabpage()
+                local calls_a = 0
+                assert.is_true(minifugit.open({
+                    cwd = repo,
+                    open_in_tab = false,
+                    on_close = function()
+                        calls_a = calls_a + 1
+                    end,
+                }))
+                local win_a = vim.api.nvim_get_current_win()
+                local buf_a = vim.api.nvim_get_current_buf()
+                vim.cmd.tabnew()
+                local launch_tab = vim.api.nvim_get_current_tabpage()
+                assert.is_true(minifugit.open({
+                    cwd = other_repo,
+                    open_in_tab = true,
+                }))
+                local tab_b = vim.api.nvim_get_current_tabpage()
+                local buf_b = vim.api.nvim_get_current_buf()
+                vim.cmd(
+                    vim.api.nvim_tabpage_get_number(launch_tab) .. 'tabclose'
+                )
+                assert.are.equal(tabs + 1, #vim.api.nvim_list_tabpages())
+
+                assert.is_true(minifugit.open({
+                    cwd = third_repo,
+                    open_in_tab = open_in_tab,
+                }))
+
+                settle_callbacks()
+                local tab_c = vim.api.nvim_get_current_tabpage()
+                local buf_c = vim.api.nvim_get_current_buf()
+                assert.are.equal(0, calls_a)
+                assert.is_false(tabpage_is_valid(tab_b))
+                assert.is_false(vim.api.nvim_buf_is_valid(buf_b))
+                assert.is_true(vim.api.nvim_buf_is_valid(buf_a))
+                assert.are.equal(tab_a, vim.api.nvim_win_get_tabpage(win_a))
+                assert.are.equal(buf_a, vim.api.nvim_win_get_buf(win_a))
+                assert.are.equal(1, #status_windows(tab_a))
+                assert_has_line(
+                    buffer_lines(buf_a),
+                    'Root: ' .. vim.fn.resolve(repo)
+                )
+                assert.are_not.equal(tab_a, tab_c)
+                assert.are.equal(1, #status_windows(tab_c))
+                assert.are.equal(tabs + 1, #vim.api.nvim_list_tabpages())
+                assert_has_line(buffer_lines(buf_c), '?? only-c.txt')
+                assert_has_line(
+                    buffer_lines(buf_c),
+                    'Root: ' .. vim.fn.resolve(third_repo)
+                )
+                mapped_normal_keys('q')
+                assert.is_false(tabpage_is_valid(tab_c))
+                assert.are.equal(tab_a, vim.api.nvim_get_current_tabpage())
+                assert.are.equal(1, #status_windows(tab_a))
+            end
+        )
+    end
 
     for _, root_differs in ipairs({ false, true }) do
         it(
