@@ -10,6 +10,7 @@
 - **Target window**: A normal edit or explorer window selected by the status UI, or a preview split anchored to the status window when no edit window is available.
 - **Stacked layout**: Single-window diff preview showing one combined diff in the target window.
 - **Split layout**: Two-window diff preview showing the two sides of a diff side by side.
+- **Split render plan**: Aligned hunk rows and highlight descriptions for both split layout sides, computed before any diff buffer or window update.
 - **Status registry**: Per-entrypoint ownership of one status instance per tabpage, including migration and owned-tab re-selection.
 - **Status item**: A selectable status entry together with its section, or an unpushed commit.
 - **Status document**: Rendered status lines plus the stable row identities they carry for one status snapshot.
