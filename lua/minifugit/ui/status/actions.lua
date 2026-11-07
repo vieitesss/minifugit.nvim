@@ -456,6 +456,11 @@ function M.commit(self)
         return false
     end
 
+    if self.root == '' then
+        common.notify_warn('Not inside a git repository')
+        return false
+    end
+
     local has_staged_changes, err = git.has_staged_changes(self.root)
 
     if err ~= nil then
@@ -558,6 +563,10 @@ function M.push(self)
                 common.notify_error(output, 'Push failed')
             end
 
+            if self.buf == nil or not self.buf:is_valid() then
+                return
+            end
+
             self:render_cached()
             return
         end
@@ -566,6 +575,11 @@ function M.push(self)
             output ~= '' and output or 'Pushed commits',
             vim.log.levels.INFO
         )
+
+        if self.buf == nil or not self.buf:is_valid() then
+            return
+        end
+
         self:refresh()
     end, self.root)
 

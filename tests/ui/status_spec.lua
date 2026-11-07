@@ -269,6 +269,46 @@ describe('minifugit status UI', function()
         vim.cmd.cd(vim.fn.fnameescape(other_repo))
     end
 
+    it('rejects commits from a status window opened outside git', function()
+        other_repo = vim.fn.tempname()
+        vim.fn.mkdir(other_repo, 'p')
+        vim.cmd.cd(vim.fn.fnameescape(other_repo))
+        minifugit.status()
+        local gsw = minifugit.gsw
+        local status_buf = gsw.buf.id
+        assert.are.equal('', gsw.root)
+        assert_has_line(buffer_lines(status_buf), 'Not inside a git repository')
+
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'staged in B' }
+        )
+        helpers.run({ 'git', 'add', 'tracked.txt' }, repo)
+        local log_before = helpers.run({ 'git', 'log', '--format=%H' }, repo)
+        local index_before = helpers.run({ 'git', 'ls-files', '--stage' }, repo)
+        vim.cmd.cd(vim.fn.fnameescape(repo))
+
+        mapped_normal_keys('c')
+
+        assert.are.equal(
+            log_before,
+            helpers.run({ 'git', 'log', '--format=%H' }, repo)
+        )
+        assert.are.equal(
+            index_before,
+            helpers.run({ 'git', 'ls-files', '--stage' }, repo)
+        )
+        assert.is_true(
+            vim.api.nvim_get_current_buf() == status_buf,
+            'Commit keymap must not open a commit buffer for an empty pin'
+        )
+        assert.are.equal(status_buf, vim.api.nvim_win_get_buf(gsw.win))
+        for _, win in ipairs(vim.api.nvim_list_wins()) do
+            local buf = vim.api.nvim_win_get_buf(win)
+            assert.are_not.equal('gitcommit', vim.bo[buf].filetype)
+        end
+    end)
+
     it('stages in the displayed repository after cwd changes', function()
         helpers.write_file(
             vim.fs.joinpath(repo, 'tracked.txt'),
@@ -317,6 +357,81 @@ describe('minifugit status UI', function()
             for _, line in ipairs(lines) do
                 assert.is_nil(line:find('only-a.txt', 1, true))
             end
+        end
+    )
+
+    it(
+        'ignores push UI updates after the status window is re-pinned',
+        function()
+            local git = require('minifugit.git')
+            local original_push_async = git.push_async
+            local original_notify = vim.notify
+            local push_callback
+            local push_root
+            local notifications = {}
+
+            git.push_async = function(callback, root)
+                push_callback = callback
+                push_root = root
+            end
+            vim.notify = function(message, level)
+                table.insert(
+                    notifications,
+                    { message = message, level = level }
+                )
+            end
+
+            local test_ok, test_err = pcall(function()
+                change_to_other_repo()
+
+                for _, push_ok in ipairs({ true, false }) do
+                    minifugit.reset()
+                    vim.cmd.cd(vim.fn.fnameescape(repo))
+                    minifugit.status()
+                    local old_status_buf = minifugit.gsw.buf.id
+                    push_callback = nil
+                    mapped_normal_keys('p')
+                    assert.is_function(push_callback)
+                    assert.are.equal(vim.fn.resolve(repo), push_root)
+                    mapped_normal_keys('q')
+                    vim.cmd.cd(vim.fn.fnameescape(other_repo))
+                    minifugit.status()
+
+                    local gsw = minifugit.gsw
+                    local status_buf = gsw.buf.id
+                    local lines_before = buffer_lines(status_buf)
+                    assert.is_false(vim.api.nvim_buf_is_valid(old_status_buf))
+                    assert_has_line(
+                        lines_before,
+                        'Root: ' .. vim.fn.resolve(other_repo)
+                    )
+                    local output = push_ok and 'Pushed commits from A'
+                        or 'Push failed in A'
+                    helpers.write_file(
+                        vim.fs.joinpath(other_repo, output .. '.txt'),
+                        { 'Created after the B snapshot' }
+                    )
+
+                    local callback_ok, callback_err =
+                        pcall(push_callback, push_ok, output)
+
+                    assert(callback_ok, callback_err)
+                    assert.are.same(lines_before, buffer_lines(status_buf))
+                    assert.are.equal(status_buf, vim.api.nvim_get_current_buf())
+                    assert.are.equal(
+                        status_buf,
+                        vim.api.nvim_win_get_buf(gsw.win)
+                    )
+                    assert.are.same({
+                        message = '[minifugit] ' .. output,
+                        level = push_ok and vim.log.levels.INFO
+                            or vim.log.levels.ERROR,
+                    }, notifications[#notifications])
+                end
+            end)
+            git.push_async = original_push_async
+            vim.notify = original_notify
+            assert(test_ok, test_err)
         end
     )
 
