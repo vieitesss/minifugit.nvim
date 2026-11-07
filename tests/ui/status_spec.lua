@@ -480,6 +480,149 @@ describe('minifugit status UI', function()
         )
     end
 
+    it('keeps a moved status alive after its source tab closes', function()
+        minifugit.status()
+        local source_tab = vim.api.nvim_get_current_tabpage()
+        local status_buf = vim.api.nvim_get_current_buf()
+        normal_keys('<C-W>T')
+        local moved_tab = vim.api.nvim_get_current_tabpage()
+        assert.are_not.equal(source_tab, moved_tab)
+
+        vim.api.nvim_set_current_tabpage(source_tab)
+        vim.cmd.tabclose()
+        local settled = false
+        vim.schedule(function()
+            settled = true
+        end)
+        assert.is_true(vim.wait(1000, function()
+            return settled
+        end))
+
+        assert.is_true(vim.api.nvim_buf_is_valid(status_buf))
+        assert.are.equal(1, #status_windows(moved_tab))
+        minifugit.status()
+        assert.are.equal(status_buf, vim.api.nvim_get_current_buf())
+        minifugit.reset()
+        assert.is_false(vim.api.nvim_buf_is_valid(status_buf))
+    end)
+
+    it('reuses moved status only in its destination tab', function()
+        minifugit.status()
+        local source_tab = vim.api.nvim_get_current_tabpage()
+        local moved_buf = vim.api.nvim_get_current_buf()
+        normal_keys('<C-W>T')
+        local moved_tab = vim.api.nvim_get_current_tabpage()
+
+        minifugit.status()
+        assert.are.equal(moved_buf, vim.api.nvim_get_current_buf())
+        assert.are.equal(1, #status_windows(moved_tab))
+
+        vim.api.nvim_set_current_tabpage(source_tab)
+        minifugit.status()
+        local source_buf = vim.api.nvim_get_current_buf()
+        assert.are.equal(source_tab, vim.api.nvim_get_current_tabpage())
+        assert.are_not.equal(moved_buf, source_buf)
+        assert.are.equal(1, #status_windows(source_tab))
+
+        vim.api.nvim_set_current_tabpage(moved_tab)
+        vim.cmd.bdelete({ tostring(moved_buf), bang = true })
+        local settled = false
+        vim.schedule(function()
+            settled = true
+        end)
+        assert.is_true(vim.wait(1000, function()
+            return settled
+        end))
+        assert.is_false(vim.api.nvim_buf_is_valid(moved_buf))
+        vim.api.nvim_set_current_tabpage(source_tab)
+        minifugit.status()
+        assert.are.equal(source_buf, vim.api.nvim_get_current_buf())
+    end)
+
+    it('finds a moved owned status tab from its original caller', function()
+        minifugit.setup({ status = { open_in_tab = true } })
+        local caller_tab = vim.api.nvim_get_current_tabpage()
+        minifugit.status()
+        local source_tab = vim.api.nvim_get_current_tabpage()
+        local status_buf = vim.api.nvim_get_current_buf()
+        normal_keys('<C-W>T')
+        local moved_tab = vim.api.nvim_get_current_tabpage()
+
+        vim.api.nvim_set_current_tabpage(source_tab)
+        vim.cmd.tabclose()
+        vim.api.nvim_set_current_tabpage(caller_tab)
+        local tabs_before = #vim.api.nvim_list_tabpages()
+        minifugit.status()
+
+        assert.are.equal(moved_tab, vim.api.nvim_get_current_tabpage())
+        assert.are.equal(status_buf, vim.api.nvim_get_current_buf())
+        assert.are.equal(tabs_before, #vim.api.nvim_list_tabpages())
+        minifugit.reset()
+        assert.is_false(vim.api.nvim_buf_is_valid(status_buf))
+        assert.is_false(tabpage_is_valid(moved_tab))
+    end)
+
+    it(
+        'retires destination status without closing its foreign file tab',
+        function()
+            minifugit.setup({ status = { open_in_tab = true } })
+            local status_a, status_b = open_two_status_tabs()
+            activate_status_window(status_a.tabpage)
+            local win_a = vim.api.nvim_get_current_win()
+            local file_a_win
+            for _, win in ipairs(normal_windows(status_a.tabpage)) do
+                if win ~= win_a then
+                    file_a_win = win
+                    break
+                end
+            end
+            vim.api.nvim_set_current_win(file_a_win)
+            vim.cmd.edit(
+                vim.fn.fnameescape(vim.fs.joinpath(repo, 'tracked.txt'))
+            )
+            local file_a_buf = vim.api.nvim_get_current_buf()
+            vim.api.nvim_win_close(win_a, true)
+
+            local win_b = activate_status_window(status_b.tabpage)
+            local file_b_win
+            for _, win in ipairs(normal_windows(status_b.tabpage)) do
+                if win ~= win_b then
+                    file_b_win = win
+                    break
+                end
+            end
+            vim.api.nvim_set_current_win(file_b_win)
+            vim.cmd.edit(
+                vim.fn.fnameescape(vim.fs.joinpath(other_repo, 'tracked.txt'))
+            )
+            local file_b_buf = vim.api.nvim_get_current_buf()
+            local tabs_before = #vim.api.nvim_list_tabpages()
+
+            vim.cmd.sbuffer({
+                tostring(status_a.buffer),
+                mods = { vertical = true },
+            })
+
+            assert.are.equal(
+                status_b.tabpage,
+                vim.api.nvim_get_current_tabpage()
+            )
+            assert.are.equal(status_a.buffer, vim.api.nvim_get_current_buf())
+            assert.are.equal(1, #status_windows(status_b.tabpage))
+            assert.is_false(vim.api.nvim_buf_is_valid(status_b.buffer))
+            assert.are.equal(tabs_before, #vim.api.nvim_list_tabpages())
+            assert.are.equal(file_a_buf, vim.api.nvim_win_get_buf(file_a_win))
+            assert.are.equal(file_b_buf, vim.api.nvim_win_get_buf(file_b_win))
+
+            minifugit.reset()
+
+            assert.is_false(vim.api.nvim_buf_is_valid(status_a.buffer))
+            assert.is_true(tabpage_is_valid(status_b.tabpage))
+            assert.are.equal(file_b_buf, vim.api.nvim_win_get_buf(file_b_win))
+            assert.are.equal(file_a_buf, vim.api.nvim_win_get_buf(file_a_win))
+        end
+    )
+
     it(
         'cleans up a closed tab without disturbing another status tab',
         function()

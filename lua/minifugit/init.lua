@@ -192,6 +192,47 @@ end
 ---@param gsw GitStatusWindow
 local function register_window(tabpage, gsw)
     windows[tabpage] = gsw
+
+    local function update_tabpage()
+        if
+            windows[tabpage] ~= gsw
+            or gsw.win == nil
+            or not vim.api.nvim_win_is_valid(gsw.win)
+            or not has_valid_status_buffer(gsw)
+            or vim.api.nvim_win_get_buf(gsw.win) ~= gsw.buf.id
+        then
+            return
+        end
+
+        local destination = vim.api.nvim_win_get_tabpage(gsw.win)
+        if destination == tabpage then
+            return
+        end
+
+        local previous = windows[destination]
+        if previous ~= nil and previous ~= gsw then
+            previous.tabpage = nil
+            unregister_window(destination, previous)
+        end
+
+        windows[tabpage] = nil
+        windows[destination] = gsw
+        if gsw.tabpage ~= nil then
+            gsw.tabpage = destination
+            if previous ~= nil then
+                gsw.tab_foreign_buffer = true
+            end
+        end
+        tabpage = destination
+    end
+
+    vim.api.nvim_create_autocmd(
+        { 'WinEnter', 'TabEnter', 'BufEnter', 'BufWinEnter' },
+        {
+            group = gsw.autocmd_group,
+            callback = update_tabpage,
+        }
+    )
     vim.api.nvim_create_autocmd({ 'BufDelete', 'BufUnload', 'BufWipeout' }, {
         group = gsw.autocmd_group,
         buffer = gsw.buf.id,
@@ -206,6 +247,7 @@ local function register_window(tabpage, gsw)
         group = gsw.autocmd_group,
         callback = function()
             vim.schedule(function()
+                update_tabpage()
                 if not vim.api.nvim_tabpage_is_valid(tabpage) then
                     unregister_window(tabpage, gsw)
                 end
