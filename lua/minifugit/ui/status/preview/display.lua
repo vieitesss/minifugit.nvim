@@ -1,12 +1,10 @@
 local common = require('minifugit.ui.status.common')
-local diff_parser = require('minifugit.ui.diff.parser')
 local render = require('minifugit.ui.render')
 local window = require('minifugit.ui.status.window')
 local buffers = require('minifugit.ui.status.preview.buffers')
 local window_state = require('minifugit.ui.status.preview.window_state')
 local preview_util = require('minifugit.ui.status.preview.util')
-local split_align = require('minifugit.ui.diff.split_align')
-local word_diff = require('minifugit.ui.diff.word_diff')
+local split_render = require('minifugit.ui.diff.split_render')
 
 local M = {}
 
@@ -302,138 +300,22 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
     return true
 end
 
----Apply line-background extmarks to a split diff buffer using alignment rows.
+---Apply extmark descriptions to a split diff buffer.
 ---@param bufnr integer
----@param rows MiniFugitSplitRow[]
----@param groups table<string, string>
----@param side MiniFugitDiffSide
-local function apply_split_line_highlights(bufnr, rows, groups, side)
-    vim.api.nvim_buf_clear_namespace(bufnr, SPLIT_LINE_NAMESPACE, 0, -1)
+---@param namespace integer
+---@param marks MiniFugitSplitExtmark[]
+local function apply_split_marks(bufnr, namespace, marks)
+    vim.api.nvim_buf_clear_namespace(bufnr, namespace, 0, -1)
 
-    local line_hl = side == 'left' and groups.diff_removed or groups.diff_added
-    local change_kind = side == 'left' and 'delete' or 'add'
-
-    for buf_row, meta in ipairs(rows) do
-        if meta.kind == change_kind then
-            pcall(
-                vim.api.nvim_buf_set_extmark,
-                bufnr,
-                SPLIT_LINE_NAMESPACE,
-                buf_row - 1,
-                0,
-                {
-                    end_row = buf_row - 1,
-                    end_col = #(vim.api.nvim_buf_get_lines(
-                        bufnr,
-                        buf_row - 1,
-                        buf_row,
-                        false
-                    )[1] or ''),
-                    hl_eol = true,
-                    hl_group = line_hl,
-                    priority = 200,
-                }
-            )
-        end
-    end
-end
-
----Apply intra-line word-change extmarks using word-diff between paired
----deleted/added lines.
----@param bufnr integer
----@param rows MiniFugitSplitRow[]
----@param hunks MiniFugitDiffHunk[]
----@param groups table<string, string>
----@param side MiniFugitDiffSide
----@param raw_diff_lines string[]
-local function apply_split_intraline_highlights(
-    bufnr,
-    rows,
-    hunks,
-    groups,
-    side,
-    raw_diff_lines
-)
-    vim.api.nvim_buf_clear_namespace(bufnr, SPLIT_INTRALINE_NAMESPACE, 0, -1)
-
-    local text_hl = side == 'left' and groups.diff_removed_intraline
-        or groups.diff_added_intraline
-
-    local parsed = diff_parser.parse_lines(raw_diff_lines or {})
-    ---@type table<integer, MiniFugitDiffLine>
-    local by_raw_row = {}
-    for _, dl in ipairs(parsed) do
-        by_raw_row[dl.raw_row] = dl
-    end
-
-    for _, hunk in ipairs(hunks or {}) do
-        local del_lines = {}
-        local add_lines = {}
-        local in_hunk = false
-
-        for raw_row = hunk.raw_start_row, hunk.raw_end_row do
-            local dl = by_raw_row[raw_row]
-
-            if dl ~= nil then
-                if dl.kind == 'hunk' and dl.raw_row == hunk.raw_header_row then
-                    in_hunk = true
-                end
-
-                if in_hunk then
-                    if dl.kind == 'removed' then
-                        table.insert(del_lines, dl)
-                    elseif dl.kind == 'added' then
-                        table.insert(add_lines, dl)
-                    end
-                end
-            end
-        end
-
-        if #del_lines > 0 and #add_lines > 0 then
-            local pairs_count = math.min(#del_lines, #add_lines)
-
-            for pair_i = 1, pairs_count do
-                local del = del_lines[pair_i]
-                local add = add_lines[pair_i]
-
-                if del.text and add.text then
-                    local old_text = del.text:sub(2)
-                    local new_text = add.text:sub(2)
-                    local ranges = word_diff.changed_ranges(
-                        old_text,
-                        new_text,
-                        side == 'left' and 'left' or 'right'
-                    )
-
-                    for _, range in ipairs(ranges) do
-                        for buf_row, meta in ipairs(rows) do
-                            local matches_row = side == 'right'
-                                    and meta.new_lnum == add.new_number
-                                    and meta.kind == 'add'
-                                or side == 'left'
-                                    and meta.old_lnum == del.old_number
-                                    and meta.kind == 'delete'
-
-                            if matches_row then
-                                pcall(
-                                    vim.api.nvim_buf_set_extmark,
-                                    bufnr,
-                                    SPLIT_INTRALINE_NAMESPACE,
-                                    buf_row - 1,
-                                    range.start_col,
-                                    {
-                                        end_col = range.end_col,
-                                        hl_group = text_hl,
-                                        priority = 201,
-                                    }
-                                )
-                                break
-                            end
-                        end
-                    end
-                end
-            end
-        end
+    for _, mark in ipairs(marks) do
+        pcall(
+            vim.api.nvim_buf_set_extmark,
+            bufnr,
+            namespace,
+            mark.row,
+            mark.col,
+            mark.opts
+        )
     end
 end
 
@@ -464,12 +346,7 @@ function M.show_split(
         outgoing = self.stacked
     end
 
-    local alignment = split_align.align(
-        split_diff.left.lines,
-        split_diff.right.lines,
-        diff_lines,
-        hunks
-    )
+    local plan = split_render.render(split_diff, diff_lines, hunks, self.groups)
 
     local left_buf = buffers.ensure_split(
         self,
@@ -489,41 +366,29 @@ function M.show_split(
     window_state.attach_autocmds(self, left_buf.id)
     window_state.attach_autocmds(self, right_buf.id)
 
-    buffers.set_plain_lines(left_buf, alignment.left_lines)
-    buffers.set_plain_lines(right_buf, alignment.right_lines)
+    buffers.set_plain_lines(left_buf, plan.left.lines)
+    buffers.set_plain_lines(right_buf, plan.right.lines)
 
-    apply_split_line_highlights(
-        left_buf.id,
-        alignment.left_rows,
-        self.groups,
-        'left'
-    )
-    apply_split_line_highlights(
+    apply_split_marks(left_buf.id, SPLIT_LINE_NAMESPACE, plan.left.backgrounds)
+    apply_split_marks(
         right_buf.id,
-        alignment.right_rows,
-        self.groups,
-        'right'
+        SPLIT_LINE_NAMESPACE,
+        plan.right.backgrounds
     )
-    apply_split_intraline_highlights(
+    apply_split_marks(
         left_buf.id,
-        alignment.left_rows,
-        hunks,
-        self.groups,
-        'left',
-        diff_lines
+        SPLIT_INTRALINE_NAMESPACE,
+        plan.left.intraline
     )
-    apply_split_intraline_highlights(
+    apply_split_marks(
         right_buf.id,
-        alignment.right_rows,
-        hunks,
-        self.groups,
-        'right',
-        diff_lines
+        SPLIT_INTRALINE_NAMESPACE,
+        plan.right.intraline
     )
 
-    self.left_rows = alignment.left_rows
-    self.right_rows = alignment.right_rows
-    self.anchors = alignment.anchors
+    self.left_rows = plan.left.rows
+    self.right_rows = plan.right.rows
+    self.anchors = plan.anchors
 
     if split_diff.filetype ~= '' then
         left_buf:set_option('filetype', split_diff.filetype)

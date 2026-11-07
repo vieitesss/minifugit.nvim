@@ -1,6 +1,5 @@
 local git = require('minifugit.git')
 local common = require('minifugit.ui.status.common')
-local selection = require('minifugit.ui.status.selection')
 local Buffer = require('minifugit.ui.buffer')
 
 local M = {}
@@ -106,7 +105,7 @@ function M.update_entries(self, action, entries)
         return false
     end
 
-    local cursor_state = selection.capture_cursor_state(self)
+    local cursor_state = self:capture_cursor_state()
     cursor_state.follow_entry = false
     local ok, err = action(entries, self.root)
 
@@ -151,7 +150,7 @@ end
 ---@param kind 'stage'|'unstage'
 ---@return boolean
 function M.update_entry(self, action, kind)
-    local item = selection.current_entry_item(self)
+    local item = self:current_item('entry')
 
     if item == nil then
         common.notify_warn('No git status entry under cursor')
@@ -168,7 +167,7 @@ function M.stage_entry(self)
         return false
     end
 
-    local item = selection.current_entry_item(self)
+    local item = self:current_item('entry')
 
     if item == nil then
         common.notify_warn('No git status entry under cursor')
@@ -204,11 +203,7 @@ function M.stage_all_entries(self)
         return false
     end
 
-    return M.update_entries(
-        self,
-        git.stage_entries,
-        selection.all_entries(self)
-    )
+    return M.update_entries(self, git.stage_entries, self:all_entries())
 end
 
 ---@param self GitStatusWindow
@@ -218,11 +213,7 @@ function M.unstage_all_entries(self)
         return false
     end
 
-    return M.update_entries(
-        self,
-        git.unstage_entries,
-        selection.all_entries(self)
-    )
+    return M.update_entries(self, git.unstage_entries, self:all_entries())
 end
 
 ---@param self GitStatusWindow
@@ -232,7 +223,7 @@ function M.stage_selected_entries(self)
         return false
     end
 
-    local items = selection.selected_entry_items(self)
+    local items = self:selected_entry_items()
 
     if all_items_in_section(items, 'staged') then
         return M.update_entry_items(self, git.unstage_entries, items, 'unstage')
@@ -251,7 +242,7 @@ function M.unstage_selected_entries(self)
     return M.update_entry_items(
         self,
         git.unstage_entries,
-        selection.selected_entry_items(self),
+        self:selected_entry_items(),
         'unstage'
     )
 end
@@ -264,7 +255,7 @@ function M.discard_entry(self, force)
         return false
     end
 
-    local item = selection.current_entry_item(self)
+    local item = self:current_item('entry')
 
     if item == nil then
         common.notify_warn('No git status entry under cursor')
@@ -284,7 +275,7 @@ function M.discard_entry(self, force)
         return false
     end
 
-    local cursor_state = selection.capture_cursor_state(self)
+    local cursor_state = self:capture_cursor_state()
     local ok, err = discard_item(item, self.root)
 
     if not ok then
