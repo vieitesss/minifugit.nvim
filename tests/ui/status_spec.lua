@@ -618,6 +618,118 @@ describe('minifugit status UI', function()
         assert.are.equal(1, calls)
     end)
 
+    it('keeps on_close pending while its window hides the buffer', function()
+        local calls = 0
+        assert.is_true(minifugit.open({
+            on_close = function()
+                calls = calls + 1
+            end,
+        }))
+        local win = vim.api.nvim_get_current_win()
+        local buf = vim.api.nvim_get_current_buf()
+
+        vim.cmd('hide enew')
+
+        settle_callbacks()
+        assert.is_true(vim.api.nvim_win_is_valid(win))
+        assert.is_true(vim.api.nvim_buf_is_valid(buf))
+        assert.are.equal(0, #vim.fn.win_findbuf(buf))
+        assert.are.equal(0, calls)
+
+        vim.api.nvim_win_close(win, true)
+
+        assert.is_true(vim.wait(1000, function()
+            return calls == 1
+        end))
+        assert.is_false(vim.api.nvim_win_is_valid(win))
+        minifugit.reset()
+        settle_callbacks()
+        assert.are.equal(1, calls)
+    end)
+
+    it(
+        'keeps on_close pending until all tracked hidden windows close',
+        function()
+            local calls = 0
+            assert.is_true(minifugit.open({
+                on_close = function()
+                    calls = calls + 1
+                end,
+            }))
+            local first = vim.api.nvim_get_current_win()
+            local buf = vim.api.nvim_get_current_buf()
+            vim.cmd.vsplit()
+            local second = vim.api.nvim_get_current_win()
+
+            vim.cmd('hide enew')
+            vim.api.nvim_set_current_win(first)
+            vim.cmd('hide enew')
+
+            settle_callbacks()
+            assert.is_true(vim.api.nvim_win_is_valid(first))
+            assert.is_true(vim.api.nvim_win_is_valid(second))
+            assert.are.equal(0, #vim.fn.win_findbuf(buf))
+            assert.are.equal(0, calls)
+
+            vim.api.nvim_win_close(first, true)
+
+            settle_callbacks()
+            assert.are.equal(0, calls)
+            assert.is_true(vim.api.nvim_win_is_valid(second))
+
+            vim.api.nvim_win_close(second, true)
+
+            assert.is_true(vim.wait(1000, function()
+                return calls == 1
+            end))
+            minifugit.reset()
+            settle_callbacks()
+            assert.are.equal(1, calls)
+        end
+    )
+
+    for _, action in ipairs({
+        'bdelete',
+        'bunload',
+        'bwipeout',
+        'reset',
+        'destroy',
+    }) do
+        it('runs on_close once after hidden ' .. action, function()
+            local calls = 0
+            assert.is_true(minifugit.open({
+                on_close = function()
+                    calls = calls + 1
+                end,
+            }))
+            local gsw = status_window()
+            local win = vim.api.nvim_get_current_win()
+            local buf = vim.api.nvim_get_current_buf()
+            vim.cmd('hide enew')
+            settle_callbacks()
+            assert.are.equal(0, calls)
+
+            if action == 'reset' then
+                minifugit.reset()
+            elseif action == 'destroy' then
+                assert.is_true(gsw:destroy())
+            else
+                vim.cmd[action]({ tostring(buf), bang = true })
+            end
+
+            assert.is_true(vim.wait(1000, function()
+                return calls == 1
+            end))
+            assert.is_false(vim.api.nvim_buf_is_loaded(buf))
+            assert.is_true(vim.api.nvim_win_is_valid(win))
+
+            vim.api.nvim_win_close(win, true)
+            minifugit.reset()
+            settle_callbacks()
+            assert.are.equal(1, calls)
+        end)
+    end
+
     it('keeps on_close pending until the last status view closes', function()
         local calls = 0
         local buf

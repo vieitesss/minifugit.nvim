@@ -40,6 +40,7 @@ local git = require('minifugit.git')
 ---@field loading_timer uv.uv_timer_t?
 ---@field autocmd_group integer?
 ---@field on_close_callbacks (fun())[]
+---@field on_close_windows table<integer, boolean>
 local GitStatusWindow = {}
 GitStatusWindow.__index = GitStatusWindow
 
@@ -303,13 +304,22 @@ local function notify_closed(self)
         if
             bufnr ~= nil
             and vim.api.nvim_buf_is_valid(bufnr)
-            and #vim.fn.win_findbuf(bufnr) > 0
+            and vim.api.nvim_buf_is_loaded(bufnr)
         then
-            return
+            if #vim.fn.win_findbuf(bufnr) > 0 then
+                return
+            end
+            for win in pairs(self.on_close_windows) do
+                if vim.api.nvim_win_is_valid(win) then
+                    return
+                end
+                self.on_close_windows[win] = nil
+            end
         end
 
         local callbacks = self.on_close_callbacks
         self.on_close_callbacks = {}
+        self.on_close_windows = {}
         for _, callback in ipairs(callbacks) do
             local ok, err = pcall(callback)
             if not ok then
@@ -335,6 +345,7 @@ local function ensure_autocmds(self)
         buffer = self.buf.id,
         callback = function()
             local win = vim.api.nvim_get_current_win()
+            self.on_close_windows[win] = true
 
             if self.win ~= win then
                 self.win = win
@@ -342,6 +353,16 @@ local function ensure_autocmds(self)
             end
 
             window.configure_status_win(win)
+        end,
+    })
+
+    vim.api.nvim_create_autocmd({ 'BufWinEnter', 'WinEnter' }, {
+        group = self.autocmd_group,
+        buffer = self.buf.id,
+        callback = function()
+            for _, win in ipairs(vim.fn.win_findbuf(self.buf.id)) do
+                self.on_close_windows[win] = true
+            end
         end,
     })
 
@@ -357,7 +378,22 @@ local function ensure_autocmds(self)
         end,
     })
 
-    vim.api.nvim_create_autocmd({ 'BufWinLeave', 'BufHidden' }, {
+    vim.api.nvim_create_autocmd('WinClosed', {
+        group = self.autocmd_group,
+        callback = function(args)
+            if self.on_close_windows[tonumber(args.match)] then
+                notify_closed(self)
+            end
+        end,
+    })
+
+    vim.api.nvim_create_autocmd({
+        'BufWinLeave',
+        'BufHidden',
+        'BufDelete',
+        'BufUnload',
+        'BufWipeout',
+    }, {
         group = self.autocmd_group,
         buffer = self.buf.id,
         callback = function()
@@ -714,6 +750,7 @@ function GitStatusWindow.new(opts, root)
     self.root = root or git.root()
     self.options = opts
     self.on_close_callbacks = {}
+    self.on_close_windows = {}
     self.groups = create_highlight_groups()
     self.highlights = create_highlights()
     self.lines = {}
@@ -747,6 +784,7 @@ function GitStatusWindow.new(opts, root)
             self.options.status,
             reused_tab and reused_tab.tabpage
         )
+    self.on_close_windows[self.win] = true
     status_tab.attach(self, target_win, placeholder_buf)
     if reused_tab ~= nil then
         self.tab_foreign_buffer = reused_tab.foreign_buffer
