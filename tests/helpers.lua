@@ -6,6 +6,10 @@
 ---@field clone_repo_with_changed_file fun(repo: string, path: string, lines: string[]): string
 ---@field capture_status_windows fun(): fun(): GitStatusWindow?, fun()
 ---@field snapshot_editor_state fun(): fun()
+---@field settle_callbacks fun()
+---@field row_containing fun(buf: integer, text: string): integer
+---@field diff_win_named fun(name: string): integer, integer
+---@field reload_minifugit fun()
 
 local git_env = {
     GIT_CONFIG_GLOBAL = vim.uv.os_uname().sysname == 'Windows_NT' and 'NUL'
@@ -124,6 +128,63 @@ function M.capture_status_windows()
         return nil
     end, function()
         StatusWindow.new = original_new
+    end
+end
+
+---Wait until the callbacks scheduled before this call have run.
+function M.settle_callbacks()
+    local settled = false
+    vim.schedule(function()
+        settled = true
+    end)
+    assert.is_true(vim.wait(1000, function()
+        return settled
+    end))
+end
+
+---@param buf integer
+---@param text string
+---@return integer
+function M.row_containing(buf, text)
+    for row, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+        if line:find(text, 1, true) ~= nil then
+            return row
+        end
+    end
+
+    error('Expected row containing not found: ' .. text)
+end
+
+---@param name string Diff buffer name without the `[n/m]` suffix.
+---@return integer win
+---@return integer buf
+function M.diff_win_named(name)
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if vim.api.nvim_win_get_config(win).relative == '' then
+            local buf = vim.api.nvim_win_get_buf(win)
+            local buf_name = vim.fs.basename(vim.api.nvim_buf_get_name(buf))
+
+            if buf_name:match('^(.-) %[%d+%]$') == name then
+                return win, buf
+            end
+        end
+    end
+
+    error('Expected visible diff buffer: ' .. name)
+end
+
+---Drop loaded minifugit modules so the next require reloads the plugin.
+function M.reload_minifugit()
+    local names = {}
+
+    for name in pairs(package.loaded) do
+        if name == 'minifugit' or name:match('^minifugit%.') then
+            table.insert(names, name)
+        end
+    end
+
+    for _, name in ipairs(names) do
+        package.loaded[name] = nil
     end
 end
 

@@ -287,7 +287,7 @@ end
 
 ---@param self GitStatusWindow
 ---@return integer?
-local function tracked_row(self)
+local function tracked_cursor_row(self)
     if not common.is_valid_win(self.win) then
         return nil
     end
@@ -302,10 +302,7 @@ local function set_cursor_row(self, row)
         return
     end
 
-    vim.api.nvim_win_set_cursor(
-        self.win,
-        { math.max(1, math.min(row, #self.lines)), 0 }
-    )
+    vim.api.nvim_win_set_cursor(self.win, { row, 0 })
 end
 
 ---@param self GitStatusWindow
@@ -550,7 +547,7 @@ function GitStatusWindow:capture_cursor_state()
     end
 
     local state = self.document:capture(status_cursor_row(self))
-    state.row = tracked_row(self)
+    state.row = tracked_cursor_row(self)
 
     return state
 end

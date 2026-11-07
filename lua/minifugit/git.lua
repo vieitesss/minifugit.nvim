@@ -212,7 +212,7 @@ end
 
 ---Executes a git command asynchronously.
 ---@param args string[] List of git arguments (e.g., {"push"})
----@param opts? table Options { cwd = string?, ignore_error = boolean? }
+---@param opts? { cwd: string?, ignore_error: boolean? }
 ---@param callback GitAsyncCallback
 function git.run_async(args, opts, callback)
     opts = opts or {}

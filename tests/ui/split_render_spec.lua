@@ -8,34 +8,6 @@ local LINE_NAMESPACE = 'minifugit.ui.split_line'
 local INTRALINE_NAMESPACE = 'minifugit.ui.split_intra'
 
 ---@param buf integer
----@param text string
----@return integer
-local function row_containing(buf, text)
-    for row, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
-        if line:find(text, 1, true) ~= nil then
-            return row
-        end
-    end
-
-    error('Expected row containing not found: ' .. text)
-end
-
----@param name string
----@return integer
-local function diff_win_named(name)
-    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-        local buf = vim.api.nvim_win_get_buf(win)
-        local buf_name = vim.fs.basename(vim.api.nvim_buf_get_name(buf))
-
-        if buf_name:match('^(.-) %[%d+%]$') == name then
-            return win
-        end
-    end
-
-    error('Expected visible diff buffer: ' .. name)
-end
-
----@param buf integer
 ---@param name string
 ---@return integer[][]
 local function extmarks(buf, name)
@@ -55,11 +27,7 @@ describe('minifugit split render extmarks', function()
         repo = helpers.create_repo({ ['tracked.txt'] = { 'a', 'b', 'c' } })
         vim.cmd.cd(vim.fn.fnameescape(repo))
         vim.cmd.enew()
-        for name in pairs(package.loaded) do
-            if name == 'minifugit' or name:match('^minifugit%.') then
-                package.loaded[name] = nil
-            end
-        end
+        helpers.reload_minifugit()
         status_window, restore_constructor = helpers.capture_status_windows()
         minifugit = require('minifugit').setup({
             preview = { diff_layout = 'split' },
@@ -88,12 +56,14 @@ describe('minifugit split render extmarks', function()
         local gsw = status_window()
         vim.api.nvim_win_set_cursor(
             gsw.win,
-            { row_containing(gsw.buf.id, 'tracked.txt'), 0 }
+            { helpers.row_containing(gsw.buf.id, 'tracked.txt'), 0 }
         )
         assert.is_true(gsw:diff_entry())
 
-        return vim.api.nvim_win_get_buf(diff_win_named('Minifugit diff left')),
-            vim.api.nvim_win_get_buf(diff_win_named('Minifugit diff right'))
+        local _, left_buf = helpers.diff_win_named('Minifugit diff left')
+        local _, right_buf = helpers.diff_win_named('Minifugit diff right')
+
+        return left_buf, right_buf
     end
 
     it('applies split extmarks with their groups and priorities', function()

@@ -24,19 +24,6 @@ local function assert_has_line(lines, expected)
     assert.fail('Expected line not found: ' .. expected)
 end
 
----@param buf integer
----@param text string
----@return integer
-local function row_containing(buf, text)
-    for row, line in ipairs(buffer_lines(buf)) do
-        if line:find(text, 1, true) ~= nil then
-            return row
-        end
-    end
-
-    error('Expected row containing not found: ' .. text)
-end
-
 ---@param win integer
 ---@return table<string, any>
 local function capture_winopts(win)
@@ -131,16 +118,6 @@ local function wait_for_current_buf(buf, expected_opts)
     end))
 end
 
-local function settle_callbacks()
-    local settled = false
-    vim.schedule(function()
-        settled = true
-    end)
-    assert.is_true(vim.wait(1000, function()
-        return settled
-    end))
-end
-
 ---@param tabpage integer
 ---@return boolean
 local function tabpage_is_valid(tabpage)
@@ -201,22 +178,6 @@ local function win_showing_buf(bufnr)
     return nil
 end
 
----@param name string
----@return integer win
----@return integer buf
-local function diff_win_named(name)
-    for _, win in ipairs(normal_windows(0)) do
-        local buf = vim.api.nvim_win_get_buf(win)
-        local buf_name = vim.fs.basename(vim.api.nvim_buf_get_name(buf))
-
-        if buf_name:match('^(.-) %[%d+%]$') == name then
-            return win, buf
-        end
-    end
-
-    error('Expected visible diff buffer: ' .. name)
-end
-
 ---@param buf integer
 ---@return boolean
 local function has_source_syntax_extmarks(buf)
@@ -264,15 +225,7 @@ describe('minifugit status UI', function()
         if not package.path:find(project_root, 1, true) then
             package.path = lua_path .. ';' .. package.path
         end
-        local minifugit_modules = {}
-        for name in pairs(package.loaded) do
-            if name == 'minifugit' or name:match('^minifugit%.') then
-                table.insert(minifugit_modules, name)
-            end
-        end
-        for _, name in ipairs(minifugit_modules) do
-            package.loaded[name] = nil
-        end
+        helpers.reload_minifugit()
         original_cwd = vim.fn.getcwd()
         other_repo = nil
         third_repo = nil
@@ -362,7 +315,7 @@ describe('minifugit status UI', function()
         local win = activate_status_window(status.tabpage)
         vim.api.nvim_win_set_cursor(
             win,
-            { row_containing(status.buffer, 'tracked.txt'), 0 }
+            { helpers.row_containing(status.buffer, 'tracked.txt'), 0 }
         )
         mapped_normal_keys('=')
     end
@@ -407,7 +360,7 @@ describe('minifugit status UI', function()
             end
             vim.api.nvim_win_set_cursor(
                 vim.api.nvim_get_current_win(),
-                { row_containing(buf, 'tracked.txt'), 0 }
+                { helpers.row_containing(buf, 'tracked.txt'), 0 }
             )
             mapped_normal_keys('s')
             assert.are.equal(
@@ -530,7 +483,7 @@ describe('minifugit status UI', function()
             )
         end)
         local foreign_buf = vim.api.nvim_win_get_buf(target_win)
-        settle_callbacks()
+        helpers.settle_callbacks()
         mapped_normal_keys('q')
         assert.are.equal(tabs + 1, #vim.api.nvim_list_tabpages())
         assert.are.equal(0, #vim.fn.win_findbuf(buf))
@@ -639,7 +592,7 @@ describe('minifugit status UI', function()
         assert.is_true(vim.api.nvim_buf_is_valid(buf))
         assert.are.equal(0, #vim.fn.win_findbuf(buf))
         minifugit.reset()
-        settle_callbacks()
+        helpers.settle_callbacks()
         assert.are.equal(1, calls)
     end)
 
@@ -655,7 +608,7 @@ describe('minifugit status UI', function()
 
         vim.cmd('hide enew')
 
-        settle_callbacks()
+        helpers.settle_callbacks()
         assert.is_true(vim.api.nvim_win_is_valid(win))
         assert.is_true(vim.api.nvim_buf_is_valid(buf))
         assert.are.equal(0, #vim.fn.win_findbuf(buf))
@@ -668,7 +621,7 @@ describe('minifugit status UI', function()
         end))
         assert.is_false(vim.api.nvim_win_is_valid(win))
         minifugit.reset()
-        settle_callbacks()
+        helpers.settle_callbacks()
         assert.are.equal(1, calls)
     end)
 
@@ -690,7 +643,7 @@ describe('minifugit status UI', function()
             vim.api.nvim_set_current_win(first)
             vim.cmd('hide enew')
 
-            settle_callbacks()
+            helpers.settle_callbacks()
             assert.is_true(vim.api.nvim_win_is_valid(first))
             assert.is_true(vim.api.nvim_win_is_valid(second))
             assert.are.equal(0, #vim.fn.win_findbuf(buf))
@@ -698,7 +651,7 @@ describe('minifugit status UI', function()
 
             vim.api.nvim_win_close(first, true)
 
-            settle_callbacks()
+            helpers.settle_callbacks()
             assert.are.equal(0, calls)
             assert.is_true(vim.api.nvim_win_is_valid(second))
 
@@ -708,7 +661,7 @@ describe('minifugit status UI', function()
                 return calls == 1
             end))
             minifugit.reset()
-            settle_callbacks()
+            helpers.settle_callbacks()
             assert.are.equal(1, calls)
         end
     )
@@ -731,7 +684,7 @@ describe('minifugit status UI', function()
             local win = vim.api.nvim_get_current_win()
             local buf = vim.api.nvim_get_current_buf()
             vim.cmd('hide enew')
-            settle_callbacks()
+            helpers.settle_callbacks()
             assert.are.equal(0, calls)
 
             if action == 'reset' then
@@ -750,7 +703,7 @@ describe('minifugit status UI', function()
 
             vim.api.nvim_win_close(win, true)
             minifugit.reset()
-            settle_callbacks()
+            helpers.settle_callbacks()
             assert.are.equal(1, calls)
         end)
     end
@@ -772,7 +725,7 @@ describe('minifugit status UI', function()
 
         mapped_normal_keys('q')
 
-        settle_callbacks()
+        helpers.settle_callbacks()
         assert.are.equal(1, #status_windows(tab))
         assert.are.equal(1, #vim.fn.win_findbuf(buf))
         assert.are.equal(0, calls)
@@ -784,7 +737,7 @@ describe('minifugit status UI', function()
         assert.are.equal(0, #status_windows(tab))
         assert.is_true(vim.api.nvim_buf_is_valid(buf))
         minifugit.reset()
-        settle_callbacks()
+        helpers.settle_callbacks()
         assert.are.equal(1, calls)
     end)
 
@@ -810,7 +763,7 @@ describe('minifugit status UI', function()
                 buffer = buf,
                 once = true,
                 callback = function()
-                    settle_callbacks()
+                    helpers.settle_callbacks()
                     during_leave = calls
                     shown_during_leave = vim.api.nvim_win_is_valid(win)
                         and vim.api.nvim_win_get_buf(win) == buf
@@ -826,7 +779,7 @@ describe('minifugit status UI', function()
             end))
             assert.is_true(gone)
             minifugit.reset()
-            settle_callbacks()
+            helpers.settle_callbacks()
             assert.are.equal(1, calls)
         end
     )
@@ -878,7 +831,7 @@ describe('minifugit status UI', function()
                 assert.is_false(vim.api.nvim_buf_is_loaded(buf))
             end
             minifugit.reset()
-            settle_callbacks()
+            helpers.settle_callbacks()
             assert.are.equal(1, calls)
         end)
     end
@@ -900,7 +853,7 @@ describe('minifugit status UI', function()
                     table.insert(calls, 'second')
                 end,
             }))
-            settle_callbacks()
+            helpers.settle_callbacks()
             assert.are.same({}, calls)
             assert.are.equal(win, vim.api.nvim_get_current_win())
             assert.are.equal(buf, vim.api.nvim_get_current_buf())
@@ -912,7 +865,7 @@ describe('minifugit status UI', function()
             end))
             assert.are.same({ 'first', 'second' }, calls)
             minifugit.reset()
-            settle_callbacks()
+            helpers.settle_callbacks()
             assert.are.same({ 'first', 'second' }, calls)
         end
     )
@@ -937,7 +890,7 @@ describe('minifugit status UI', function()
                     table.insert(calls, 'new')
                 end,
             }))
-            settle_callbacks()
+            helpers.settle_callbacks()
             assert.are.equal(old_buf, vim.api.nvim_get_current_buf())
             assert.are.equal(0, old_calls)
             assert.are.equal(0, new_calls)
@@ -946,7 +899,7 @@ describe('minifugit status UI', function()
                 return new_calls == 1
             end))
             minifugit.reset()
-            settle_callbacks()
+            helpers.settle_callbacks()
             assert.are.equal(1, old_calls)
             assert.are.equal(1, new_calls)
             assert.are.same({ 'old', 'new' }, calls)
@@ -962,7 +915,7 @@ describe('minifugit status UI', function()
         }))
         local buf = vim.api.nvim_get_current_buf()
         mapped_normal_keys('q')
-        settle_callbacks()
+        helpers.settle_callbacks()
         assert.are.same({ 'old' }, calls)
 
         assert.is_true(minifugit.open({
@@ -971,14 +924,14 @@ describe('minifugit status UI', function()
             end,
         }))
 
-        settle_callbacks()
+        helpers.settle_callbacks()
         assert.are.equal(buf, vim.api.nvim_get_current_buf())
         assert.are.same({ 'old' }, calls)
         mapped_normal_keys('q')
-        settle_callbacks()
+        helpers.settle_callbacks()
         assert.are.same({ 'old', 'new' }, calls)
         minifugit.reset()
-        settle_callbacks()
+        helpers.settle_callbacks()
         assert.are.same({ 'old', 'new' }, calls)
     end)
 
@@ -1049,7 +1002,7 @@ describe('minifugit status UI', function()
             end))
             assert.is_true(old_gone)
             minifugit.reset()
-            settle_callbacks()
+            helpers.settle_callbacks()
             assert.are.equal(1, calls)
         end
     )
@@ -1068,7 +1021,7 @@ describe('minifugit status UI', function()
 
         assert.is_true(minifugit.open({}))
 
-        settle_callbacks()
+        helpers.settle_callbacks()
         assert.are.equal(0, calls)
         assert.are.equal(buf, vim.api.nvim_get_current_buf())
         assert_has_line(buffer_lines(buf), 'Root: ' .. vim.fn.resolve(repo))
@@ -1171,7 +1124,7 @@ describe('minifugit status UI', function()
         assert.are.equal(buf_a, vim.api.nvim_get_current_buf())
         assert.are.equal(1, #status_windows(tab_a))
         minifugit.reset()
-        settle_callbacks()
+        helpers.settle_callbacks()
         assert.is_false(vim.api.nvim_buf_is_valid(buf_a))
         assert.are.equal(0, #status_windows(tab_a))
         assert.are.equal(wins, #vim.api.nvim_list_wins())
@@ -1223,7 +1176,7 @@ describe('minifugit status UI', function()
                     open_in_tab = open_in_tab,
                 }))
 
-                settle_callbacks()
+                helpers.settle_callbacks()
                 local tab_c = vim.api.nvim_get_current_tabpage()
                 local buf_c = vim.api.nvim_get_current_buf()
                 assert.are.equal(0, calls_a)
@@ -1313,7 +1266,7 @@ describe('minifugit status UI', function()
                 assert.is_false(vim.api.nvim_buf_is_valid(owned_buf))
                 assert.are.equal(tabs, #vim.api.nvim_list_tabpages())
                 minifugit.reset()
-                settle_callbacks()
+                helpers.settle_callbacks()
                 assert.is_false(vim.api.nvim_buf_is_valid(buf_a))
                 assert.are.equal(0, #status_windows(tab_a))
                 assert.are.equal(wins, #vim.api.nvim_list_wins())
@@ -1342,7 +1295,7 @@ describe('minifugit status UI', function()
                 end,
             }))
 
-            settle_callbacks()
+            helpers.settle_callbacks()
             assert.are.equal(0, calls)
             assert.are.equal(tab, vim.api.nvim_get_current_tabpage())
             assert.is_false(vim.api.nvim_buf_is_valid(old_buf))
@@ -1374,7 +1327,7 @@ describe('minifugit status UI', function()
             })
             assert.is_nil(ok)
             assert.are.equal('string', type(err))
-            settle_callbacks()
+            helpers.settle_callbacks()
             assert_editor_unchanged()
             assert.are.equal(0, calls)
             mapped_normal_keys('q')
@@ -1449,7 +1402,7 @@ describe('minifugit status UI', function()
             local status_a, status_b = open_two_status_tabs()
             vim.api.nvim_win_set_cursor(
                 vim.api.nvim_get_current_win(),
-                { row_containing(status_b.buffer, 'tracked.txt'), 0 }
+                { helpers.row_containing(status_b.buffer, 'tracked.txt'), 0 }
             )
 
             mapped_normal_keys('s')
@@ -1813,11 +1766,11 @@ describe('minifugit status UI', function()
                 local status_buf = vim.api.nvim_get_current_buf()
                 vim.api.nvim_win_set_cursor(
                     vim.api.nvim_get_current_win(),
-                    { row_containing(status_buf, 'tracked.txt'), 0 }
+                    { helpers.row_containing(status_buf, 'tracked.txt'), 0 }
                 )
                 mapped_normal_keys('=')
                 vim.api.nvim_win_close(
-                    diff_win_named('Minifugit diff ' .. closed_side),
+                    helpers.diff_win_named('Minifugit diff ' .. closed_side),
                     true
                 )
                 vim.api.nvim_set_current_tabpage(caller_tab)
@@ -1832,7 +1785,8 @@ describe('minifugit status UI', function()
                 assert.are.equal(owned_tab, vim.api.nvim_get_current_tabpage())
                 assert.are.equal(status_buf, vim.api.nvim_get_current_buf())
                 for _, side in ipairs({ 'left', 'right' }) do
-                    local diff_win = diff_win_named('Minifugit diff ' .. side)
+                    local diff_win =
+                        helpers.diff_win_named('Minifugit diff ' .. side)
                     assert.are.equal(
                         owned_tab,
                         vim.api.nvim_win_get_tabpage(diff_win)
@@ -1860,10 +1814,10 @@ describe('minifugit status UI', function()
         local tabs_before = #vim.api.nvim_list_tabpages()
         vim.api.nvim_win_set_cursor(
             status_win,
-            { row_containing(status_buf, 'tracked.txt'), 0 }
+            { helpers.row_containing(status_buf, 'tracked.txt'), 0 }
         )
         mapped_normal_keys('=')
-        local diff_win, diff_buf = diff_win_named('Minifugit diff')
+        local diff_win, diff_buf = helpers.diff_win_named('Minifugit diff')
 
         vim.api.nvim_win_close(status_win, true)
         assert.are.equal(0, #status_windows(owned_tab))
@@ -1879,7 +1833,7 @@ describe('minifugit status UI', function()
             { vim.api.nvim_get_current_win() },
             status_windows(owned_tab)
         )
-        assert.are.equal(diff_win, diff_win_named('Minifugit diff'))
+        assert.are.equal(diff_win, helpers.diff_win_named('Minifugit diff'))
         assert.are.equal(owned_tab, vim.api.nvim_win_get_tabpage(diff_win))
         helpers.assert_has_line_containing(buffer_lines(diff_buf), 'changed A')
         helpers.write_file(
@@ -1888,7 +1842,7 @@ describe('minifugit status UI', function()
         )
         vim.api.nvim_win_set_cursor(
             vim.api.nvim_get_current_win(),
-            { row_containing(status_buf, 'tracked.txt'), 0 }
+            { helpers.row_containing(status_buf, 'tracked.txt'), 0 }
         )
         mapped_normal_keys('r')
         helpers.assert_has_line_containing(buffer_lines(diff_buf), 'updated A')
@@ -1940,14 +1894,14 @@ describe('minifugit status UI', function()
             local diff_name = layout == 'split' and 'Minifugit diff right'
                 or 'Minifugit diff'
             preview_tracked_entry(status_a)
-            local diff_win_a, diff_buf_a = diff_win_named(diff_name)
+            local diff_win_a, diff_buf_a = helpers.diff_win_named(diff_name)
             helpers.assert_has_line_containing(
                 buffer_lines(diff_buf_a),
                 'changed A'
             )
 
             preview_tracked_entry(status_b)
-            local diff_win_b, diff_buf_b = diff_win_named(diff_name)
+            local diff_win_b, diff_buf_b = helpers.diff_win_named(diff_name)
             assert.are_not.equal(diff_buf_a, diff_buf_b)
             helpers.assert_has_line_containing(
                 buffer_lines(diff_buf_b),
@@ -2245,7 +2199,7 @@ describe('minifugit status UI', function()
         local gsw = status_window()
         vim.api.nvim_win_set_cursor(
             gsw.win,
-            { row_containing(gsw.buf.id, 'tracked.txt'), 0 }
+            { helpers.row_containing(gsw.buf.id, 'tracked.txt'), 0 }
         )
         change_to_other_repo()
 
@@ -2387,7 +2341,7 @@ describe('minifugit status UI', function()
                 local root_line = 'Root: ' .. vim.fn.resolve(repo)
 
                 assert_has_line(buffer_lines(buf), root_line)
-                row_containing(buf, 'tracked.txt')
+                helpers.row_containing(buf, 'tracked.txt')
 
                 git.status_snapshot = function(...)
                     status_snapshot_calls = status_snapshot_calls + 1
@@ -2400,7 +2354,7 @@ describe('minifugit status UI', function()
 
                 local function loading_line()
                     local lines = buffer_lines(buf)
-                    return lines[row_containing(buf, 'Pushing commits')]
+                    return lines[helpers.row_containing(buf, 'Pushing commits')]
                 end
 
                 local function assert_loading_paint()
@@ -2410,7 +2364,7 @@ describe('minifugit status UI', function()
                     )
                     assert.are.equal(' Pushing commits', loading_line():sub(2))
                     assert_has_line(buffer_lines(buf), root_line)
-                    row_containing(buf, 'tracked.txt')
+                    helpers.row_containing(buf, 'tracked.txt')
                 end
 
                 local test_ok, test_err = pcall(function()
@@ -2493,7 +2447,7 @@ describe('minifugit status UI', function()
         local gsw = status_window()
         vim.api.nvim_win_set_cursor(
             gsw.win,
-            { row_containing(gsw.buf.id, 'tracked.txt'), 0 }
+            { helpers.row_containing(gsw.buf.id, 'tracked.txt'), 0 }
         )
         change_to_other_repo()
 
@@ -2557,7 +2511,7 @@ describe('minifugit status UI', function()
             assert_has_line(buffer_lines(status_buf), root_header)
             vim.api.nvim_win_set_cursor(
                 status_win,
-                { row_containing(status_buf, 'tracked.txt'), 0 }
+                { helpers.row_containing(status_buf, 'tracked.txt'), 0 }
             )
             mapped_normal_keys('s')
 
@@ -2592,7 +2546,7 @@ describe('minifugit status UI', function()
             local buf = vim.api.nvim_get_current_buf()
             vim.api.nvim_win_set_cursor(
                 0,
-                { row_containing(buf, 'line^@break.txt'), 0 }
+                { helpers.row_containing(buf, 'line^@break.txt'), 0 }
             )
 
             mapped_normal_keys('s')
@@ -2618,7 +2572,7 @@ describe('minifugit status UI', function()
         assert.are.equal(buf, vim.api.nvim_win_get_buf(win))
         vim.api.nvim_win_set_cursor(
             win,
-            { row_containing(buf, 'break.txt'), 0 }
+            { helpers.row_containing(buf, 'break.txt'), 0 }
         )
 
         mapped_normal_keys('s')
@@ -2646,7 +2600,7 @@ describe('minifugit status UI', function()
         local win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_cursor(
             win,
-            { row_containing(buf, 'line^@break.txt'), 0 }
+            { helpers.row_containing(buf, 'line^@break.txt'), 0 }
         )
         local unchanged = helpers.snapshot_editor_state()
         local original_confirm = vim.fn.confirm
@@ -2682,7 +2636,7 @@ describe('minifugit status UI', function()
         local win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_cursor(
             win,
-            { row_containing(buf, 'line^@break.txt'), 0 }
+            { helpers.row_containing(buf, 'line^@break.txt'), 0 }
         )
         local unchanged = helpers.snapshot_editor_state()
         local original_confirm = vim.fn.confirm
@@ -2759,14 +2713,14 @@ describe('minifugit status UI', function()
             local buf = vim.api.nvim_get_current_buf()
             vim.api.nvim_win_set_cursor(
                 0,
-                { row_containing(buf, 'empty^@file^I^M^A^?%.txt'), 0 }
+                { helpers.row_containing(buf, 'empty^@file^I^M^A^?%.txt'), 0 }
             )
             -- The file can change after status collection but before previewing.
             helpers.write_file(path, { 'original' })
 
             assert.is_true(status_window():diff_entry())
 
-            local win, preview = diff_win_named('Minifugit diff')
+            local win, preview = helpers.diff_win_named('Minifugit diff')
             assert.are.same(
                 { 'No diff for empty^@file^I^M^A^?%.txt' },
                 buffer_lines(preview)
@@ -2792,7 +2746,7 @@ describe('minifugit status UI', function()
         local buf = vim.api.nvim_get_current_buf()
         vim.api.nvim_win_set_cursor(
             0,
-            { row_containing(buf, 'missing^@file.txt'), 0 }
+            { helpers.row_containing(buf, 'missing^@file.txt'), 0 }
         )
         -- The file can disappear after status collection but before previewing.
         assert.are.equal(0, vim.fn.delete(path))
@@ -2801,7 +2755,7 @@ describe('minifugit status UI', function()
             assert.is_true(status_window():diff_entry())
         end)
 
-        local win, preview = diff_win_named('Minifugit diff')
+        local win, preview = helpers.diff_win_named('Minifugit diff')
         assert.are.equal(target, win)
         assert.are.equal(buf, vim.api.nvim_get_current_buf())
         helpers.assert_has_line_containing(buffer_lines(preview), 'original')
@@ -2843,15 +2797,19 @@ describe('minifugit status UI', function()
             minifugit.options.preview.diff_layout = 'split'
             minifugit.open()
             local buf = vim.api.nvim_get_current_buf()
-            vim.api.nvim_win_set_cursor(
+            vim.api.nvim_win_set_cursor(0, {
+                helpers.row_containing(
+                    buf,
+                    'old^@file%.txt -> new^@file^I.txt'
+                ),
                 0,
-                { row_containing(buf, 'old^@file%.txt -> new^@file^I.txt'), 0 }
-            )
+            })
 
             assert.is_true(status_window():diff_entry())
 
-            local left_win, left = diff_win_named('Minifugit diff left')
-            local right_win, right = diff_win_named('Minifugit diff right')
+            local left_win, left = helpers.diff_win_named('Minifugit diff left')
+            local right_win, right =
+                helpers.diff_win_named('Minifugit diff right')
             local title = 'staged: old^@file%%.txt -> new^@file^I.txt'
             assert.are.equal(
                 title .. ' [1/2] HEAD:old^@file%%.txt',
@@ -2866,7 +2824,7 @@ describe('minifugit status UI', function()
             vim.api.nvim_set_current_win(right_win)
             vim.api.nvim_win_set_cursor(
                 right_win,
-                { row_containing(right, 'changed fourth'), 0 }
+                { helpers.row_containing(right, 'changed fourth'), 0 }
             )
             local unchanged = helpers.snapshot_editor_state()
             local warning, warning_level = capture_notification(function()
@@ -2897,7 +2855,7 @@ describe('minifugit status UI', function()
                 local win = vim.api.nvim_get_current_win()
                 vim.api.nvim_win_set_cursor(
                     win,
-                    { row_containing(buf, 'line^@break.txt'), 0 }
+                    { helpers.row_containing(buf, 'line^@break.txt'), 0 }
                 )
                 local unchanged = helpers.snapshot_editor_state()
                 local warning, warning_level = capture_notification(function()
@@ -2917,7 +2875,7 @@ describe('minifugit status UI', function()
 
                 vim.api.nvim_win_set_cursor(
                     win,
-                    { row_containing(buf, 'tab^Iname.txt'), 0 }
+                    { helpers.row_containing(buf, 'tab^Iname.txt'), 0 }
                 )
                 mapped_normal_keys('<CR>')
                 assert.are.equal(
@@ -2936,7 +2894,7 @@ describe('minifugit status UI', function()
             local gsw = status_window()
             vim.api.nvim_win_set_cursor(
                 gsw.win,
-                { row_containing(gsw.buf.id, name), 0 }
+                { helpers.row_containing(gsw.buf.id, name), 0 }
             )
             change_to_other_repo()
             helpers.write_file(
@@ -3020,11 +2978,11 @@ describe('minifugit status UI', function()
         local gsw = status_window()
         vim.api.nvim_win_set_cursor(
             gsw.win,
-            { row_containing(gsw.buf.id, 'new-dir/file.txt'), 0 }
+            { helpers.row_containing(gsw.buf.id, 'new-dir/file.txt'), 0 }
         )
 
         assert.is_true(gsw:diff_entry())
-        local _, diff_buf = diff_win_named('Minifugit diff')
+        local _, diff_buf = helpers.diff_win_named('Minifugit diff')
         helpers.assert_has_line_containing(
             buffer_lines(diff_buf),
             'new content'
@@ -3053,10 +3011,10 @@ describe('minifugit status UI', function()
         vim.api.nvim_set_current_win(gsw.win)
         vim.api.nvim_win_set_cursor(
             gsw.win,
-            { row_containing(gsw.buf.id, 'tracked.txt'), 0 }
+            { helpers.row_containing(gsw.buf.id, 'tracked.txt'), 0 }
         )
         assert.is_true(gsw:diff_entry())
-        local _, diff_buf = diff_win_named('Minifugit diff')
+        local _, diff_buf = helpers.diff_win_named('Minifugit diff')
         helpers.assert_has_line_containing(
             buffer_lines(diff_buf),
             'tracked-unique-aaa'
@@ -3065,7 +3023,7 @@ describe('minifugit status UI', function()
         vim.api.nvim_set_current_win(gsw.win)
         vim.api.nvim_win_set_cursor(
             gsw.win,
-            { row_containing(gsw.buf.id, 'other.txt'), 0 }
+            { helpers.row_containing(gsw.buf.id, 'other.txt'), 0 }
         )
         vim.api.nvim_exec_autocmds('CursorMoved', { buffer = gsw.buf.id })
 
@@ -3103,11 +3061,11 @@ describe('minifugit status UI', function()
             vim.api.nvim_set_current_win(gsw.win)
             vim.api.nvim_win_set_cursor(
                 gsw.win,
-                { row_containing(gsw.buf.id, 'script.lua'), 0 }
+                { helpers.row_containing(gsw.buf.id, 'script.lua'), 0 }
             )
 
             assert.is_true(gsw:diff_entry())
-            local _, diff_buf = diff_win_named('Minifugit diff')
+            local _, diff_buf = helpers.diff_win_named('Minifugit diff')
             helpers.assert_has_line_containing(
                 buffer_lines(diff_buf),
                 'return 42'
@@ -3149,14 +3107,14 @@ describe('minifugit status UI', function()
         vim.api.nvim_set_current_win(gsw.win)
         vim.api.nvim_win_set_cursor(
             gsw.win,
-            { row_containing(gsw.buf.id, 'big.lua'), 0 }
+            { helpers.row_containing(gsw.buf.id, 'big.lua'), 0 }
         )
 
         local start = vim.uv.hrtime()
         assert.is_true(gsw:diff_entry())
         local elapsed_ms = (vim.uv.hrtime() - start) / 1e6
 
-        local _, diff_buf = diff_win_named('Minifugit diff')
+        local _, diff_buf = helpers.diff_win_named('Minifugit diff')
         helpers.assert_has_line_containing(buffer_lines(diff_buf), 'fn_300')
 
         -- Syntax highlighting arrives later; the first paint must stay fast.
@@ -3186,14 +3144,14 @@ describe('minifugit status UI', function()
             vim.api.nvim_set_current_win(status_win)
             vim.api.nvim_win_set_cursor(
                 status_win,
-                { row_containing(gsw.buf.id, 'tracked.txt'), 0 }
+                { helpers.row_containing(gsw.buf.id, 'tracked.txt'), 0 }
             )
 
             mapped_normal_keys('=')
 
             assert.is_true(gsw.preview:has_open())
             assert.are.equal(status_win, vim.api.nvim_get_current_win())
-            diff_win_named('Minifugit diff')
+            helpers.diff_win_named('Minifugit diff')
         end
     )
 
@@ -3212,13 +3170,13 @@ describe('minifugit status UI', function()
         local gsw = status_window()
         vim.api.nvim_win_set_cursor(
             gsw.win,
-            { row_containing(gsw.buf.id, 'tracked.txt'), 0 }
+            { helpers.row_containing(gsw.buf.id, 'tracked.txt'), 0 }
         )
 
         assert.is_true(gsw:diff_entry())
 
         assert.are.equal(2, #normal_windows(vim.api.nvim_get_current_tabpage()))
-        local diff_win, diff_buf = diff_win_named('Minifugit diff')
+        local diff_win, diff_buf = helpers.diff_win_named('Minifugit diff')
         assert.are.equal(target_win, diff_win)
         assert.are.equal(diff_buf, vim.api.nvim_win_get_buf(target_win))
 
@@ -3365,7 +3323,7 @@ describe('minifugit status UI', function()
             math.max(math.floor(vim.o.columns * 0.4), 20)
         vim.api.nvim_win_set_cursor(
             status_win,
-            { row_containing(gsw.buf.id, 'tracked.txt'), 0 }
+            { helpers.row_containing(gsw.buf.id, 'tracked.txt'), 0 }
         )
 
         assert.is_true(gsw:diff_entry())
@@ -3374,7 +3332,7 @@ describe('minifugit status UI', function()
             vim.api.nvim_win_get_width(status_win)
         )
 
-        local diff_win = diff_win_named('Minifugit diff')
+        local diff_win = helpers.diff_win_named('Minifugit diff')
         gsw.preview:close()
 
         assert.are.equal(2, #vim.api.nvim_tabpage_list_wins(0))
@@ -3384,7 +3342,7 @@ describe('minifugit status UI', function()
         vim.api.nvim_set_current_win(status_win)
         assert.is_true(gsw:diff_entry())
 
-        local reopened_diff_win = diff_win_named('Minifugit diff')
+        local reopened_diff_win = helpers.diff_win_named('Minifugit diff')
         assert.are.equal(2, #vim.api.nvim_tabpage_list_wins(0))
         assert.are.equal(diff_win, reopened_diff_win)
         assert.are.equal(
@@ -3434,12 +3392,12 @@ describe('minifugit status UI', function()
         vim.api.nvim_set_current_win(status_win)
         vim.api.nvim_win_set_cursor(
             status_win,
-            { row_containing(gsw.buf.id, 'tracked.txt'), 0 }
+            { helpers.row_containing(gsw.buf.id, 'tracked.txt'), 0 }
         )
 
         assert.is_true(gsw:diff_entry())
 
-        local diff_win = diff_win_named('Minifugit diff')
+        local diff_win = helpers.diff_win_named('Minifugit diff')
         assert.are.equal(2, #normal_windows(vim.api.nvim_get_current_tabpage()))
         assert.are.equal(
             expected_status_width,
@@ -3523,7 +3481,7 @@ describe('minifugit status UI', function()
         local tabpage = vim.api.nvim_get_current_tabpage()
         vim.api.nvim_win_set_cursor(
             gsw.win,
-            { row_containing(gsw.buf.id, 'tracked.txt'), 0 }
+            { helpers.row_containing(gsw.buf.id, 'tracked.txt'), 0 }
         )
 
         assert.is_true(gsw:enter_entry())
@@ -3838,10 +3796,10 @@ describe('minifugit status UI', function()
 
             minifugit.status()
             vim.api.nvim_set_current_win(status_window().win)
-            vim.api.nvim_win_set_cursor(
-                status_window().win,
-                { row_containing(status_window().buf.id, 'tracked.txt'), 0 }
-            )
+            vim.api.nvim_win_set_cursor(status_window().win, {
+                helpers.row_containing(status_window().buf.id, 'tracked.txt'),
+                0,
+            })
 
             assert.is_true(status_window():enter_entry())
 
@@ -3905,13 +3863,13 @@ describe('minifugit status UI', function()
 
             minifugit.options.preview.diff_layout = 'stacked'
             minifugit.status()
-            vim.api.nvim_win_set_cursor(
-                assert(status_window().win),
-                { row_containing(status_window().buf.id, 'tracked.txt'), 0 }
-            )
+            vim.api.nvim_win_set_cursor(assert(status_window().win), {
+                helpers.row_containing(status_window().buf.id, 'tracked.txt'),
+                0,
+            })
             status_window():diff_entry()
 
-            local diff_win, diff_buf = diff_win_named('Minifugit diff')
+            local diff_win, diff_buf = helpers.diff_win_named('Minifugit diff')
             assert.are.equal(file_win, diff_win)
             assert.are.equal(diff_buf, vim.api.nvim_win_get_buf(file_win))
 
@@ -3934,16 +3892,16 @@ describe('minifugit status UI', function()
             minifugit.options.preview.diff_layout = 'stacked'
             minifugit.status()
             vim.api.nvim_set_current_win(status_window().win)
-            vim.api.nvim_win_set_cursor(
-                status_window().win,
-                { row_containing(status_window().buf.id, 'tracked.txt'), 0 }
-            )
+            vim.api.nvim_win_set_cursor(status_window().win, {
+                helpers.row_containing(status_window().buf.id, 'tracked.txt'),
+                0,
+            })
 
             assert.is_true(status_window():diff_entry())
             vim.api.nvim_set_current_win(status_window().win)
             assert.is_true(status_window():diff_entry())
 
-            diff_win_named('Minifugit diff')
+            helpers.diff_win_named('Minifugit diff')
             assert.are.equal(
                 status_window().win,
                 vim.api.nvim_get_current_win()
@@ -3963,14 +3921,14 @@ describe('minifugit status UI', function()
             minifugit.status()
             local status_win = assert(status_window().win)
             vim.api.nvim_set_current_win(status_win)
-            vim.api.nvim_win_set_cursor(
-                status_win,
-                { row_containing(status_window().buf.id, 'tracked.txt'), 0 }
-            )
+            vim.api.nvim_win_set_cursor(status_win, {
+                helpers.row_containing(status_window().buf.id, 'tracked.txt'),
+                0,
+            })
             assert.is_true(status_window():diff_entry())
 
             vim.api.nvim_set_current_win(status_win)
-            local diff_win, diff_buf = diff_win_named('Minifugit diff')
+            local diff_win, diff_buf = helpers.diff_win_named('Minifugit diff')
             local wrap = vim.wo[diff_win].wrap
             mapped_normal_keys('aw')
             assert.are.equal(not wrap, vim.wo[diff_win].wrap)
@@ -3987,8 +3945,8 @@ describe('minifugit status UI', function()
             assert.are.equal(status_win, vim.api.nvim_get_current_win())
 
             mapped_normal_keys('al')
-            diff_win_named('Minifugit diff left')
-            diff_win_named('Minifugit diff right')
+            helpers.diff_win_named('Minifugit diff left')
+            helpers.diff_win_named('Minifugit diff right')
             assert.are.equal(status_win, vim.api.nvim_get_current_win())
         end
     )
@@ -4022,15 +3980,15 @@ describe('minifugit status UI', function()
             local before = capture_winopts(file_win)
 
             vim.api.nvim_set_current_win(status_win)
-            vim.api.nvim_win_set_cursor(
-                status_win,
-                { row_containing(status_window().buf.id, 'tracked.txt'), 0 }
-            )
+            vim.api.nvim_win_set_cursor(status_win, {
+                helpers.row_containing(status_window().buf.id, 'tracked.txt'),
+                0,
+            })
             assert.is_true(
                 status_window().preview:preview_current_entry({ force = true })
             )
 
-            local stacked_win = diff_win_named('Minifugit diff')
+            local stacked_win = helpers.diff_win_named('Minifugit diff')
             assert.are.equal(file_win, stacked_win)
             assert.are.equal(status_win, vim.api.nvim_get_current_win())
             assert.are.equal(
@@ -4039,8 +3997,8 @@ describe('minifugit status UI', function()
             )
 
             assert.is_true(status_window().preview:toggle_layout())
-            local left_win = diff_win_named('Minifugit diff left')
-            local right_win = diff_win_named('Minifugit diff right')
+            local left_win = helpers.diff_win_named('Minifugit diff left')
+            local right_win = helpers.diff_win_named('Minifugit diff right')
             assert.are.equal(file_win, left_win)
             assert.are.equal(status_win, vim.api.nvim_get_current_win())
             assert.are.equal(
@@ -4053,7 +4011,7 @@ describe('minifugit status UI', function()
             assert.is_true(vim.wo[right_win].cursorbind)
 
             assert.is_true(status_window().preview:toggle_layout())
-            local reopened_win = diff_win_named('Minifugit diff')
+            local reopened_win = helpers.diff_win_named('Minifugit diff')
             assert.are.equal(file_win, reopened_win)
             assert.are.equal(status_win, vim.api.nvim_get_current_win())
             assert.are.equal(
@@ -4071,7 +4029,7 @@ describe('minifugit status UI', function()
                 #normal_windows(vim.api.nvim_get_current_tabpage())
             )
             assert.has_error(function()
-                diff_win_named('Minifugit diff')
+                helpers.diff_win_named('Minifugit diff')
             end)
             assert.are.equal(file_buf, vim.api.nvim_win_get_buf(file_win))
             assert_winopts(capture_winopts(file_win), before)
@@ -4103,12 +4061,12 @@ describe('minifugit status UI', function()
         before = capture_winopts(file_win)
         vim.api.nvim_win_set_cursor(
             status_window().win,
-            { row_containing(status_window().buf.id, 'tracked.txt'), 0 }
+            { helpers.row_containing(status_window().buf.id, 'tracked.txt'), 0 }
         )
         status_window():diff_entry()
 
-        local left_win, left_buf = diff_win_named('Minifugit diff left')
-        local right_win = diff_win_named('Minifugit diff right')
+        local left_win, left_buf = helpers.diff_win_named('Minifugit diff left')
+        local right_win = helpers.diff_win_named('Minifugit diff right')
         assert.are.equal(file_win, left_win)
         assert.are.equal(left_buf, vim.api.nvim_win_get_buf(file_win))
         assert.are_not.equal(file_win, right_win)
@@ -4142,12 +4100,12 @@ describe('minifugit status UI', function()
         minifugit.status()
         vim.api.nvim_win_set_cursor(
             status_window().win,
-            { row_containing(status_window().buf.id, 'tracked.txt'), 0 }
+            { helpers.row_containing(status_window().buf.id, 'tracked.txt'), 0 }
         )
         status_window():diff_entry()
 
-        local left_win, left_buf = diff_win_named('Minifugit diff left')
-        local right_win = diff_win_named('Minifugit diff right')
+        local left_win, left_buf = helpers.diff_win_named('Minifugit diff left')
+        local right_win = helpers.diff_win_named('Minifugit diff right')
         assert.are.equal(file_win, left_win)
         assert.are.equal(left_buf, vim.api.nvim_win_get_buf(file_win))
         assert.are_not.equal(file_win, right_win)
@@ -4217,11 +4175,11 @@ describe('minifugit status UI', function()
         minifugit.status()
         vim.api.nvim_win_set_cursor(
             assert(status_window().win),
-            { row_containing(status_window().buf.id, 'tracked.txt'), 0 }
+            { helpers.row_containing(status_window().buf.id, 'tracked.txt'), 0 }
         )
         status_window():diff_entry()
 
-        local diff_win = diff_win_named('Minifugit diff')
+        local diff_win = helpers.diff_win_named('Minifugit diff')
         vim.api.nvim_set_current_win(diff_win)
         normal_keys('<C-O>')
 
@@ -4250,10 +4208,10 @@ describe('minifugit status UI', function()
 
             minifugit.options.preview.diff_layout = 'stacked'
             minifugit.status()
-            vim.api.nvim_win_set_cursor(
-                assert(status_window().win),
-                { row_containing(status_window().buf.id, 'tracked.txt'), 0 }
-            )
+            vim.api.nvim_win_set_cursor(assert(status_window().win), {
+                helpers.row_containing(status_window().buf.id, 'tracked.txt'),
+                0,
+            })
             status_window():diff_entry()
 
             vim.api.nvim_set_current_win(file_win)
@@ -4286,10 +4244,10 @@ describe('minifugit status UI', function()
 
             minifugit.options.preview.diff_layout = 'split'
             minifugit.status()
-            vim.api.nvim_win_set_cursor(
-                assert(status_window().win),
-                { row_containing(status_window().buf.id, 'tracked.txt'), 0 }
-            )
+            vim.api.nvim_win_set_cursor(assert(status_window().win), {
+                helpers.row_containing(status_window().buf.id, 'tracked.txt'),
+                0,
+            })
             status_window():diff_entry()
 
             vim.api.nvim_set_current_win(file_win)
@@ -4323,11 +4281,11 @@ describe('minifugit status UI', function()
         minifugit.status()
         vim.api.nvim_win_set_cursor(
             assert(status_window().win),
-            { row_containing(status_window().buf.id, 'tracked.txt'), 0 }
+            { helpers.row_containing(status_window().buf.id, 'tracked.txt'), 0 }
         )
         status_window():diff_entry()
 
-        local diff_win = diff_win_named('Minifugit diff left')
+        local diff_win = helpers.diff_win_named('Minifugit diff left')
         vim.api.nvim_set_current_win(diff_win)
         normal_keys('<C-O>')
 

@@ -446,16 +446,23 @@ local function item_at(lines, row, kind)
 
     local line = lines[row]
 
-    if line == nil or type(line.data) ~= 'table' then
+    if line == nil then
         return nil
     end
 
-    if kind ~= 'commit' and type(line.data.entry) == 'table' then
-        return entry_item(line.data.entry, line.data.section)
+    ---@type GitStatusLineData?
+    local data = line.data
+
+    if type(data) ~= 'table' then
+        return nil
     end
 
-    if kind ~= 'entry' and type(line.data.commit) == 'table' then
-        return commit_item(line.data.commit)
+    if kind ~= 'commit' and type(data.entry) == 'table' then
+        return entry_item(data.entry, data.section)
+    end
+
+    if kind ~= 'entry' and type(data.commit) == 'table' then
+        return commit_item(data.commit)
     end
 
     return nil
@@ -550,21 +557,31 @@ local function resolved_row(lines, row)
     return first_entry_row(lines) or clamped
 end
 
+---Row of the item `state` refers to, trying the item key, then the entry
+---identity, then the commit key according to the requested `kind`.
 ---@param lines MiniFugitRenderLine[]
----@param kind 'entry'|'commit'?
 ---@param state GitStatusCursorState
+---@param kind 'entry'|'commit'? Restricts the item keys considered when given.
+---@param entry_fallback boolean Match the entry identity when no item key does.
 ---@return integer?
-local function previous_item_row(lines, kind, state)
-    if kind == nil or kind == 'entry' then
+local function state_item_row(lines, state, kind, entry_fallback)
+    if kind ~= 'commit' then
         local row = row_for_item_key(lines, state.item_key)
-            or row_for_entry_key(lines, state.entry_key)
 
-        if row ~= nil or kind == 'entry' then
+        if row == nil and entry_fallback then
+            row = row_for_entry_key(lines, state.entry_key)
+        end
+
+        if row ~= nil then
             return row
         end
     end
 
-    return row_for_commit_key(lines, state.commit_key)
+    if kind ~= 'entry' then
+        return row_for_commit_key(lines, state.commit_key)
+    end
+
+    return nil
 end
 
 -- ── Public interface ─────────────────────────────────────────────────────────
@@ -600,7 +617,8 @@ function StatusDocument:item(row, kind, previous_state)
         return current
     end
 
-    local fallback_row = previous_item_row(self.lines, kind, previous_state)
+    local fallback_row =
+        state_item_row(self.lines, previous_state, kind, kind ~= 'commit')
 
     if fallback_row == nil then
         return nil
@@ -638,13 +656,7 @@ end
 ---@param row integer?
 ---@return GitStatusCursorState
 function StatusDocument:capture(row)
-    local state = {
-        row = row,
-        item_key = nil,
-        entry_key = nil,
-        commit_key = nil,
-        follow_entry = true,
-    }
+    local state = { row = row, follow_entry = true }
     local item = item_at(self.lines, row, nil)
 
     if item == nil then
@@ -671,15 +683,8 @@ function StatusDocument:resolve(state)
         return clamp_row(state.row, #self.lines)
     end
 
-    local target = row_for_item_key(self.lines, state.item_key)
-
-    if target == nil and state.follow_entry ~= false then
-        target = row_for_entry_key(self.lines, state.entry_key)
-    end
-
-    if target == nil then
-        target = row_for_commit_key(self.lines, state.commit_key)
-    end
+    local target =
+        state_item_row(self.lines, state, nil, state.follow_entry ~= false)
 
     if target ~= nil then
         return resolved_row(self.lines, target)

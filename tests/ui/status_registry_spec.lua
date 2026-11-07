@@ -11,16 +11,6 @@ describe('minifugit status registry', function()
     ---@type table<GitStatusWindow, boolean>
     local instances
 
-    local function settle_callbacks()
-        local settled = false
-        vim.schedule(function()
-            settled = true
-        end)
-        assert.is_true(vim.wait(1000, function()
-            return settled
-        end))
-    end
-
     ---@param open_in_tab boolean
     ---@return MinifugitOptions
     local function status_options(open_in_tab)
@@ -124,13 +114,13 @@ describe('minifugit status registry', function()
         local bufnr = instance.buf.id
 
         registry:reset()
-        settle_callbacks()
+        helpers.settle_callbacks()
 
         assert.are.equal(1, calls)
         assert.is_false(vim.api.nvim_buf_is_valid(bufnr))
 
         registry:reset()
-        settle_callbacks()
+        helpers.settle_callbacks()
 
         assert.are.equal(1, calls)
     end)
