@@ -260,10 +260,9 @@ describe('minifugit status UI', function()
     end)
 
     local function change_to_other_repo()
-        other_repo = vim.fn.tempname()
-        helpers.run({ 'git', 'clone', '--local', repo, other_repo }, repo)
-        helpers.write_file(
-            vim.fs.joinpath(other_repo, 'tracked.txt'),
+        other_repo = helpers.clone_repo_with_changed_file(
+            repo,
+            'tracked.txt',
             { 'changed in B' }
         )
         vim.cmd.cd(vim.fn.fnameescape(other_repo))

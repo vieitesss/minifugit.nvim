@@ -618,11 +618,6 @@ function DiffPreview:discard_current_hunk()
     return preview_hunks.apply_current_hunk(self, 'discard', self.actions)
 end
 
----@return Buffer
-function DiffPreview:ensure_diff_buf()
-    return preview_buffers.ensure_stacked(self, self.actions)
-end
-
 ---@return nil
 function DiffPreview:delete_owned_buffers()
     for _, dw in ipairs({ self.stacked, self.left, self.right }) do

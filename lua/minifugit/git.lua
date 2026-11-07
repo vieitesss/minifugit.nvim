@@ -415,9 +415,9 @@ end
 
 local COMMIT_FIELD_SEPARATOR = '\31'
 local NO_UPSTREAM_MESSAGE = function(root)
-    local branch = git.run({ 'branch', '--show-current' }, { cwd = root })
+    local branch_out = git.run({ 'branch', '--show-current' }, { cwd = root })
     return 'No upstream configured. Run git push -u origin '
-        .. return_result(branch)
+        .. return_result(branch_out)
 end
 
 ---@param output string
@@ -1253,8 +1253,6 @@ function git.diff(entry, section, root)
     else
         return {}
     end
-
-    opts.ignore_error = true
 
     local out = git.run(args, opts)
 
