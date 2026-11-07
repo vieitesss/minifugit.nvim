@@ -16,6 +16,9 @@ local function make_host(overrides)
         },
         groups = {},
         lines = {},
+        current_item = function()
+            return nil
+        end,
         refresh = function(_state) end,
         begin_related_buffer_open = function()
             return function() end

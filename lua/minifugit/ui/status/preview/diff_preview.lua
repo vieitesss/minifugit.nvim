@@ -13,7 +13,6 @@ local display = require('minifugit.ui.status.preview.display')
 local window_state = require('minifugit.ui.status.preview.window_state')
 local preview_util = require('minifugit.ui.status.preview.util')
 local DiffWindow = require('minifugit.ui.status.preview.diff_window')
-local selection = require('minifugit.ui.status.selection')
 
 ---@class DiffPreview
 ---@field host GitStatusWindow
@@ -194,62 +193,6 @@ local function set_context(self, lines, raw_rows, diff_hunks, section, entry)
     self.context_entry = entry
 end
 
----@param self DiffPreview
----@param state GitStatusCursorState?
----@return GitStatusEntryItem?
-local function refresh_entry_item(self, state)
-    local item = selection.current_entry_item(self.host)
-
-    if item ~= nil then
-        return item
-    end
-
-    if state == nil then
-        return nil
-    end
-
-    if state.item_key ~= nil then
-        local row = selection.row_for_item_key(self.host, state.item_key)
-        local line = row ~= nil and self.host.lines[row] or nil
-        item = selection.entry_item_from_data(line and line.data)
-
-        if item ~= nil then
-            return item
-        end
-    end
-
-    if state.entry_key ~= nil then
-        local row = selection.row_for_entry_key(self.host, state.entry_key)
-        local line = row ~= nil and self.host.lines[row] or nil
-        return selection.entry_item_from_data(line and line.data)
-    end
-
-    return nil
-end
-
----@param self DiffPreview
----@param state GitStatusCursorState?
----@return GitStatusCommitItem?
-local function refresh_commit_item(self, state)
-    local item = selection.current_commit_item(self.host)
-
-    if item ~= nil then
-        return item
-    end
-
-    if state == nil then
-        return nil
-    end
-
-    if state.commit_key ~= nil then
-        local row = selection.row_for_commit_key(self.host, state.commit_key)
-        local line = row ~= nil and self.host.lines[row] or nil
-        return selection.commit_item_from_data(line and line.data)
-    end
-
-    return nil
-end
-
 ---@param commit GitCommit
 ---@return string
 local function commit_diff_title(commit)
@@ -261,23 +204,19 @@ end
 ---@param self DiffPreview
 ---@return string?
 local function cursor_preview_key(self)
-    local commit_item = selection.current_commit_item(self.host)
+    local commit_item = self.host:current_item('commit')
 
     if commit_item ~= nil then
-        return 'commit:' .. commit_item.commit.hash
+        return 'commit:' .. commit_item.key
     end
 
-    local item = selection.current_entry_item(self.host)
+    local item = self.host:current_item('entry')
 
     if item == nil then
         return nil
     end
 
-    return table.concat({
-        item.section or '',
-        item.entry.orig_path or '',
-        item.entry.path,
-    }, '\0')
+    return item.key
 end
 
 ---@param entry GitStatusEntry
@@ -698,15 +637,15 @@ function DiffPreview:open_commit(commit, opts)
     return ok
 end
 
----@param entry GitStatusEntry
----@param section GitStatusSectionName?
+---@param item GitStatusEntryItem
 ---@param opts? { force: boolean?, notify: boolean?, focus: boolean? }
 ---@return boolean
-function DiffPreview:open(entry, section, opts)
+function DiffPreview:open(item, opts)
     opts = opts or {}
 
-    local preview_key =
-        table.concat({ section or '', entry.orig_path or '', entry.path }, '\0')
+    local entry = item.entry
+    local section = item.section
+    local preview_key = item.key
     local layout = resolved_layout(self)
     local has_open_preview = (
         layout == 'split' and window_state.has_open_split_diff(self)
@@ -875,7 +814,7 @@ function DiffPreview:refresh(state)
     local key = self.preview_key or ''
 
     if vim.startswith(key, 'commit:') then
-        local item = refresh_commit_item(self, state)
+        local item = self.host:current_item('commit', state)
 
         if item == nil then
             return
@@ -884,13 +823,13 @@ function DiffPreview:refresh(state)
         return self:open_commit(item.commit, { force = true })
     end
 
-    local item = refresh_entry_item(self, state)
+    local item = self.host:current_item('entry', state)
 
     if item == nil then
         return
     end
 
-    return self:open(item.entry, item.section, { force = true })
+    return self:open(item, { force = true })
 end
 
 ---@param opts? { force: boolean?, notify: boolean?, focus: boolean? }
@@ -898,7 +837,7 @@ end
 function DiffPreview:preview_current_entry(opts)
     opts = opts or {}
 
-    local item = selection.current_entry_item(self.host)
+    local item = self.host:current_item('entry')
 
     if item == nil then
         if opts.notify ~= false then
@@ -908,7 +847,7 @@ function DiffPreview:preview_current_entry(opts)
         return false
     end
 
-    return self:open(item.entry, item.section, {
+    return self:open(item, {
         force = opts.force,
         focus = opts.focus,
     })
@@ -919,7 +858,7 @@ end
 function DiffPreview:preview_current_commit(opts)
     opts = opts or {}
 
-    local item = selection.current_commit_item(self.host)
+    local item = self.host:current_item('commit')
 
     if item == nil then
         if opts.notify ~= false then

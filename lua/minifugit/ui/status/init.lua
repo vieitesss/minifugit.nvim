@@ -1,14 +1,13 @@
 local Buffer = require('minifugit.ui.buffer')
 local Highlight = require('minifugit.ui.highlight')
 local render = require('minifugit.ui.render')
-local formatting = require('minifugit.ui.status.formatting')
+local StatusDocument = require('minifugit.ui.status.document')
 local help = require('minifugit.ui.status.help')
 local log = require('minifugit.log')
 local actions = require('minifugit.ui.status.actions')
 local common = require('minifugit.ui.status.common')
 local keymaps = require('minifugit.ui.status.keymaps')
 local DiffPreview = require('minifugit.ui.status.preview.diff_preview')
-local selection = require('minifugit.ui.status.selection')
 local status_tab = require('minifugit.ui.status.tab')
 local window = require('minifugit.ui.status.window')
 local git = require('minifugit.git')
@@ -33,6 +32,7 @@ local git = require('minifugit.git')
 ---@field options MinifugitOptions
 ---@field groups table<string, string>
 ---@field highlights table<string, { ensure: fun() }>
+---@field document StatusDocument?
 ---@field lines MiniFugitRenderLine[]
 ---@field snapshot GitStatusSnapshot?
 ---@field filter string
@@ -266,6 +266,56 @@ local function release_status_win(self)
 end
 
 ---@param self GitStatusWindow
+---@return integer?
+local function status_cursor_row(self)
+    if not self.buf or not self.buf:is_valid() then
+        return nil
+    end
+
+    local win = vim.api.nvim_get_current_win()
+
+    if vim.api.nvim_win_get_buf(win) ~= self.buf.id then
+        if not common.is_valid_win(self.win) then
+            return nil
+        end
+
+        win = self.win
+    end
+
+    return vim.api.nvim_win_get_cursor(win)[1]
+end
+
+---@param self GitStatusWindow
+---@return integer?
+local function tracked_row(self)
+    if not common.is_valid_win(self.win) then
+        return nil
+    end
+
+    return vim.api.nvim_win_get_cursor(self.win)[1]
+end
+
+---@param self GitStatusWindow
+---@param row integer?
+local function set_cursor_row(self, row)
+    if row == nil or not common.is_valid_win(self.win) then
+        return
+    end
+
+    vim.api.nvim_win_set_cursor(
+        self.win,
+        { math.max(1, math.min(row, #self.lines)), 0 }
+    )
+end
+
+---@param self GitStatusWindow
+local function move_to_first_entry(self)
+    if self.document ~= nil then
+        set_cursor_row(self, self.document:resolve())
+    end
+end
+
+---@param self GitStatusWindow
 local function refresh_highlights(self)
     ensure_highlights(self)
 
@@ -448,16 +498,70 @@ function GitStatusWindow:show()
     self.win, self.win_prev_winopts, target_win, placeholder_buf =
         window.create_status_win(self.buf, self.options.status, self.tabpage)
     status_tab.attach(self, target_win, placeholder_buf)
-    selection.move_to_first_entry(self)
+    move_to_first_entry(self)
+end
+
+---Item under the status cursor, falling back to `state` keys when given.
+---@param kind 'entry'|'commit'?
+---@param state GitStatusCursorState?
+---@return StatusItem?
+function GitStatusWindow:current_item(kind, state)
+    if self.document == nil then
+        return nil
+    end
+
+    return self.document:item(status_cursor_row(self), kind, state)
+end
+
+---@return GitStatusEntryItem[]
+function GitStatusWindow:selected_entry_items()
+    local mode = vim.fn.mode()
+    local start_row
+    local end_row
+
+    if mode == 'v' or mode == 'V' or mode == '\22' then
+        start_row = vim.fn.line('v')
+        end_row = vim.fn.line('.')
+    else
+        start_row = vim.fn.getpos("'<")[2]
+        end_row = vim.fn.getpos("'>")[2]
+    end
+
+    if self.document == nil then
+        return {}
+    end
+
+    return self.document:entries(start_row, end_row)
+end
+
+---@return GitStatusEntryItem[]
+function GitStatusWindow:all_entries()
+    if self.document == nil then
+        return {}
+    end
+
+    return self.document:entries()
+end
+
+---@return GitStatusCursorState
+function GitStatusWindow:capture_cursor_state()
+    if self.document == nil then
+        return { follow_entry = true }
+    end
+
+    local state = self.document:capture(status_cursor_row(self))
+    state.row = tracked_row(self)
+
+    return state
 end
 
 ---@param state? GitStatusCursorState
 ---@return boolean
 function GitStatusWindow:refresh(state)
-    state = state or selection.capture_cursor_state(self)
+    state = state or self:capture_cursor_state()
 
     self:render()
-    selection.restore_cursor_state(self, state)
+    set_cursor_row(self, self.document:resolve(state))
     self.preview:refresh(state)
 
     return true
@@ -465,7 +569,7 @@ end
 
 ---@return boolean
 function GitStatusWindow:diff_entry()
-    local commit_item = selection.current_commit_item(self)
+    local commit_item = self:current_item('commit')
 
     if commit_item ~= nil then
         return self.preview:preview_current_commit({
@@ -538,7 +642,7 @@ end
 
 ---@return boolean
 function GitStatusWindow:enter_entry()
-    local commit_item = selection.current_commit_item(self)
+    local commit_item = self:current_item('commit')
 
     if commit_item ~= nil then
         return self.preview:preview_current_commit({
@@ -547,9 +651,9 @@ function GitStatusWindow:enter_entry()
         })
     end
 
-    local entry = selection.current_entry(self)
+    local item = self:current_item('entry')
 
-    if entry == nil then
+    if item == nil then
         common.notify_warn('No git status entry under cursor')
         return false
     end
@@ -558,7 +662,7 @@ function GitStatusWindow:enter_entry()
         self.preview:close()
     end
 
-    return window.open_entry(self, entry)
+    return window.open_entry(self, item.entry)
 end
 
 function GitStatusWindow:toggle_help()
@@ -654,7 +758,7 @@ function GitStatusWindow:filter_entries()
             return
         end
 
-        local state = selection.capture_cursor_state(self)
+        local state = self:capture_cursor_state()
         state.follow_entry = false
         self.filter = vim.trim(input)
         self:refresh(state)
@@ -666,7 +770,7 @@ function GitStatusWindow:clear_filter()
         return
     end
 
-    local state = selection.capture_cursor_state(self)
+    local state = self:capture_cursor_state()
     state.follow_entry = false
     self.filter = ''
     self:refresh(state)
@@ -684,12 +788,13 @@ function GitStatusWindow:render_cached()
         loading_frame = SPINNER_FRAMES[self.loading_frame]
     end
 
-    self.lines = formatting.render(self.snapshot, self.groups, {
+    self.document = StatusDocument.new(self.snapshot, self.groups, {
         filter = self.filter,
         loading_message = self.loading_message,
         loading_frame = loading_frame,
         base = self.base,
     })
+    self.lines = self.document.lines
 
     self.buf:set_modifiable(true)
     self.buf:set_lines(render.text_lines(self.lines))
@@ -816,7 +921,7 @@ function GitStatusWindow.new(opts, root, base, reused_tab)
     if reused_tab ~= nil then
         self.tab_foreign_buffer = reused_tab.foreign_buffer
     end
-    selection.move_to_first_entry(self)
+    move_to_first_entry(self)
     ensure_autocmds(self)
 
     return self

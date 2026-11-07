@@ -4,7 +4,6 @@ local common = require('minifugit.ui.status.common')
 local diff_position = require('minifugit.ui.diff.position')
 local git = require('minifugit.git')
 local preview_cursor = require('minifugit.ui.status.preview.cursor')
-local selection = require('minifugit.ui.status.selection')
 
 local M = {}
 
@@ -116,7 +115,7 @@ function M.apply_current_hunk(self, kind, callbacks)
         return false
     end
 
-    local cursor_state = selection.capture_cursor_state(self.host)
+    local cursor_state = self.host:capture_cursor_state()
     local ok, err = git.apply_hunk(patch, kind, self.host.root)
 
     if not ok then

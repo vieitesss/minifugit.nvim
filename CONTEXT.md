@@ -11,6 +11,8 @@
 - **Stacked layout**: Single-window diff preview showing one combined diff in the target window.
 - **Split layout**: Two-window diff preview showing the two sides of a diff side by side.
 - **Status registry**: Per-entrypoint ownership of one status instance per tabpage, including migration and owned-tab re-selection.
+- **Status item**: A selectable status entry together with its section, or an unpushed commit.
+- **Status document**: Rendered status lines plus the stable row identities they carry for one status snapshot.
 
 ## Commands
 - Test: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedDirectory tests { minimal_init = 'tests/minimal_init.lua' }"`
