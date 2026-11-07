@@ -513,6 +513,46 @@ describe('minifugit status UI', function()
         assert_has_line(lines, 'Root: ' .. vim.fn.resolve(repo))
     end)
 
+    it('escapes root control characters without changing the pin', function()
+        local root_header = 'Root: ' .. vim.fn.resolve(repo) .. '^@root^I^M^A^?'
+        vim.api.nvim_set_current_dir(original_cwd)
+        local renamed_repo = repo .. '\nroot\t\r\1\127'
+        assert.are.equal(0, vim.fn.rename(repo, renamed_repo))
+        repo = renamed_repo
+        vim.api.nvim_set_current_dir(repo)
+
+        minifugit.status()
+
+        local status_buf = vim.api.nvim_get_current_buf()
+        local status_win = vim.api.nvim_get_current_win()
+        assert.are.equal('minifugit', vim.bo[status_buf].filetype)
+        assert.are.equal(status_buf, vim.api.nvim_win_get_buf(status_win))
+        assert_has_line(buffer_lines(status_buf), root_header)
+        assert.are.equal('', helpers.run({ 'git', 'status', '--short' }, repo))
+
+        helpers.write_file(vim.fs.joinpath(repo, 'tracked.txt'), { 'new A' })
+        change_to_other_repo()
+        mapped_normal_keys('r')
+
+        assert.are.equal(status_win, vim.api.nvim_get_current_win())
+        assert.are.equal(status_buf, vim.api.nvim_get_current_buf())
+        assert_has_line(buffer_lines(status_buf), root_header)
+        vim.api.nvim_win_set_cursor(
+            status_win,
+            { row_containing(status_buf, 'tracked.txt'), 0 }
+        )
+        mapped_normal_keys('s')
+
+        assert.are.equal(
+            'M  tracked.txt\n',
+            helpers.run({ 'git', 'status', '--short' }, repo)
+        )
+        assert.are.equal(
+            ' M tracked.txt\n',
+            helpers.run({ 'git', 'status', '--short' }, other_repo)
+        )
+    end)
+
     for _, name in ipairs({ 'tracked.txt', 'untracked.txt' }) do
         it('discards only ' .. name .. ' after cwd changes', function()
             helpers.write_file(vim.fs.joinpath(repo, name), { 'changed in A' })

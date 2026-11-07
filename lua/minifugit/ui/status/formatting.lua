@@ -293,7 +293,10 @@ function M.render(snapshot, groups, opts)
     if snapshot.root ~= nil and snapshot.root ~= '' then
         table.insert(
             lines,
-            message_line('Root: ' .. snapshot.root, 'Directory')
+            message_line(
+                'Root: ' .. vim.fn.strtrans(snapshot.root),
+                'Directory'
+            )
         )
     end
 
