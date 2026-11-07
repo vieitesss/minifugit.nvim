@@ -31,6 +31,7 @@ local defaults = {
 
 ---@class MinifugitOpenOptions
 ---@field cwd string? Directory inside the requested repository or worktree.
+---@field base string? Revision to pin for a read-only working tree comparison.
 ---@field open_in_tab boolean? Override the global setting for this window.
 ---@field on_close fun()? Scheduled once when the status window stops showing.
 
@@ -298,8 +299,9 @@ end
 
 ---@param root string? Explicit root; nil preserves a visible window's pin.
 ---@param open_in_tab boolean
+---@param base string? Pinned commit hash; nil selects normal status.
 ---@return GitStatusWindow
-local function open_status_window(root, open_in_tab)
+local function open_status_window(root, open_in_tab, base)
     local git = require('minifugit.git')
     local explicit_root = root ~= nil
     local tabpage
@@ -320,6 +322,7 @@ local function open_status_window(root, open_in_tab)
 
                 if
                     root ~= gsw.root
+                    or ((hidden or base ~= nil) and gsw.base ~= base)
                     or (
                         hidden
                         and gsw.options.status.open_in_tab ~= open_in_tab
@@ -351,23 +354,32 @@ local function open_status_window(root, open_in_tab)
                 end
             end
         end
-        exposed = true
-    until tabpage == vim.api.nvim_get_current_tabpage()
-
-    if gsw == nil and open_in_tab then
-        root = root or git.root()
-        for owned_tab, candidate in pairs(windows) do
-            if
-                candidate.tabpage == owned_tab
-                and vim.api.nvim_tabpage_is_valid(owned_tab)
-                and has_valid_status_buffer(candidate)
-                and candidate.root == root
-            then
-                gsw = candidate
-                break
+        local reselected = false
+        if
+            gsw == nil
+            and open_in_tab
+            and tabpage == vim.api.nvim_get_current_tabpage()
+        then
+            root = root or git.root()
+            for owned_tab, candidate in pairs(windows) do
+                if
+                    candidate.tabpage == owned_tab
+                    and vim.api.nvim_tabpage_is_valid(owned_tab)
+                    and has_valid_status_buffer(candidate)
+                    and candidate.root == root
+                then
+                    -- Re-select in the owned tab so replacement uses the same
+                    -- destroy path, including any newly exposed status window.
+                    vim.api.nvim_set_current_tabpage(owned_tab)
+                    gsw = candidate
+                    reselected = true
+                    break
+                end
             end
         end
-    end
+        -- A tab change without a re-select came from destroying an owned tab.
+        exposed = not reselected
+    until tabpage == vim.api.nvim_get_current_tabpage()
 
     if gsw ~= nil then
         gsw:show()
@@ -380,7 +392,7 @@ local function open_status_window(root, open_in_tab)
         if reusable_tab ~= nil then
             options._status_tab = reusable_tab
         end
-        gsw = GitStatusWindow.new(options, root)
+        gsw = GitStatusWindow.new(options, root, base)
         register_window(gsw.tabpage or tabpage, gsw)
     end
 
@@ -394,6 +406,7 @@ function M.open(opts)
     vim.validate('opts', opts, 'table', true, '`opts` should be a table')
     opts = opts or {}
     vim.validate('opts.cwd', opts.cwd, 'string', true)
+    vim.validate('opts.base', opts.base, 'string', true)
     vim.validate('opts.open_in_tab', opts.open_in_tab, 'boolean', true)
     vim.validate('opts.on_close', opts.on_close, 'function', true)
 
@@ -403,16 +416,26 @@ function M.open(opts)
         M.options = resolve_options()
     end
 
-    local root, err = resolve_open_root(opts.cwd)
+    local root, err = resolve_open_root(
+        opts.cwd or (opts.base ~= nil and vim.fn.getcwd() or nil)
+    )
     if err ~= nil then
         return nil, err
+    end
+
+    local base
+    if opts.base ~= nil then
+        base, err = require('minifugit.git').resolve_commit(opts.base, root)
+        if err ~= nil then
+            return nil, err
+        end
     end
 
     local open_in_tab = opts.open_in_tab
     if open_in_tab == nil then
         open_in_tab = M.options.status.open_in_tab
     end
-    local gsw = open_status_window(root, open_in_tab)
+    local gsw = open_status_window(root, open_in_tab, base)
 
     if opts.on_close ~= nil then
         table.insert(gsw.on_close_callbacks, opts.on_close)

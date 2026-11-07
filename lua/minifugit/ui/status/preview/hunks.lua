@@ -81,6 +81,10 @@ end
 ---@param callbacks MiniFugitPreviewActions
 ---@return boolean
 function M.apply_current_hunk(self, kind, callbacks)
+    if self.host:reject_read_only() then
+        return false
+    end
+
     local section = self.section
 
     if kind == 'stage' and section ~= 'unstaged' then

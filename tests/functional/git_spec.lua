@@ -584,6 +584,66 @@ describe('minifugit.git', function()
         end
     )
 
+    for _, paths in ipairs({
+        { path = ':(literal)report.txt', unrelated = 'report.txt' },
+        { path = 'star*.txt', unrelated = 'star-other.txt' },
+    }) do
+        describe('literal filename ' .. paths.path, function()
+            before_each(function()
+                helpers.write_file(
+                    repo .. '/' .. paths.path,
+                    { 'selected content' }
+                )
+                helpers.write_file(
+                    repo .. '/' .. paths.unrelated,
+                    { 'unrelated content' }
+                )
+            end)
+
+            it('stages only selected entries', function()
+                local entry = entry_by_path(git.status(repo), paths.path)
+                local ok, err = git.stage_entries({ entry }, repo)
+
+                assert.is_true(ok, err)
+                local entries = git.status(repo)
+                assert.are.equal('A', entry_by_path(entries, paths.path).staged)
+                assert.are.equal(
+                    '?',
+                    entry_by_path(entries, paths.unrelated).staged
+                )
+            end)
+
+            it('unstages only selected entries', function()
+                helpers.run({ 'git', 'add', '.' }, repo)
+                local entry = entry_by_path(git.status(repo), paths.path)
+                local ok, err = git.unstage_entries({ entry }, repo)
+
+                assert.is_true(ok, err)
+                local entries = git.status(repo)
+                assert.are.equal('?', entry_by_path(entries, paths.path).staged)
+                assert.are.equal(
+                    'A',
+                    entry_by_path(entries, paths.unrelated).staged
+                )
+            end)
+
+            it('discards only selected untracked entries', function()
+                local entry = entry_by_path(git.status(repo), paths.path)
+                local ok, err = git.discard_untracked_entries({ entry }, repo)
+
+                assert.is_true(ok, err)
+                assert.are.equal(
+                    0,
+                    vim.fn.filereadable(repo .. '/' .. paths.path)
+                )
+                assert.are.same(
+                    { 'unrelated content' },
+                    vim.fn.readfile(repo .. '/' .. paths.unrelated)
+                )
+            end)
+        end)
+    end
+
     it('reports whether the index has staged changes', function()
         local has_changes, err = git.has_staged_changes()
         assert.is_false(has_changes)

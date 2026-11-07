@@ -546,14 +546,81 @@ local function root_opts(root)
     return opts
 end
 
+---Resolve and pin a caller-supplied revision to a commit, never a Git option.
+---@param base string
+---@param root string?
+---@return string? hash
+---@return string? error
+function git.resolve_commit(base, root)
+    if base == '' or base:sub(1, 1) == '-' then
+        return nil, 'Invalid base revision: ' .. base
+    end
+
+    local out = git.run(
+        { 'rev-parse', '--verify', '--quiet', base .. '^{commit}' },
+        root_opts(root)
+    )
+    if out.exit_code ~= 0 then
+        return nil, 'Invalid base revision: ' .. base
+    end
+
+    return return_result(out), nil
+end
+
+---Tracked changes from the pinned commit to the worktree, plus untracked files.
+---@param base string Pinned commit hash.
+---@param root string?
+---@return GitStatusEntry[]
+---@return string? error
+function git.base_entries(base, root)
+    local opts = root_opts(root)
+    local out =
+        git.run({ 'diff', '--name-status', '-z', '-M', base, '--' }, opts)
+    if out.exit_code ~= 0 then
+        return {}, return_result(out)
+    end
+
+    -- Translate name-status records to porcelain records for the shared parser.
+    local records = {}
+    local fields = vim.split(out.output, '\0', { plain = true })
+    local index = 1
+    while index < #fields do
+        local marker = fields[index]:sub(1, 1)
+        local path = fields[index + 1]
+        index = index + 2
+        if marker == 'R' then
+            table.insert(
+                records,
+                ' ' .. marker .. ' ' .. fields[index] .. '\0' .. path .. '\0'
+            )
+            index = index + 1
+        else
+            table.insert(records, ' ' .. marker .. ' ' .. path .. '\0')
+        end
+    end
+
+    local untracked =
+        git.run({ 'ls-files', '--others', '--exclude-standard', '-z' }, opts)
+    if untracked.exit_code ~= 0 then
+        return {}, return_result(untracked)
+    end
+    for _, path in ipairs(vim.split(untracked.output, '\0', { plain = true })) do
+        if path ~= '' then
+            table.insert(records, '?? ' .. path .. '\0')
+        end
+    end
+
+    return parse_status(table.concat(records)), nil
+end
+
 ---@param entry GitStatusEntry
 ---@return string[]
 local function entry_pathspecs(entry)
     if entry.orig_path == nil then
-        return { entry.path }
+        return { ':(literal)' .. entry.path }
     end
 
-    return { entry.orig_path, entry.path }
+    return { ':(literal)' .. entry.orig_path, ':(literal)' .. entry.path }
 end
 
 ---@param entries GitStatusEntry[]
@@ -1008,6 +1075,54 @@ local function read_blob_lines(spec, root)
 end
 
 ---@param entry GitStatusEntry
+---@param left_spec string
+---@param left_title string
+---@param root string?
+---@param filetype string?
+---@return GitSplitDiff?
+---@return string?
+local function blob_to_worktree_diff(
+    entry,
+    left_spec,
+    left_title,
+    root,
+    filetype
+)
+    local left, right = {}, {}
+    local err
+
+    if entry.unstaged ~= 'A' then
+        left, err = read_blob_lines(left_spec, root)
+        if err ~= nil then
+            return nil, err
+        end
+    end
+
+    if entry.unstaged ~= 'D' then
+        right, err = read_worktree_lines(entry.path, root)
+        if err ~= nil then
+            return nil, err
+        end
+    end
+
+    return {
+        left = {
+            title = entry.unstaged == 'A' and '/dev/null' or left_title,
+            lines = left,
+        },
+        right = {
+            title = entry.unstaged == 'D' and '/dev/null'
+                or 'worktree:' .. entry.path,
+            lines = right,
+        },
+        filetype = filetype
+            or vim.filetype.match({ filename = entry.path })
+            or '',
+    },
+        nil
+end
+
+---@param entry GitStatusEntry
 ---@param section GitStatusSectionName?
 ---@param root string?
 ---@return GitSplitDiff?
@@ -1076,44 +1191,31 @@ function git.split_diff(entry, section, root)
     end
 
     if section == 'unstaged' then
-        local left = {}
-        local err
-
-        if entry.unstaged ~= 'A' then
-            left, err = read_blob_lines(':' .. entry.path, root)
-
-            if err ~= nil then
-                return nil, err
-            end
-        end
-
-        local right = {}
-
-        if entry.unstaged ~= 'D' then
-            right, err = read_worktree_lines(entry.path, root)
-
-            if err ~= nil then
-                return nil, err
-            end
-        end
-
-        return {
-            left = {
-                title = entry.unstaged == 'A' and '/dev/null'
-                    or 'index:' .. entry.path,
-                lines = left,
-            },
-            right = {
-                title = entry.unstaged == 'D' and '/dev/null'
-                    or 'worktree:' .. entry.path,
-                lines = right,
-            },
-            filetype = ft,
-        },
-            nil
+        return blob_to_worktree_diff(
+            entry,
+            ':' .. entry.path,
+            'index:' .. entry.path,
+            root,
+            ft
+        )
     end
 
     return nil, 'Split diff preview requires a status section'
+end
+
+---Split preview using the base blob on the left and worktree on the right.
+---@param entry GitStatusEntry
+---@param base string Pinned commit hash.
+---@param root string?
+---@return GitSplitDiff?
+---@return string? error
+function git.base_split_diff(entry, base, root)
+    if entry.unstaged == '?' then
+        return git.split_diff(entry, 'untracked', root)
+    end
+
+    local left_spec = base .. ':' .. (entry.orig_path or entry.path)
+    return blob_to_worktree_diff(entry, left_spec, left_spec, root)
 end
 
 ---@param commit GitCommit
@@ -1262,6 +1364,26 @@ function git.diff(entry, section, root)
     end
 
     return parse_diff(out.output)
+end
+
+---Unified preview from the pinned commit to the worktree.
+---@param entry GitStatusEntry
+---@param base string Pinned commit hash.
+---@param root string?
+---@return string[]
+---@return string? error
+function git.base_diff(entry, base, root)
+    if entry.unstaged == '?' then
+        return git.diff(entry, 'untracked', root)
+    end
+
+    local args = { 'diff', '--no-ext-diff', '-M', base, '--' }
+    vim.list_extend(args, entry_pathspecs(entry))
+    local out = git.run(args, root_opts(root))
+    if out.exit_code ~= 0 then
+        return {}, return_result(out)
+    end
+    return parse_diff(out.output), nil
 end
 
 ---@param root string?
