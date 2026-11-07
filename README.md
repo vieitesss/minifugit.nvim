@@ -128,14 +128,17 @@ All options are optional:
 - `cwd` (string): a directory inside a Git repository, including a linked
   worktree. The resolved root is pinned without changing Neovim's cwd. Omit it
   to use the current cwd with the same behavior as `status()`.
-- `open_in_tab` (boolean): override `status.open_in_tab` for a new window.
+- `open_in_tab` (boolean): override `status.open_in_tab` when opening a window.
   `false` uses the current tab; `true` opens or reuses a dedicated repository tab.
+  A visible window for the same root is only focused and refreshed, regardless
+  of this option. A hidden instance is recreated if its opening mode differs.
 - `on_close` (function): run once, scheduled after the status window disappears.
   Closing with `q` or `:close` may leave its buffer hidden. Buffer deletion or
   wiping, owned-tab closure, and instance destruction (`reset()`, re-pin, or
-  replacement) also count. The first event consumes the callback; refresh and
-  re-show do not run it. Multiple calls on the same instance register callbacks
-  in order. Reopening a hidden window registers only the new callbacks.
+  replacement) also count. Callbacks are consumed only when a scheduled check
+  finds no window showing the status buffer; refresh and re-show do not run them.
+  Multiple calls on the same instance register callbacks in order. Reopening
+  before that check keeps all callbacks pending for the next real close.
   Callback errors are caught and logged without stopping other callbacks.
 
 `open()` returns `true` on success. An explicit missing, non-directory, or

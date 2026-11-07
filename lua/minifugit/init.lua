@@ -308,34 +308,45 @@ function M.open(opts)
         open_in_tab = M.options.status.open_in_tab
     end
 
-    local tabpage = vim.api.nvim_get_current_tabpage()
-    local gsw = status_window(tabpage)
+    local tabpage
+    local gsw
     local reusable_tab
+    repeat
+        tabpage = vim.api.nvim_get_current_tabpage()
+        gsw = status_window(tabpage)
 
-    if
-        gsw ~= nil
-        and (opts.cwd ~= nil or #vim.fn.win_findbuf(gsw.buf.id) == 0)
-    then
-        root = root or git.root()
+        if gsw ~= nil then
+            local hidden = #vim.fn.win_findbuf(gsw.buf.id) == 0
+            if opts.cwd ~= nil or hidden then
+                root = root or git.root()
 
-        if root ~= gsw.root then
-            local owned_tab = gsw.tabpage
-            local foreign_buffer = gsw.tab_foreign_buffer
-            unregister_window(tabpage, gsw)
-            gsw = nil
-            if
-                owned_tab ~= nil and vim.api.nvim_tabpage_is_valid(owned_tab)
-            then
-                reusable_tab = {
-                    tabpage = owned_tab,
-                    foreign_buffer = foreign_buffer,
-                }
-            end
-            if not vim.api.nvim_tabpage_is_valid(tabpage) then
-                tabpage = vim.api.nvim_get_current_tabpage()
+                if
+                    root ~= gsw.root
+                    or (
+                        hidden
+                        and gsw.options.status.open_in_tab ~= open_in_tab
+                    )
+                then
+                    local owned_tab = gsw.tabpage
+                    local foreign_buffer = gsw.tab_foreign_buffer
+                    local repinned = root ~= gsw.root
+                    unregister_window(tabpage, gsw)
+                    gsw = nil
+                    if
+                        repinned
+                        and open_in_tab
+                        and owned_tab ~= nil
+                        and vim.api.nvim_tabpage_is_valid(owned_tab)
+                    then
+                        reusable_tab = {
+                            tabpage = owned_tab,
+                            foreign_buffer = foreign_buffer,
+                        }
+                    end
+                end
             end
         end
-    end
+    until tabpage == vim.api.nvim_get_current_tabpage()
 
     if gsw == nil and open_in_tab then
         root = root or git.root()

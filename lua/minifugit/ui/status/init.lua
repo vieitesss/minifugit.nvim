@@ -298,13 +298,18 @@ end
 
 ---@param self GitStatusWindow
 local function notify_closed(self)
-    local callbacks = self.on_close_callbacks
-    self.on_close_callbacks = {}
-    if #callbacks == 0 then
-        return
-    end
-
+    local bufnr = self.buf and self.buf.id
     vim.schedule(function()
+        if
+            bufnr ~= nil
+            and vim.api.nvim_buf_is_valid(bufnr)
+            and #vim.fn.win_findbuf(bufnr) > 0
+        then
+            return
+        end
+
+        local callbacks = self.on_close_callbacks
+        self.on_close_callbacks = {}
         for _, callback in ipairs(callbacks) do
             local ok, err = pcall(callback)
             if not ok then
@@ -354,6 +359,7 @@ local function ensure_autocmds(self)
 
     vim.api.nvim_create_autocmd({
         'BufWinLeave',
+        'BufHidden',
         'BufDelete',
         'BufUnload',
         'BufWipeout',
