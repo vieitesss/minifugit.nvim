@@ -163,7 +163,7 @@ function M.toggle(self)
     self.help_buf = Buffer.new({
         listed = false,
         scratch = true,
-        name = 'Minifugit mappings',
+        name = string.format('Minifugit mappings [%d]', self.buf.id),
     })
 
     self.help_buf:set_option('bufhidden', 'wipe')

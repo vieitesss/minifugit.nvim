@@ -74,19 +74,24 @@ end
 
 ---@param buf Buffer
 ---@param opts MinifugitStatusOptions
+---@param tabpage number? Existing owned tabpage to reuse.
 ---@return number
 ---@return GitStatusWindowOptions
 ---@return number? target_win
 ---@return number? placeholder_buf
-function M.create_status_win(buf, opts)
+function M.create_status_win(buf, opts, tabpage)
     local width = M.status_win_width(opts)
     local target_win
     local placeholder_buf
 
     if opts.open_in_tab then
-        vim.cmd('tabnew')
-        target_win = vim.api.nvim_get_current_win()
-        placeholder_buf = vim.api.nvim_get_current_buf()
+        if tabpage ~= nil and vim.api.nvim_tabpage_is_valid(tabpage) then
+            vim.api.nvim_set_current_tabpage(tabpage)
+        else
+            vim.cmd('tabnew')
+            target_win = vim.api.nvim_get_current_win()
+            placeholder_buf = vim.api.nvim_get_current_buf()
+        end
     end
 
     vim.cmd('topleft ' .. width .. 'vsplit')

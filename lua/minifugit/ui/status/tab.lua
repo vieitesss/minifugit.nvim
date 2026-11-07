@@ -188,8 +188,13 @@ function M.attach(self, target_win, placeholder_buf)
         return
     end
 
+    local tabpage = vim.api.nvim_win_get_tabpage(self.win)
+    if self.tabpage == tabpage then
+        return
+    end
+
     M.setup_state(self)
-    self.tabpage = vim.api.nvim_win_get_tabpage(self.win)
+    self.tabpage = tabpage
     self.tab_placeholder_buf = placeholder_buf
     M.mark_related_buffer(self, self.buf.id)
 

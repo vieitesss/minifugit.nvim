@@ -30,16 +30,17 @@ local defaults = {
 }
 
 ---@class Minifugit
----@field gsw GitStatusWindow?
 ---@field did_setup boolean
 ---@field options MinifugitOptions
 local M = {
-    gsw = nil,
     did_setup = false,
     options = vim.deepcopy(defaults),
 }
 
 local log = require('minifugit.log')
+
+---@type table<integer, GitStatusWindow>
+local windows = {}
 
 ---@param opts MinifugitOptions?
 local function validate_options(opts)
@@ -155,36 +156,100 @@ local function has_valid_status_buffer(gsw)
         and vim.bo[bufnr].filetype == 'minifugit'
 end
 
-function M.reset()
-    if M.gsw == nil then
+---@param tabpage integer
+---@param gsw GitStatusWindow?
+local function unregister_window(tabpage, gsw)
+    if gsw == nil or windows[tabpage] ~= gsw then
         return
     end
 
-    ---@type GitStatusWindow
-    local gsw = M.gsw
     local ok, destroyed = pcall(function()
         return gsw:destroy()
     end)
 
     if ok and destroyed then
-        M.gsw = nil
+        windows[tabpage] = nil
     end
 end
 
+---@param tabpage integer
+---@return GitStatusWindow?
+local function status_window(tabpage)
+    local gsw = windows[tabpage]
+    if gsw ~= nil and not has_valid_status_buffer(gsw) then
+        unregister_window(tabpage, gsw)
+    end
+
+    return windows[tabpage]
+end
+
+function M.reset()
+    local tabpage = vim.api.nvim_get_current_tabpage()
+    unregister_window(tabpage, windows[tabpage])
+end
+
+---@param tabpage integer
 ---@param gsw GitStatusWindow
-local function attach_status_buffer_autocmd(gsw)
+local function register_window(tabpage, gsw)
+    windows[tabpage] = gsw
+
+    local function update_tabpage()
+        if
+            windows[tabpage] ~= gsw
+            or gsw.win == nil
+            or not vim.api.nvim_win_is_valid(gsw.win)
+            or not has_valid_status_buffer(gsw)
+            or vim.api.nvim_win_get_buf(gsw.win) ~= gsw.buf.id
+        then
+            return
+        end
+
+        local destination = vim.api.nvim_win_get_tabpage(gsw.win)
+        if destination == tabpage then
+            return
+        end
+
+        local previous = windows[destination]
+        if previous ~= nil and previous ~= gsw then
+            previous.tabpage = nil
+            unregister_window(destination, previous)
+        end
+
+        windows[tabpage] = nil
+        windows[destination] = gsw
+        if gsw.tabpage ~= nil then
+            gsw.tabpage = destination
+            if previous ~= nil then
+                gsw.tab_foreign_buffer = true
+            end
+        end
+        tabpage = destination
+    end
+
+    vim.api.nvim_create_autocmd(
+        { 'WinEnter', 'TabEnter', 'BufEnter', 'BufWinEnter' },
+        {
+            group = gsw.autocmd_group,
+            callback = update_tabpage,
+        }
+    )
     vim.api.nvim_create_autocmd({ 'BufDelete', 'BufUnload', 'BufWipeout' }, {
         group = gsw.autocmd_group,
         buffer = gsw.buf.id,
         once = true,
         callback = function()
-            if M.gsw ~= gsw then
-                return
-            end
-
             vim.schedule(function()
-                if M.gsw == gsw then
-                    M.reset()
+                unregister_window(tabpage, gsw)
+            end)
+        end,
+    })
+    vim.api.nvim_create_autocmd('TabClosed', {
+        group = gsw.autocmd_group,
+        callback = function()
+            vim.schedule(function()
+                update_tabpage()
+                if not vim.api.nvim_tabpage_is_valid(tabpage) then
+                    unregister_window(tabpage, gsw)
                 end
             end)
         end,
@@ -211,31 +276,58 @@ function M.status()
         M.options = resolve_options()
     end
 
-    if M.gsw ~= nil and not has_valid_status_buffer(M.gsw) then
-        M.reset()
-    end
+    local tabpage = vim.api.nvim_get_current_tabpage()
+    local gsw = status_window(tabpage)
+    local reusable_tab
 
-    if M.gsw ~= nil and #vim.fn.win_findbuf(M.gsw.buf.id) == 0 then
+    if gsw ~= nil and #vim.fn.win_findbuf(gsw.buf.id) == 0 then
         local git = require('minifugit.git')
 
-        if git.root() ~= M.gsw.root then
-            M.reset()
+        if git.root() ~= gsw.root then
+            local owned_tab = gsw.tabpage
+            local foreign_buffer = gsw.tab_foreign_buffer
+            unregister_window(tabpage, gsw)
+            gsw = nil
+            if
+                owned_tab ~= nil and vim.api.nvim_tabpage_is_valid(owned_tab)
+            then
+                reusable_tab = {
+                    tabpage = owned_tab,
+                    foreign_buffer = foreign_buffer,
+                }
+            end
         end
     end
 
-    if M.gsw then
-        M.gsw:refresh()
-        M.gsw:show()
-    else
-        local GitStatusWindow = require('minifugit.ui.status')
-        local gsw = GitStatusWindow.new(M.options)
-        attach_status_buffer_autocmd(gsw)
-        M.gsw = gsw
+    if gsw == nil and M.options.status.open_in_tab then
+        local root = require('minifugit.git').root()
+        for owned_tab, candidate in pairs(windows) do
+            if
+                candidate.tabpage == owned_tab
+                and vim.api.nvim_tabpage_is_valid(owned_tab)
+                and has_valid_status_buffer(candidate)
+                and candidate.root == root
+            then
+                gsw = candidate
+                break
+            end
+        end
     end
 
-    log.info(
-        string.format('Window opened win=%d buf=%d', M.gsw.win, M.gsw.buf.id)
-    )
+    if gsw ~= nil then
+        gsw:show()
+        gsw:refresh()
+    else
+        local GitStatusWindow = require('minifugit.ui.status')
+        local opts = M.options
+        if reusable_tab ~= nil then
+            opts = vim.tbl_extend('force', opts, { _status_tab = reusable_tab })
+        end
+        gsw = GitStatusWindow.new(opts)
+        register_window(gsw.tabpage or tabpage, gsw)
+    end
+
+    log.info(string.format('Window opened win=%d buf=%d', gsw.win, gsw.buf.id))
 end
 
 ---@param opts MinifugitOptions?
