@@ -617,10 +617,10 @@ end
 ---@return string[]
 local function entry_pathspecs(entry)
     if entry.orig_path == nil then
-        return { entry.path }
+        return { ':(literal)' .. entry.path }
     end
 
-    return { entry.orig_path, entry.path }
+    return { ':(literal)' .. entry.orig_path, ':(literal)' .. entry.path }
 end
 
 ---@param entries GitStatusEntry[]

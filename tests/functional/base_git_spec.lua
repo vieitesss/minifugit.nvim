@@ -96,6 +96,94 @@ describe('base revision git API', function()
         end
     )
 
+    for _, paths in ipairs({
+        {
+            path = ':(literal)report.txt',
+            unrelated = 'report.txt',
+            renamed = ':(literal)renamed.txt',
+            other_renamed = 'renamed.txt',
+        },
+        {
+            path = 'star*.txt',
+            unrelated = 'star-other.txt',
+            renamed = 'renamed*.txt',
+            other_renamed = 'renamed-other.txt',
+        },
+    }) do
+        describe('literal filename ' .. paths.path, function()
+            before_each(function()
+                helpers.write_file(
+                    repo .. '/' .. paths.path,
+                    { 'selected base' }
+                )
+                for _, path in ipairs({ paths.unrelated, paths.other_renamed }) do
+                    helpers.write_file(
+                        repo .. '/' .. path,
+                        { 'unrelated base' }
+                    )
+                end
+                helpers.run({ 'git', 'add', '.' }, repo)
+                helpers.run(
+                    { 'git', 'commit', '-m', 'special filenames' },
+                    repo
+                )
+                base =
+                    vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
+            end)
+
+            it('previews only the selected file from the base', function()
+                helpers.write_file(
+                    repo .. '/' .. paths.path,
+                    { 'selected change' }
+                )
+                helpers.write_file(
+                    repo .. '/' .. paths.unrelated,
+                    { 'unrelated change' }
+                )
+
+                local patch, err = git.base_diff(
+                    { path = paths.path, staged = ' ', unstaged = 'M' },
+                    base,
+                    repo
+                )
+
+                assert.is_nil(err)
+                assert.is_true(vim.tbl_contains(patch, '-selected base'))
+                assert.is_true(vim.tbl_contains(patch, '+selected change'))
+                assert.is_false(vim.tbl_contains(patch, '+unrelated change'))
+            end)
+
+            it('previews both rename paths literally from the base', function()
+                helpers.run(
+                    { 'git', 'mv', '--', paths.path, paths.renamed },
+                    repo
+                )
+                for _, path in ipairs({ paths.unrelated, paths.other_renamed }) do
+                    helpers.write_file(
+                        repo .. '/' .. path,
+                        { 'unrelated change' }
+                    )
+                end
+
+                local patch, err = git.base_diff({
+                    path = paths.renamed,
+                    orig_path = paths.path,
+                    staged = ' ',
+                    unstaged = 'R',
+                }, base, repo)
+
+                assert.is_nil(err)
+                assert.is_true(
+                    vim.tbl_contains(patch, 'rename from ' .. paths.path)
+                )
+                assert.is_true(
+                    vim.tbl_contains(patch, 'rename to ' .. paths.renamed)
+                )
+                assert.is_false(vim.tbl_contains(patch, '+unrelated change'))
+            end)
+        end)
+    end
+
     it(
         'builds split sides from the base blob and working tree, not HEAD or index',
         function()
