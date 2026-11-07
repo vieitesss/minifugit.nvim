@@ -149,6 +149,24 @@ describe('read-only base mode UI', function()
         end
     )
 
+    -- Windows does not allow control characters in file names.
+    local unix_it = vim.fn.has('win32') == 1 and pending or it
+    unix_it('escapes both newline paths in a base-mode rename', function()
+        write('old\nbreak.txt', { 'rename content' })
+        run({ 'add', 'old\nbreak.txt' })
+        run({ 'commit', '-m', 'add newline file' })
+        run({ 'mv', 'old\nbreak.txt', 'new\nbreak.txt' })
+
+        assert.is_true(minifugit.open({ base = 'HEAD' }))
+
+        local buf = vim.api.nvim_get_current_buf()
+        assert.are.equal('minifugit', vim.bo[buf].filetype)
+        assert.are.equal(buf, vim.api.nvim_win_get_buf(0))
+        assert.is_true(
+            vim.tbl_contains(lines(buf), ' R old^@break.txt -> new^@break.txt')
+        )
+    end)
+
     it(
         'previews committed and uncommitted edits together in the stacked layout',
         function()

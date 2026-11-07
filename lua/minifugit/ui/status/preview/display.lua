@@ -581,7 +581,7 @@ function M.show_split(
     vim.wo[target_win].wrap = self.wrap
     vim.wo[target_win].winbar = title
         .. ' [1/2] '
-        .. preview_util.winbar_text(split_diff.left.title)
+        .. preview_util.winbar_text(vim.fn.strtrans(split_diff.left.title))
 
     local right_win = self.right.win
     local right_status_winfixwidth = make_status_win_resizable(self)
@@ -626,7 +626,7 @@ function M.show_split(
     vim.wo[right_win].wrap = self.wrap
     vim.wo[right_win].winbar = title
         .. ' [2/2] '
-        .. preview_util.winbar_text(split_diff.right.title)
+        .. preview_util.winbar_text(vim.fn.strtrans(split_diff.right.title))
     resize_split_windows(self)
 
     vim.wo[target_win].scrollbind = true

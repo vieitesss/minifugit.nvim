@@ -2475,6 +2475,236 @@ describe('minifugit status UI', function()
         end
     )
 
+    unix_it('escapes control characters in untracked file names', function()
+        helpers.write_file(repo .. '/line\nbreak\t\r\1\127.txt', { 'new' })
+
+        assert.is_true(minifugit.open())
+
+        local buf = vim.api.nvim_get_current_buf()
+        assert.are.equal('minifugit', vim.bo[buf].filetype)
+        assert.are.equal(buf, vim.api.nvim_win_get_buf(0))
+        assert_has_line(buffer_lines(buf), '?? line^@break^I^M^A^?.txt')
+    end)
+
+    unix_it(
+        'stages the raw newline path from its escaped status row',
+        function()
+            local path = 'line\nbreak.txt'
+            helpers.write_file(repo .. '/' .. path, { 'new' })
+            minifugit.open()
+            local buf = vim.api.nvim_get_current_buf()
+            vim.api.nvim_win_set_cursor(
+                0,
+                { row_containing(buf, 'line^@break.txt'), 0 }
+            )
+
+            mapped_normal_keys('s')
+
+            assert.are.equal(
+                path .. '\0',
+                helpers.run(
+                    { 'git', 'diff', '--cached', '--name-only', '-z' },
+                    repo
+                )
+            )
+            assert_has_line(buffer_lines(buf), 'A  line^@break.txt')
+        end
+    )
+
+    unix_it('filters the escaped current and original file names', function()
+        helpers.write_file(repo .. '/old\nname.txt', { 'rename' })
+        helpers.run({ 'git', 'add', '.' }, repo)
+        helpers.run({ 'git', 'commit', '-m', 'add newline file' }, repo)
+        helpers.run({ 'git', 'mv', 'old\nname.txt', 'renamed.txt' }, repo)
+        helpers.write_file(repo .. '/line\nbreak.txt', { 'new' })
+        helpers.write_file(repo .. '/ordinary.txt', { 'ordinary' })
+        minifugit.open()
+        local buf = vim.api.nvim_get_current_buf()
+        local function filter(query)
+            local original_input = vim.ui.input
+            vim.ui.input = function(_, callback)
+                callback(query)
+            end
+            mapped_normal_keys('/')
+            vim.ui.input = original_input
+        end
+
+        filter('LINE^@')
+        assert.is_true(
+            vim.tbl_contains(buffer_lines(buf), '?? line^@break.txt')
+        )
+        assert.is_false(vim.tbl_contains(buffer_lines(buf), 'Staged (1)'))
+        assert.is_false(vim.tbl_contains(buffer_lines(buf), '?? ordinary.txt'))
+
+        filter('OLD^@')
+        assert.is_true(
+            vim.tbl_contains(
+                buffer_lines(buf),
+                'R  old^@name.txt -> renamed.txt'
+            )
+        )
+        assert.is_false(vim.tbl_contains(buffer_lines(buf), 'Untracked (1)'))
+
+        filter('ordinary.txt')
+        assert.is_true(vim.tbl_contains(buffer_lines(buf), '?? ordinary.txt'))
+        assert.is_false(vim.tbl_contains(buffer_lines(buf), 'Staged (1)'))
+    end)
+
+    unix_it(
+        'escapes newline file names when a stacked diff becomes empty',
+        function()
+            local path = repo .. '/empty\nfile\t\r\1\127%.txt'
+            helpers.write_file(path, { 'original' })
+            helpers.run({ 'git', 'add', '.' }, repo)
+            helpers.run({ 'git', 'commit', '-m', 'add newline file' }, repo)
+            helpers.write_file(path, { 'changed' })
+            minifugit.options.preview.diff_layout = 'stacked'
+            minifugit.open()
+            local buf = vim.api.nvim_get_current_buf()
+            vim.api.nvim_win_set_cursor(
+                0,
+                { row_containing(buf, 'empty^@file^I^M^A^?%.txt'), 0 }
+            )
+            -- The file can change after status collection but before previewing.
+            helpers.write_file(path, { 'original' })
+
+            assert.is_true(status_window():diff_entry())
+
+            local win, preview = diff_win_named('Minifugit diff')
+            assert.are.same(
+                { 'No diff for empty^@file^I^M^A^?%.txt' },
+                buffer_lines(preview)
+            )
+            assert.are.equal(
+                'unstaged: empty^@file^I^M^A^?%%.txt',
+                vim.wo[win].winbar
+            )
+            assert.are.equal(buf, vim.api.nvim_get_current_buf())
+        end
+    )
+
+    unix_it(
+        'escapes split rename titles and refuses to open newline paths',
+        function()
+            local old_path = 'old\nfile%.txt'
+            local new_path = 'new\nfile\t.txt'
+            helpers.write_file(repo .. '/' .. old_path, {
+                'same first',
+                'same second',
+                'same third',
+                'original fourth',
+            })
+            helpers.run({ 'git', 'add', '.' }, repo)
+            helpers.run({ 'git', 'commit', '-m', 'add newline file' }, repo)
+            helpers.run({ 'git', 'mv', old_path, new_path }, repo)
+            helpers.write_file(repo .. '/' .. new_path, {
+                'same first',
+                'same second',
+                'same third',
+                'changed fourth',
+            })
+            helpers.run({ 'git', 'add', '--', new_path }, repo)
+            minifugit.options.preview.diff_layout = 'split'
+            minifugit.open()
+            local buf = vim.api.nvim_get_current_buf()
+            vim.api.nvim_win_set_cursor(
+                0,
+                { row_containing(buf, 'old^@file%.txt -> new^@file^I.txt'), 0 }
+            )
+
+            assert.is_true(status_window():diff_entry())
+
+            local left_win, left = diff_win_named('Minifugit diff left')
+            local right_win, right = diff_win_named('Minifugit diff right')
+            local title = 'staged: old^@file%%.txt -> new^@file^I.txt'
+            assert.are.equal(
+                title .. ' [1/2] HEAD:old^@file%%.txt',
+                vim.wo[left_win].winbar
+            )
+            assert.are.equal(
+                title .. ' [2/2] index:new^@file^I.txt',
+                vim.wo[right_win].winbar
+            )
+            assert_has_line(buffer_lines(left), 'original fourth')
+            assert_has_line(buffer_lines(right), 'changed fourth')
+            vim.api.nvim_set_current_win(right_win)
+            vim.api.nvim_win_set_cursor(
+                right_win,
+                { row_containing(right, 'changed fourth'), 0 }
+            )
+            local unchanged = helpers.snapshot_editor_state()
+            local original_notify = vim.notify
+            local warning
+            local warning_level
+            vim.notify = function(message, level)
+                warning = message
+                warning_level = level
+            end
+            mapped_normal_keys('<CR>')
+            vim.notify = original_notify
+
+            unchanged()
+            assert.are.equal(right, vim.api.nvim_get_current_buf())
+            assert.are.equal(right_win, vim.api.nvim_get_current_win())
+            assert.are.equal(
+                '[minifugit] Cannot open a file name that contains a newline: '
+                    .. vim.fn.resolve(repo)
+                    .. '/new^@file^I.txt',
+                warning
+            )
+            assert.are.equal(vim.log.levels.WARN, warning_level)
+        end
+    )
+
+    unix_it(
+        'refuses newline paths but opens tab paths in normal and base status',
+        function()
+            helpers.write_file(repo .. '/line\nbreak.txt', { 'new' })
+            helpers.write_file(repo .. '/tab\tname.txt', { 'tab content' })
+            for _, opts in ipairs({ {}, { base = 'HEAD' } }) do
+                minifugit.open(opts)
+                local buf = vim.api.nvim_get_current_buf()
+                local win = vim.api.nvim_get_current_win()
+                vim.api.nvim_win_set_cursor(
+                    win,
+                    { row_containing(buf, 'line^@break.txt'), 0 }
+                )
+                local unchanged = helpers.snapshot_editor_state()
+                local original_notify = vim.notify
+                local warning
+                local warning_level
+                vim.notify = function(message, level)
+                    warning = message
+                    warning_level = level
+                end
+                mapped_normal_keys('<CR>')
+                vim.notify = original_notify
+
+                unchanged()
+                assert.are.equal(buf, vim.api.nvim_get_current_buf())
+                assert.are.equal(win, vim.api.nvim_get_current_win())
+                assert.are.equal(
+                    '[minifugit] Cannot open a file name that contains a newline: '
+                        .. vim.fn.resolve(repo)
+                        .. '/line^@break.txt',
+                    warning
+                )
+                assert.are.equal(vim.log.levels.WARN, warning_level)
+
+                vim.api.nvim_win_set_cursor(
+                    win,
+                    { row_containing(buf, 'tab^Iname.txt'), 0 }
+                )
+                mapped_normal_keys('<CR>')
+                assert.are.equal(
+                    vim.fn.resolve(repo) .. '/tab\tname.txt',
+                    vim.api.nvim_buf_get_name(0)
+                )
+                assert.are.same({ 'tab content' }, buffer_lines(0))
+            end
+        end
+    )
+
     for _, name in ipairs({ 'tracked.txt', 'untracked.txt' }) do
         it('discards only ' .. name .. ' after cwd changes', function()
             helpers.write_file(vim.fs.joinpath(repo, name), { 'changed in A' })
