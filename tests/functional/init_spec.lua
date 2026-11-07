@@ -95,16 +95,14 @@ describe('minifugit', function()
                 function()
                     local cwd = vim.fs.joinpath(repo, 'missing')
                     if target == 'non-git' then
-                        helpers.run({ 'git', 'init', '-b', 'main' }, repo)
                         vim.fn.delete(vim.fs.joinpath(repo, '.git'), 'rf')
                         cwd = repo
                     elseif target == 'file' then
                         cwd = vim.fs.joinpath(repo, 'file.txt')
                         helpers.write_file(cwd, { 'not a directory' })
                     end
-                    local wins = vim.api.nvim_list_wins()
-                    local bufs = vim.api.nvim_list_bufs()
-                    local tabs = vim.api.nvim_list_tabpages()
+                    local assert_editor_unchanged =
+                        helpers.snapshot_editor_state()
 
                     local ok, err =
                         minifugit.open({ cwd = cwd, open_in_tab = true })
@@ -112,17 +110,13 @@ describe('minifugit', function()
                     assert.is_nil(ok)
                     assert.are.equal('string', type(err))
                     assert.is_true(#err > 0)
-                    assert.are.same(wins, vim.api.nvim_list_wins())
-                    assert.are.same(bufs, vim.api.nvim_list_bufs())
-                    assert.are.same(tabs, vim.api.nvim_list_tabpages())
+                    assert_editor_unchanged()
                 end
             )
         end
 
         it('validates open option types before creating UI', function()
-            local wins = vim.api.nvim_list_wins()
-            local bufs = vim.api.nvim_list_bufs()
-            local tabs = vim.api.nvim_list_tabpages()
+            local assert_editor_unchanged = helpers.snapshot_editor_state()
             for _, opts in ipairs({
                 'not a table',
                 { cwd = false },
@@ -133,9 +127,7 @@ describe('minifugit', function()
                     minifugit.open(opts)
                 end)
             end
-            assert.are.same(wins, vim.api.nvim_list_wins())
-            assert.are.same(bufs, vim.api.nvim_list_bufs())
-            assert.are.same(tabs, vim.api.nvim_list_tabpages())
+            assert_editor_unchanged()
         end)
 
         it('keeps status working and ignores the open return value', function()

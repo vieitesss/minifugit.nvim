@@ -357,13 +357,7 @@ local function ensure_autocmds(self)
         end,
     })
 
-    vim.api.nvim_create_autocmd({
-        'BufWinLeave',
-        'BufHidden',
-        'BufDelete',
-        'BufUnload',
-        'BufWipeout',
-    }, {
+    vim.api.nvim_create_autocmd({ 'BufWinLeave', 'BufHidden' }, {
         group = self.autocmd_group,
         buffer = self.buf.id,
         callback = function()
@@ -714,6 +708,7 @@ end
 ---@param root string? Resolved repository root; defaults to the current cwd's root.
 ---@return GitStatusWindow
 function GitStatusWindow.new(opts, root)
+    vim.validate('root', root, 'string', true)
     local self = setmetatable({}, GitStatusWindow)
 
     self.root = root or git.root()

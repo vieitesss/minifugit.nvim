@@ -274,50 +274,45 @@ function M.current_file_change_counts()
     return require('minifugit.git').current_file_change_counts()
 end
 
----@param opts MinifugitOpenOptions?
----@return true? success
+---@param cwd string?
+---@return string? root
 ---@return string? error
-function M.open(opts)
-    vim.validate('opts', opts, 'table', true, '`opts` should be a table')
-    opts = opts or {}
-    vim.validate('opts.cwd', opts.cwd, 'string', true)
-    vim.validate('opts.open_in_tab', opts.open_in_tab, 'boolean', true)
-    vim.validate('opts.on_close', opts.on_close, 'function', true)
-
-    log.info('status command called')
-
-    if not M.did_setup then
-        M.options = resolve_options()
+local function resolve_open_root(cwd)
+    if cwd == nil then
+        return nil
     end
 
     local git = require('minifugit.git')
-    local root
-    if opts.cwd ~= nil then
-        local cwd = vim.fs.normalize(vim.fn.fnamemodify(opts.cwd, ':p'))
-        if vim.fn.isdirectory(cwd) == 0 then
-            return nil, 'Not an existing directory: ' .. cwd
-        end
-        root = git.root(cwd)
-        if root == '' then
-            return nil, 'Not inside a git repository: ' .. cwd
-        end
+    cwd = vim.fs.normalize(vim.fn.fnamemodify(cwd, ':p'))
+    if vim.fn.isdirectory(cwd) == 0 then
+        return nil, 'Not an existing directory: ' .. cwd
     end
 
-    local open_in_tab = opts.open_in_tab
-    if open_in_tab == nil then
-        open_in_tab = M.options.status.open_in_tab
+    local root = git.root(cwd)
+    if root == '' then
+        return nil, 'Not inside a git repository: ' .. cwd
     end
 
+    return root
+end
+
+---@param root string? Explicit root; nil preserves a visible window's pin.
+---@param open_in_tab boolean
+---@return GitStatusWindow
+local function open_status_window(root, open_in_tab)
+    local git = require('minifugit.git')
+    local explicit_root = root ~= nil
     local tabpage
     local gsw
     local reusable_tab
+    -- Destroying an owned tab can expose another registered status window.
     repeat
         tabpage = vim.api.nvim_get_current_tabpage()
         gsw = status_window(tabpage)
 
         if gsw ~= nil then
             local hidden = #vim.fn.win_findbuf(gsw.buf.id) == 0
-            if opts.cwd ~= nil or hidden then
+            if explicit_root or hidden then
                 root = root or git.root()
 
                 if
@@ -377,6 +372,36 @@ function M.open(opts)
         gsw = GitStatusWindow.new(options, root)
         register_window(gsw.tabpage or tabpage, gsw)
     end
+
+    return gsw
+end
+
+---@param opts MinifugitOpenOptions?
+---@return true? success
+---@return string? error
+function M.open(opts)
+    vim.validate('opts', opts, 'table', true, '`opts` should be a table')
+    opts = opts or {}
+    vim.validate('opts.cwd', opts.cwd, 'string', true)
+    vim.validate('opts.open_in_tab', opts.open_in_tab, 'boolean', true)
+    vim.validate('opts.on_close', opts.on_close, 'function', true)
+
+    log.info('open called')
+
+    if not M.did_setup then
+        M.options = resolve_options()
+    end
+
+    local root, err = resolve_open_root(opts.cwd)
+    if err ~= nil then
+        return nil, err
+    end
+
+    local open_in_tab = opts.open_in_tab
+    if open_in_tab == nil then
+        open_in_tab = M.options.status.open_in_tab
+    end
+    local gsw = open_status_window(root, open_in_tab)
 
     if opts.on_close ~= nil then
         table.insert(gsw.on_close_callbacks, opts.on_close)

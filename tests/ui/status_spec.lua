@@ -568,20 +568,27 @@ describe('minifugit status UI', function()
         )
     end
 
+    it('validates constructor root before creating UI', function()
+        local StatusWindow = require('minifugit.ui.status')
+        local assert_editor_unchanged = helpers.snapshot_editor_state()
+        for _, root in ipairs({ false, 42, {}, function() end }) do
+            assert.has_error(function()
+                StatusWindow.new(minifugit.options, root)
+            end)
+        end
+        assert_editor_unchanged()
+    end)
+
     it('rejects a non-git cwd without windows, buffers or tabs', function()
         other_repo = vim.fn.tempname()
         vim.fn.mkdir(other_repo, 'p')
-        local wins = vim.api.nvim_list_wins()
-        local bufs = vim.api.nvim_list_bufs()
-        local tabs = vim.api.nvim_list_tabpages()
+        local assert_editor_unchanged = helpers.snapshot_editor_state()
 
         local ok, err = minifugit.open({ cwd = other_repo, open_in_tab = true })
 
         assert.is_nil(ok)
         assert.are.equal('string', type(err))
-        assert.are.same(wins, vim.api.nvim_list_wins())
-        assert.are.same(bufs, vim.api.nvim_list_bufs())
-        assert.are.same(tabs, vim.api.nvim_list_tabpages())
+        assert_editor_unchanged()
     end)
 
     it('runs on_close once after q while keeping the hidden buffer', function()
@@ -1148,9 +1155,7 @@ describe('minifugit status UI', function()
                     calls = calls + 1
                 end,
             })
-            local wins = vim.api.nvim_list_wins()
-            local bufs = vim.api.nvim_list_bufs()
-            local tabs = vim.api.nvim_list_tabpages()
+            local assert_editor_unchanged = helpers.snapshot_editor_state()
             local ok, err = minifugit.open({
                 cwd = vim.fs.joinpath(repo, 'missing'),
                 open_in_tab = true,
@@ -1158,9 +1163,7 @@ describe('minifugit status UI', function()
             assert.is_nil(ok)
             assert.are.equal('string', type(err))
             settle_callbacks()
-            assert.are.same(wins, vim.api.nvim_list_wins())
-            assert.are.same(bufs, vim.api.nvim_list_bufs())
-            assert.are.same(tabs, vim.api.nvim_list_tabpages())
+            assert_editor_unchanged()
             assert.are.equal(0, calls)
             mapped_normal_keys('q')
             assert.is_true(vim.wait(1000, function()
