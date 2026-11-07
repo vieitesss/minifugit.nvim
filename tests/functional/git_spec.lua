@@ -641,6 +641,47 @@ describe('minifugit.git', function()
                     vim.fn.readfile(repo .. '/' .. paths.unrelated)
                 )
             end)
+
+            describe('when both files are committed', function()
+                before_each(function()
+                    helpers.run({ 'git', 'add', '.' }, repo)
+                    helpers.run({ 'git', 'commit', '-m', 'add files' }, repo)
+                    helpers.write_file(
+                        repo .. '/' .. paths.path,
+                        { 'selected edit' }
+                    )
+                    helpers.write_file(
+                        repo .. '/' .. paths.unrelated,
+                        { 'unrelated edit', 'added line', 'another line' }
+                    )
+                end)
+
+                it('discards only selected unstaged entries', function()
+                    local entry = entry_by_path(git.status(repo), paths.path)
+                    local ok, err =
+                        git.discard_unstaged_entries({ entry }, repo)
+
+                    assert.is_true(ok, err)
+                    assert.are.same(
+                        { 'selected content' },
+                        vim.fn.readfile(repo .. '/' .. paths.path)
+                    )
+                    assert.are.same(
+                        { 'unrelated edit', 'added line', 'another line' },
+                        vim.fn.readfile(repo .. '/' .. paths.unrelated)
+                    )
+                end)
+
+                it('counts changes of the selected file only', function()
+                    local counts, err = git.file_change_counts(paths.path)
+
+                    assert.is_nil(err)
+                    assert.are.same(
+                        { added = 0, modified = 1, deleted = 0 },
+                        counts
+                    )
+                end)
+            end)
         end)
     end
 

@@ -630,7 +630,7 @@ local function entries_worktree_paths(entries)
     local seen = {}
 
     for _, entry in ipairs(entries) do
-        local path = entry.path
+        local path = ':(literal)' .. entry.path
 
         if not seen[path] then
             table.insert(pathspecs, path)
@@ -1270,7 +1270,7 @@ function git.file_change_counts(path)
         '-z',
         '--untracked-files=all',
         '--',
-        relative_path,
+        ':(literal)' .. relative_path,
     }, { cwd = root, ignore_error = true })
 
     if status_out.exit_code ~= 0 then
@@ -1293,10 +1293,13 @@ function git.file_change_counts(path)
         return { added = #lines, modified = 0, deleted = 0 }, nil
     end
 
-    local out = git.run(
-        { 'diff', '--no-ext-diff', '--unified=0', '--', relative_path },
-        { cwd = root, ignore_error = true }
-    )
+    local out = git.run({
+        'diff',
+        '--no-ext-diff',
+        '--unified=0',
+        '--',
+        ':(literal)' .. relative_path,
+    }, { cwd = root, ignore_error = true })
 
     if out.exit_code > 1 or (out.exit_code ~= 0 and out.output == '') then
         return empty_change_counts(), return_result(out)
