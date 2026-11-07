@@ -781,7 +781,6 @@ function GitStatusWindow:render_cached()
     assert(self.buf:is_valid())
     assert(self.groups ~= nil)
 
-    self.snapshot = self.snapshot or git.status_snapshot(self.root)
     local loading_frame
 
     if self.loading_message ~= nil then

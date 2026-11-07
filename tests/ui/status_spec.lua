@@ -2362,6 +2362,84 @@ describe('minifugit status UI', function()
         end
     )
 
+    for _, case in ipairs({
+        { name = 'normal', opts = {} },
+        { name = 'base', opts = { base = 'HEAD' } },
+    }) do
+        it(
+            'paints cached loading frames without reading Git in '
+                .. case.name
+                .. ' status',
+            function()
+                local git = require('minifugit.git')
+                local original_status_snapshot = git.status_snapshot
+                local original_base_entries = git.base_entries
+                local status_snapshot_calls = 0
+                local base_entries_calls = 0
+
+                helpers.write_file(
+                    vim.fs.joinpath(repo, 'tracked.txt'),
+                    { 'changed in A' }
+                )
+                minifugit.open(case.opts)
+                local gsw = assert(status_window())
+                local buf = gsw.buf.id
+                local root_line = 'Root: ' .. vim.fn.resolve(repo)
+
+                assert_has_line(buffer_lines(buf), root_line)
+                row_containing(buf, 'tracked.txt')
+
+                git.status_snapshot = function(...)
+                    status_snapshot_calls = status_snapshot_calls + 1
+                    return original_status_snapshot(...)
+                end
+                git.base_entries = function(...)
+                    base_entries_calls = base_entries_calls + 1
+                    return original_base_entries(...)
+                end
+
+                local function loading_line()
+                    local lines = buffer_lines(buf)
+                    return lines[row_containing(buf, 'Pushing commits')]
+                end
+
+                local function assert_loading_paint()
+                    local frame = loading_line():sub(1, 1)
+                    assert.is_true(
+                        vim.tbl_contains({ '-', '\\', '|', '/' }, frame)
+                    )
+                    assert.are.equal(' Pushing commits', loading_line():sub(2))
+                    assert_has_line(buffer_lines(buf), root_line)
+                    row_containing(buf, 'tracked.txt')
+                end
+
+                local test_ok, test_err = pcall(function()
+                    gsw:start_loading('Pushing commits')
+                    assert_loading_paint()
+
+                    -- The failed-push paint reuses the cached snapshot.
+                    gsw:render_cached()
+                    assert_loading_paint()
+
+                    -- The spinner timer keeps repainting cached frames.
+                    local first_frame = loading_line():sub(1, 1)
+                    assert.is_true(vim.wait(2000, function()
+                        return loading_line():sub(1, 1) ~= first_frame
+                    end))
+                    assert_loading_paint()
+                end)
+
+                gsw:stop_loading()
+                git.status_snapshot = original_status_snapshot
+                git.base_entries = original_base_entries
+
+                assert(test_ok, test_err)
+                assert.are.equal(0, status_snapshot_calls)
+                assert.are.equal(0, base_entries_calls)
+            end
+        )
+    end
+
     it(
         'keeps a visible status session pinned when status is called from another cwd',
         function()

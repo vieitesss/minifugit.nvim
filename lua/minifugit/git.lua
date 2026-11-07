@@ -246,15 +246,6 @@ function return_result(res)
     return v
 end
 
----@return string
-function git.branch()
-    ensure_git()
-
-    local out = git.run({ 'branch', '--show-current' })
-
-    return return_result(out)
-end
-
 ---Repository roots by working directory and Git discovery environment.
 ---Only found roots are cached; missing or nested `.git` entries trigger lookup.
 ---@type table<string, string>
