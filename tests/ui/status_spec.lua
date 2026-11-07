@@ -737,6 +737,60 @@ describe('minifugit status UI', function()
         end
     )
 
+    for _, closed_side in ipairs({ 'left', 'right' }) do
+        it(
+            'repairs an owned split preview after closing ' .. closed_side,
+            function()
+                minifugit.setup({
+                    status = { open_in_tab = true },
+                    preview = { diff_layout = 'split' },
+                })
+                helpers.write_file(
+                    vim.fs.joinpath(repo, 'tracked.txt'),
+                    { 'changed A' }
+                )
+                vim.cmd.edit(
+                    vim.fn.fnameescape(vim.fs.joinpath(repo, 'tracked.txt'))
+                )
+                local caller_tab = vim.api.nvim_get_current_tabpage()
+                local caller_win = vim.api.nvim_get_current_win()
+                local caller_buf = vim.api.nvim_get_current_buf()
+                local caller_opts = capture_winopts(caller_win)
+                minifugit.status()
+                local owned_tab = vim.api.nvim_get_current_tabpage()
+                local status_buf = vim.api.nvim_get_current_buf()
+                vim.api.nvim_win_set_cursor(
+                    vim.api.nvim_get_current_win(),
+                    { row_containing(status_buf, 'tracked.txt'), 0 }
+                )
+                mapped_normal_keys('=')
+                vim.api.nvim_win_close(
+                    diff_win_named('Minifugit diff ' .. closed_side),
+                    true
+                )
+                vim.api.nvim_set_current_tabpage(caller_tab)
+
+                minifugit.status()
+
+                assert.are.equal(
+                    caller_buf,
+                    vim.api.nvim_win_get_buf(caller_win)
+                )
+                assert_winopts(capture_winopts(caller_win), caller_opts)
+                assert.are.equal(owned_tab, vim.api.nvim_get_current_tabpage())
+                assert.are.equal(status_buf, vim.api.nvim_get_current_buf())
+                for _, side in ipairs({ 'left', 'right' }) do
+                    local diff_win = diff_win_named('Minifugit diff ' .. side)
+                    assert.are.equal(
+                        owned_tab,
+                        vim.api.nvim_win_get_tabpage(diff_win)
+                    )
+                end
+                assert.are.equal(1, #normal_windows(caller_tab))
+            end
+        )
+    end
+
     it('reopens hidden owned status in its original workflow tab', function()
         minifugit.setup({
             status = { open_in_tab = true },

@@ -304,8 +304,8 @@ function M.status()
     end
 
     if gsw ~= nil then
-        gsw:refresh()
         gsw:show()
+        gsw:refresh()
     else
         local GitStatusWindow = require('minifugit.ui.status')
         gsw = GitStatusWindow.new(M.options)
