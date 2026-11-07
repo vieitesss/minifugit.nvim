@@ -1,5 +1,4 @@
 local log = require('minifugit.log')
-local git = require('minifugit.git')
 local common = require('minifugit.ui.status.common')
 
 local M = {}
@@ -40,10 +39,9 @@ function M.normal_window_count(tabpage)
 end
 
 ---@param entry GitStatusEntry
+---@param root string
 ---@return string
-local function entry_path(entry)
-    local root = git.root()
-
+local function entry_path(entry, root)
     if root == '' then
         return vim.fn.fnamemodify(entry.path, ':p')
     end
@@ -221,7 +219,7 @@ end
 ---@param entry GitStatusEntry
 ---@return boolean
 function M.open_entry(self, entry)
-    local path = entry_path(entry)
+    local path = entry_path(entry, self.root)
 
     if vim.uv.fs_stat(path) == nil then
         log.error('Cannot open missing worktree path: ' .. path)

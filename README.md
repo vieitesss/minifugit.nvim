@@ -111,6 +111,10 @@ Open the status window:
 require('minifugit').status()
 ```
 
+The status header shows the pinned repository root. Changing cwd does not
+redirect an open window's actions; close and reopen status in another repository
+to switch repositories.
+
 Default status-window mappings:
 
 | Mode | Key | Action |

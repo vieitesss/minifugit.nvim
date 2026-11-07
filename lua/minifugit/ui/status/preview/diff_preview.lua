@@ -327,7 +327,7 @@ local function schedule_stacked_syntax(self, lines, entry, section, preview_key)
             return
         end
 
-        local split_diff = git.split_diff(entry, section)
+        local split_diff = git.split_diff(entry, section, self.host.root)
 
         if split_diff == nil then
             return
@@ -543,7 +543,8 @@ function DiffPreview:goto_code()
     end
 
     if self.section == 'staged' and self.context_entry ~= nil then
-        local unstaged_lines = git.diff(self.context_entry, 'unstaged')
+        local unstaged_lines =
+            git.diff(self.context_entry, 'unstaged', self.host.root)
 
         if #unstaged_lines > 0 then
             local parsed_unstaged_hunks =
@@ -559,7 +560,7 @@ function DiffPreview:goto_code()
         end
     end
 
-    local root = git.root()
+    local root = self.host.root
     local path = root ~= '' and vim.fs.joinpath(root, position.path)
         or position.path
 
@@ -617,11 +618,6 @@ function DiffPreview:discard_current_hunk()
     return preview_hunks.apply_current_hunk(self, 'discard', self.actions)
 end
 
----@return Buffer
-function DiffPreview:ensure_diff_buf()
-    return preview_buffers.ensure_stacked(self, self.actions)
-end
-
 ---@return nil
 function DiffPreview:delete_owned_buffers()
     for _, dw in ipairs({ self.stacked, self.left, self.right }) do
@@ -648,7 +644,7 @@ function DiffPreview:open_commit(commit, opts)
         return true
     end
 
-    local lines, err = git.show_commit(commit)
+    local lines, err = git.show_commit(commit, self.host.root)
     local diff_lines
 
     if err ~= nil then
@@ -707,7 +703,7 @@ function DiffPreview:open(entry, section, opts)
         end
     end
 
-    local lines, err = git.diff(entry, section)
+    local lines, err = git.diff(entry, section, self.host.root)
 
     if err ~= nil then
         common.notify_error(err, 'Cannot show diff')
@@ -720,7 +716,8 @@ function DiffPreview:open(entry, section, opts)
     -- patch; source syntax is overlaid asynchronously after the first paint
     -- (fetching full file contents synchronously made cursor-follow laggy).
     if layout == 'split' then
-        local split_diff, split_err = git.split_diff(entry, section)
+        local split_diff, split_err =
+            git.split_diff(entry, section, self.host.root)
 
         if split_diff ~= nil then
             local ok = display.show_split(

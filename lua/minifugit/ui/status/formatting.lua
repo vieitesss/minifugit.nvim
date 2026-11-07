@@ -289,6 +289,17 @@ function M.render(snapshot, groups, opts)
     opts = opts or {}
 
     local lines = { M.head_line(snapshot.branch, groups) }
+
+    if snapshot.root ~= nil and snapshot.root ~= '' then
+        table.insert(
+            lines,
+            message_line(
+                'Root: ' .. vim.fn.strtrans(snapshot.root),
+                'Directory'
+            )
+        )
+    end
+
     local entries = filtered_entries(snapshot.entries, opts.filter)
 
     if opts.loading_message ~= nil and opts.loading_frame ~= nil then

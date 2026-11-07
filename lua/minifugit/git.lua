@@ -349,8 +349,9 @@ function git.status()
     return parse_status(out.output)
 end
 
+---@param root string? Repository root; defaults to the current cwd's root.
 ---@return GitStatusSnapshot
-function git.status_snapshot()
+function git.status_snapshot(root)
     if not ensure_git() then
         return {
             branch = '',
@@ -361,7 +362,7 @@ function git.status_snapshot()
         }
     end
 
-    local root = git.root()
+    root = root or git.root()
 
     if root == '' then
         return {
@@ -413,8 +414,10 @@ function git.status_snapshot()
 end
 
 local COMMIT_FIELD_SEPARATOR = '\31'
-local NO_UPSTREAM_MESSAGE = function()
-    return 'No upstream configured. Run git push -u origin ' .. git.branch()
+local NO_UPSTREAM_MESSAGE = function(root)
+    local branch_out = git.run({ 'branch', '--show-current' }, { cwd = root })
+    return 'No upstream configured. Run git push -u origin '
+        .. return_result(branch_out)
 end
 
 ---@param output string
@@ -455,13 +458,13 @@ function git.upstream(root)
     )
 
     if out.exit_code ~= 0 then
-        return nil, NO_UPSTREAM_MESSAGE()
+        return nil, NO_UPSTREAM_MESSAGE(root)
     end
 
     local upstream = return_result(out)
 
     if upstream == '' then
-        return nil, NO_UPSTREAM_MESSAGE()
+        return nil, NO_UPSTREAM_MESSAGE(root)
     end
 
     return upstream, nil
@@ -488,19 +491,19 @@ function git.push_destination(root)
     }, { cwd = root, ignore_error = true })
 
     if upstream_out.exit_code ~= 0 or upstream_out.output == '' then
-        return nil, NO_UPSTREAM_MESSAGE()
+        return nil, NO_UPSTREAM_MESSAGE(root)
     end
 
     local remote, ref_start = read_nul_field(upstream_out.output, 1)
 
     if remote == nil or remote == '' or ref_start == nil then
-        return nil, NO_UPSTREAM_MESSAGE()
+        return nil, NO_UPSTREAM_MESSAGE(root)
     end
 
     local ref = upstream_out.output:sub(ref_start):gsub('[\r\n]+$', '')
 
     if ref == '' then
-        return nil, NO_UPSTREAM_MESSAGE()
+        return nil, NO_UPSTREAM_MESSAGE(root)
     end
 
     return {
@@ -529,9 +532,10 @@ function git.unpushed_commits(root)
     return parse_commits(out.output)
 end
 
+---@param root string?
 ---@return table
-local function root_opts()
-    local root = git.root()
+local function root_opts(root)
+    root = root or git.root()
     local opts = { ignore_error = true }
 
     if root ~= '' then
@@ -639,16 +643,18 @@ local function run_pathspec_batches(base_args, pathspecs, opts)
 end
 
 ---@param entry GitStatusEntry
+---@param root string?
 ---@return boolean
 ---@return string?
-function git.stage(entry)
-    return git.stage_entries({ entry })
+function git.stage(entry, root)
+    return git.stage_entries({ entry }, root)
 end
 
 ---@param entries GitStatusEntry[]
+---@param root string?
 ---@return boolean
 ---@return string?
-function git.stage_entries(entries)
+function git.stage_entries(entries, root)
     ensure_git()
 
     local pathspecs = entries_pathspecs(entries)
@@ -657,22 +663,25 @@ function git.stage_entries(entries)
         return true
     end
 
-    local out = run_pathspec_batches({ 'add', '--' }, pathspecs, root_opts())
+    local out =
+        run_pathspec_batches({ 'add', '--' }, pathspecs, root_opts(root))
 
     return out.exit_code == 0, return_result(out)
 end
 
 ---@param entry GitStatusEntry
+---@param root string?
 ---@return boolean
 ---@return string?
-function git.unstage(entry)
-    return git.unstage_entries({ entry })
+function git.unstage(entry, root)
+    return git.unstage_entries({ entry }, root)
 end
 
 ---@param entries GitStatusEntry[]
+---@param root string?
 ---@return boolean
 ---@return string?
-function git.unstage_entries(entries)
+function git.unstage_entries(entries, root)
     ensure_git()
 
     local staged_entries = vim.tbl_filter(function(entry)
@@ -687,16 +696,17 @@ function git.unstage_entries(entries)
     local out = run_pathspec_batches(
         { 'restore', '--staged', '--' },
         pathspecs,
-        root_opts()
+        root_opts(root)
     )
 
     return out.exit_code == 0, return_result(out)
 end
 
 ---@param entries GitStatusEntry[]
+---@param root string?
 ---@return boolean
 ---@return string?
-function git.discard_unstaged_entries(entries)
+function git.discard_unstaged_entries(entries, root)
     ensure_git()
 
     local pathspecs = entries_worktree_paths(entries)
@@ -708,16 +718,17 @@ function git.discard_unstaged_entries(entries)
     local out = run_pathspec_batches(
         { 'restore', '--worktree', '--' },
         pathspecs,
-        root_opts()
+        root_opts(root)
     )
 
     return out.exit_code == 0, return_result(out)
 end
 
 ---@param entries GitStatusEntry[]
+---@param root string?
 ---@return boolean
 ---@return string?
-function git.discard_untracked_entries(entries)
+function git.discard_untracked_entries(entries, root)
     ensure_git()
 
     local pathspecs = entries_pathspecs(entries)
@@ -726,17 +737,21 @@ function git.discard_untracked_entries(entries)
         return true
     end
 
-    local out =
-        run_pathspec_batches({ 'clean', '-fd', '--' }, pathspecs, root_opts())
+    local out = run_pathspec_batches(
+        { 'clean', '-fd', '--' },
+        pathspecs,
+        root_opts(root)
+    )
 
     return out.exit_code == 0, return_result(out)
 end
 
 ---@param patch string[]
 ---@param kind 'stage'|'unstage'|'discard'
+---@param root string?
 ---@return boolean
 ---@return string?
-function git.apply_hunk(patch, kind)
+function git.apply_hunk(patch, kind, root)
     ensure_git()
 
     if #patch == 0 then
@@ -763,21 +778,24 @@ function git.apply_hunk(patch, kind)
 
     table.insert(args, path)
 
-    local out = git.run(args, root_opts())
+    local out = git.run(args, root_opts(root))
     vim.fn.delete(path)
 
     return out.exit_code == 0, return_result(out)
 end
 
+---@param root string?
 ---@return boolean
 ---@return string?
-function git.has_staged_changes()
+function git.has_staged_changes(root)
     if not ensure_git() then
         return false, '`git` is not executable'
     end
 
-    local out =
-        git.run({ 'diff', '--cached', '--quiet', '--exit-code' }, root_opts())
+    local out = git.run(
+        { 'diff', '--cached', '--quiet', '--exit-code' },
+        root_opts(root)
+    )
 
     if out.exit_code == 1 then
         return true, nil
@@ -791,22 +809,24 @@ function git.has_staged_changes()
 end
 
 ---@param file string
+---@param root string?
 ---@return boolean
 ---@return string
-function git.commit_file(file)
+function git.commit_file(file, root)
     ensure_git()
 
     local out =
-        git.run({ 'commit', '--cleanup=strip', '-F', file }, root_opts())
+        git.run({ 'commit', '--cleanup=strip', '-F', file }, root_opts(root))
 
     return out.exit_code == 0, return_result(out)
 end
 
+---@param root string?
 ---@return string[]
-function git.commit_template()
+function git.commit_template(root)
     ensure_git()
 
-    local out = git.run({ 'commit', '--dry-run', '--status' }, root_opts())
+    local out = git.run({ 'commit', '--dry-run', '--status' }, root_opts(root))
     local lines = {
         '',
         '# Please enter the commit message for your changes. Lines starting',
@@ -963,10 +983,11 @@ local function read_worktree_lines(path, root)
 end
 
 ---@param spec string
+---@param root string?
 ---@return string[]
 ---@return string?
-local function read_blob_lines(spec)
-    local out = git.run({ 'show', spec }, root_opts())
+local function read_blob_lines(spec, root)
+    local out = git.run({ 'show', spec }, root_opts(root))
 
     if out.exit_code ~= 0 then
         return {}, return_result(out)
@@ -987,9 +1008,10 @@ end
 
 ---@param entry GitStatusEntry
 ---@param section GitStatusSectionName?
+---@param root string?
 ---@return GitSplitDiff?
 ---@return string?
-function git.split_diff(entry, section)
+function git.split_diff(entry, section, root)
     ensure_git()
 
     if section == 'conflicts' then
@@ -1000,7 +1022,7 @@ function git.split_diff(entry, section)
     local ft = vim.filetype.match({ filename = entry.path }) or ''
 
     if section == 'untracked' or entry.unstaged == '?' then
-        local right, err = read_worktree_lines(entry.path)
+        local right, err = read_worktree_lines(entry.path, root)
 
         if err ~= nil then
             return nil, err
@@ -1019,7 +1041,7 @@ function git.split_diff(entry, section)
         local err
 
         if entry.staged ~= 'A' then
-            left, err = read_blob_lines('HEAD:' .. old_path)
+            left, err = read_blob_lines('HEAD:' .. old_path, root)
 
             if err ~= nil then
                 return nil, err
@@ -1029,7 +1051,7 @@ function git.split_diff(entry, section)
         local right = {}
 
         if entry.staged ~= 'D' then
-            right, err = read_blob_lines(':' .. entry.path)
+            right, err = read_blob_lines(':' .. entry.path, root)
 
             if err ~= nil then
                 return nil, err
@@ -1057,7 +1079,7 @@ function git.split_diff(entry, section)
         local err
 
         if entry.unstaged ~= 'A' then
-            left, err = read_blob_lines(':' .. entry.path)
+            left, err = read_blob_lines(':' .. entry.path, root)
 
             if err ~= nil then
                 return nil, err
@@ -1067,7 +1089,7 @@ function git.split_diff(entry, section)
         local right = {}
 
         if entry.unstaged ~= 'D' then
-            right, err = read_worktree_lines(entry.path)
+            right, err = read_worktree_lines(entry.path, root)
 
             if err ~= nil then
                 return nil, err
@@ -1094,13 +1116,14 @@ function git.split_diff(entry, section)
 end
 
 ---@param commit GitCommit
+---@param root string?
 ---@return string[]
 ---@return string?
-function git.show_commit(commit)
+function git.show_commit(commit, root)
     ensure_git()
 
     local out =
-        git.run({ 'show', '--stat', '--patch', commit.hash }, root_opts())
+        git.run({ 'show', '--stat', '--patch', commit.hash }, root_opts(root))
 
     if out.exit_code ~= 0 then
         return {}, return_result(out)
@@ -1199,13 +1222,14 @@ end
 
 ---@param entry GitStatusEntry
 ---@param section string?
+---@param root string?
 ---@return string[]
 ---@return string?
-function git.diff(entry, section)
+function git.diff(entry, section, root)
     ensure_git()
 
     local args
-    local opts = root_opts()
+    local opts = root_opts(root)
     local pathspecs = entry_pathspecs(entry)
     local full_path = opts.cwd ~= nil and vim.fs.joinpath(opts.cwd, entry.path)
         or entry.path
@@ -1230,8 +1254,6 @@ function git.diff(entry, section)
         return {}
     end
 
-    opts.ignore_error = true
-
     local out = git.run(args, opts)
 
     if out.exit_code > 1 or (out.exit_code ~= 0 and out.output == '') then
@@ -1241,12 +1263,13 @@ function git.diff(entry, section)
     return parse_diff(out.output)
 end
 
+---@param root string?
 ---@return boolean
 ---@return string
-function git.push()
+function git.push(root)
     ensure_git()
 
-    local root = git.root()
+    root = root or git.root()
 
     if root == '' then
         return false, 'Not inside a git repository'
@@ -1271,10 +1294,11 @@ function git.push()
 end
 
 ---@param callback GitAsyncCallback
-function git.push_async(callback)
+---@param root string?
+function git.push_async(callback, root)
     ensure_git()
 
-    local root = git.root()
+    root = root or git.root()
 
     if root == '' then
         callback(false, 'Not inside a git repository')

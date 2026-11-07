@@ -215,6 +215,14 @@ function M.status()
         M.reset()
     end
 
+    if M.gsw ~= nil and #vim.fn.win_findbuf(M.gsw.buf.id) == 0 then
+        local git = require('minifugit.git')
+
+        if git.root() ~= M.gsw.root then
+            M.reset()
+        end
+    end
+
     if M.gsw then
         M.gsw:refresh()
         M.gsw:show()

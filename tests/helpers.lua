@@ -2,6 +2,7 @@
 ---@field assert_has_line_containing fun(lines: string[], expected: string)
 ---@field run fun(args: string[], cwd: string): string
 ---@field write_file fun(path: string, lines: string[])
+---@field clone_repo_with_changed_file fun(repo: string, path: string, lines: string[]): string
 
 local git_env = {
     GIT_CONFIG_GLOBAL = vim.uv.os_uname().sysname == 'Windows_NT' and 'NUL'
@@ -44,5 +45,16 @@ local M = {
         vim.fn.writefile(lines, path)
     end,
 }
+
+---@param repo string
+---@param path string Relative path in the cloned repository.
+---@param lines string[]
+---@return string Temporary clone; the caller owns cleanup and cwd changes.
+function M.clone_repo_with_changed_file(repo, path, lines)
+    local clone = vim.fn.tempname()
+    M.run({ 'git', 'clone', '--local', repo, clone }, repo)
+    M.write_file(vim.fs.joinpath(clone, path), lines)
+    return clone
+end
 
 return M

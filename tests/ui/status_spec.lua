@@ -193,6 +193,8 @@ describe('minifugit status UI', function()
     local original_cwd
     ---@type string
     local repo
+    ---@type string?
+    local other_repo
     ---@type Minifugit
     local minifugit
 
@@ -217,6 +219,7 @@ describe('minifugit status UI', function()
             package.loaded[name] = nil
         end
         original_cwd = vim.fn.getcwd()
+        other_repo = nil
         repo = vim.fn.tempname()
         vim.fn.mkdir(repo, 'p')
 
@@ -251,7 +254,351 @@ describe('minifugit status UI', function()
         if repo ~= nil then
             vim.fn.delete(repo, 'rf')
         end
+        if other_repo ~= nil then
+            vim.fn.delete(other_repo, 'rf')
+        end
     end)
+
+    local function change_to_other_repo()
+        other_repo = helpers.clone_repo_with_changed_file(
+            repo,
+            'tracked.txt',
+            { 'changed in B' }
+        )
+        vim.cmd.cd(vim.fn.fnameescape(other_repo))
+    end
+
+    it('rejects commits from a status window opened outside git', function()
+        other_repo = vim.fn.tempname()
+        vim.fn.mkdir(other_repo, 'p')
+        vim.cmd.cd(vim.fn.fnameescape(other_repo))
+        minifugit.status()
+        local gsw = minifugit.gsw
+        local status_buf = gsw.buf.id
+        assert.are.equal('', gsw.root)
+        assert_has_line(buffer_lines(status_buf), 'Not inside a git repository')
+
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'staged in B' }
+        )
+        helpers.run({ 'git', 'add', 'tracked.txt' }, repo)
+        local log_before = helpers.run({ 'git', 'log', '--format=%H' }, repo)
+        local index_before = helpers.run({ 'git', 'ls-files', '--stage' }, repo)
+        vim.cmd.cd(vim.fn.fnameescape(repo))
+
+        mapped_normal_keys('c')
+
+        assert.are.equal(
+            log_before,
+            helpers.run({ 'git', 'log', '--format=%H' }, repo)
+        )
+        assert.are.equal(
+            index_before,
+            helpers.run({ 'git', 'ls-files', '--stage' }, repo)
+        )
+        assert.is_true(
+            vim.api.nvim_get_current_buf() == status_buf,
+            'Commit keymap must not open a commit buffer for an empty pin'
+        )
+        assert.are.equal(status_buf, vim.api.nvim_win_get_buf(gsw.win))
+        for _, win in ipairs(vim.api.nvim_list_wins()) do
+            local buf = vim.api.nvim_win_get_buf(win)
+            assert.are_not.equal('gitcommit', vim.bo[buf].filetype)
+        end
+    end)
+
+    it('stages in the displayed repository after cwd changes', function()
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'changed in A' }
+        )
+        minifugit.status()
+        local gsw = minifugit.gsw
+        vim.api.nvim_win_set_cursor(
+            gsw.win,
+            { row_containing(gsw.buf.id, 'tracked.txt'), 0 }
+        )
+        change_to_other_repo()
+
+        mapped_normal_keys('s')
+
+        assert.are.equal(
+            'M  tracked.txt\n',
+            helpers.run({ 'git', 'status', '--short' }, repo)
+        )
+        assert.are.equal(
+            ' M tracked.txt\n',
+            helpers.run({ 'git', 'status', '--short' }, other_repo)
+        )
+    end)
+
+    it(
+        're-pins a closed status session when reopened in another repository',
+        function()
+            helpers.write_file(vim.fs.joinpath(repo, 'only-a.txt'), { 'A' })
+            minifugit.status()
+            mapped_normal_keys('q')
+            change_to_other_repo()
+            helpers.write_file(
+                vim.fs.joinpath(other_repo, 'only-b.txt'),
+                { 'B' }
+            )
+
+            minifugit.status()
+
+            local gsw = minifugit.gsw
+            assert.is_true(vim.api.nvim_win_is_valid(gsw.win))
+            assert.are.equal(gsw.buf.id, vim.api.nvim_win_get_buf(gsw.win))
+            local lines = buffer_lines(gsw.buf.id)
+            assert_has_line(lines, '?? only-b.txt')
+            assert_has_line(lines, 'Root: ' .. vim.fn.resolve(other_repo))
+            for _, line in ipairs(lines) do
+                assert.is_nil(line:find('only-a.txt', 1, true))
+            end
+        end
+    )
+
+    it(
+        'ignores push UI updates after the status window is re-pinned',
+        function()
+            local git = require('minifugit.git')
+            local original_push_async = git.push_async
+            local original_notify = vim.notify
+            local push_callback
+            local push_root
+            local notifications = {}
+
+            git.push_async = function(callback, root)
+                push_callback = callback
+                push_root = root
+            end
+            vim.notify = function(message, level)
+                table.insert(
+                    notifications,
+                    { message = message, level = level }
+                )
+            end
+
+            local test_ok, test_err = pcall(function()
+                change_to_other_repo()
+
+                for _, push_ok in ipairs({ true, false }) do
+                    minifugit.reset()
+                    vim.cmd.cd(vim.fn.fnameescape(repo))
+                    minifugit.status()
+                    local old_status_buf = minifugit.gsw.buf.id
+                    push_callback = nil
+                    mapped_normal_keys('p')
+                    assert.is_function(push_callback)
+                    assert.are.equal(vim.fn.resolve(repo), push_root)
+                    mapped_normal_keys('q')
+                    vim.cmd.cd(vim.fn.fnameescape(other_repo))
+                    minifugit.status()
+
+                    local gsw = minifugit.gsw
+                    local status_buf = gsw.buf.id
+                    local lines_before = buffer_lines(status_buf)
+                    assert.is_false(vim.api.nvim_buf_is_valid(old_status_buf))
+                    assert_has_line(
+                        lines_before,
+                        'Root: ' .. vim.fn.resolve(other_repo)
+                    )
+                    local output = push_ok and 'Pushed commits from A'
+                        or 'Push failed in A'
+                    helpers.write_file(
+                        vim.fs.joinpath(other_repo, output .. '.txt'),
+                        { 'Created after the B snapshot' }
+                    )
+
+                    local callback_ok, callback_err =
+                        pcall(push_callback, push_ok, output)
+
+                    assert(callback_ok, callback_err)
+                    assert.are.same(lines_before, buffer_lines(status_buf))
+                    assert.are.equal(status_buf, vim.api.nvim_get_current_buf())
+                    assert.are.equal(
+                        status_buf,
+                        vim.api.nvim_win_get_buf(gsw.win)
+                    )
+                    assert.are.same({
+                        message = '[minifugit] ' .. output,
+                        level = push_ok and vim.log.levels.INFO
+                            or vim.log.levels.ERROR,
+                    }, notifications[#notifications])
+                end
+            end)
+            git.push_async = original_push_async
+            vim.notify = original_notify
+            assert(test_ok, test_err)
+        end
+    )
+
+    it(
+        'keeps a visible status session pinned when status is called from another cwd',
+        function()
+            helpers.write_file(vim.fs.joinpath(repo, 'only-a.txt'), { 'A' })
+            minifugit.status()
+            local status_buf = minifugit.gsw.buf.id
+            local status_win = minifugit.gsw.win
+            change_to_other_repo()
+            helpers.write_file(
+                vim.fs.joinpath(other_repo, 'only-b.txt'),
+                { 'B' }
+            )
+
+            minifugit.status()
+
+            assert.are.equal(status_win, vim.api.nvim_get_current_win())
+            assert.are.equal(status_buf, vim.api.nvim_get_current_buf())
+            local lines = buffer_lines(status_buf)
+            assert_has_line(lines, '?? only-a.txt')
+            assert_has_line(lines, 'Root: ' .. vim.fn.resolve(repo))
+            for _, line in ipairs(lines) do
+                assert.is_nil(line:find('only-b.txt', 1, true))
+            end
+        end
+    )
+
+    it('refreshes the displayed repository after cwd changes', function()
+        helpers.write_file(vim.fs.joinpath(repo, 'only-a.txt'), { 'A' })
+        minifugit.status()
+        local gsw = minifugit.gsw
+        change_to_other_repo()
+        helpers.write_file(vim.fs.joinpath(other_repo, 'only-b.txt'), { 'B' })
+        helpers.write_file(vim.fs.joinpath(repo, 'added-in-a.txt'), { 'new A' })
+
+        mapped_normal_keys('r')
+
+        local lines = buffer_lines(gsw.buf.id)
+        assert_has_line(lines, '?? only-a.txt')
+        assert_has_line(lines, '?? added-in-a.txt')
+        for _, line in ipairs(lines) do
+            assert.is_nil(line:find('only-b.txt', 1, true))
+        end
+    end)
+
+    it('opens the displayed file by absolute path after cwd changes', function()
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'changed in A' }
+        )
+        minifugit.status()
+        local gsw = minifugit.gsw
+        vim.api.nvim_win_set_cursor(
+            gsw.win,
+            { row_containing(gsw.buf.id, 'tracked.txt'), 0 }
+        )
+        change_to_other_repo()
+
+        mapped_normal_keys('<CR>')
+
+        assert.are.equal(
+            vim.fn.resolve(vim.fs.joinpath(repo, 'tracked.txt')),
+            vim.fn.resolve(vim.api.nvim_buf_get_name(0))
+        )
+        assert.are.same(
+            { 'changed in A' },
+            buffer_lines(vim.api.nvim_get_current_buf())
+        )
+    end)
+
+    it('shows the pinned repository root in the header', function()
+        minifugit.status()
+        change_to_other_repo()
+        mapped_normal_keys('r')
+
+        local lines = buffer_lines(minifugit.gsw.buf.id)
+        assert_has_line(lines, 'HEAD: main')
+        assert_has_line(lines, 'Root: ' .. vim.fn.resolve(repo))
+    end)
+
+    -- Windows does not allow control characters in directory names.
+    local unix_it = vim.fn.has('win32') == 1 and pending or it
+    unix_it(
+        'escapes root control characters without changing the pin',
+        function()
+            local root_header = 'Root: '
+                .. vim.fn.resolve(repo)
+                .. '^@root^I^M^A^?'
+            vim.api.nvim_set_current_dir(original_cwd)
+            local renamed_repo = repo .. '\nroot\t\r\1\127'
+            assert.are.equal(0, vim.fn.rename(repo, renamed_repo))
+            repo = renamed_repo
+            vim.api.nvim_set_current_dir(repo)
+
+            minifugit.status()
+
+            local status_buf = vim.api.nvim_get_current_buf()
+            local status_win = vim.api.nvim_get_current_win()
+            assert.are.equal('minifugit', vim.bo[status_buf].filetype)
+            assert.are.equal(status_buf, vim.api.nvim_win_get_buf(status_win))
+            assert_has_line(buffer_lines(status_buf), root_header)
+            assert.are.equal(
+                '',
+                helpers.run({ 'git', 'status', '--short' }, repo)
+            )
+
+            helpers.write_file(
+                vim.fs.joinpath(repo, 'tracked.txt'),
+                { 'new A' }
+            )
+            change_to_other_repo()
+            mapped_normal_keys('r')
+
+            assert.are.equal(status_win, vim.api.nvim_get_current_win())
+            assert.are.equal(status_buf, vim.api.nvim_get_current_buf())
+            assert_has_line(buffer_lines(status_buf), root_header)
+            vim.api.nvim_win_set_cursor(
+                status_win,
+                { row_containing(status_buf, 'tracked.txt'), 0 }
+            )
+            mapped_normal_keys('s')
+
+            assert.are.equal(
+                'M  tracked.txt\n',
+                helpers.run({ 'git', 'status', '--short' }, repo)
+            )
+            assert.are.equal(
+                ' M tracked.txt\n',
+                helpers.run({ 'git', 'status', '--short' }, other_repo)
+            )
+        end
+    )
+
+    for _, name in ipairs({ 'tracked.txt', 'untracked.txt' }) do
+        it('discards only ' .. name .. ' after cwd changes', function()
+            helpers.write_file(vim.fs.joinpath(repo, name), { 'changed in A' })
+            minifugit.status()
+            local gsw = minifugit.gsw
+            vim.api.nvim_win_set_cursor(
+                gsw.win,
+                { row_containing(gsw.buf.id, name), 0 }
+            )
+            change_to_other_repo()
+            helpers.write_file(
+                vim.fs.joinpath(other_repo, name),
+                { 'changed in B' }
+            )
+            local other_status =
+                helpers.run({ 'git', 'status', '--short' }, other_repo)
+
+            mapped_normal_keys('D')
+
+            assert.are.equal(
+                '',
+                helpers.run({ 'git', 'status', '--short' }, repo)
+            )
+            assert.are.equal(
+                other_status,
+                helpers.run({ 'git', 'status', '--short' }, other_repo)
+            )
+            assert.are.same(
+                { 'changed in B' },
+                vim.fn.readfile(vim.fs.joinpath(other_repo, name))
+            )
+        end)
+    end
 
     it(
         'opens a status window with the expected buffer options and contents',
