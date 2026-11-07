@@ -81,6 +81,13 @@ end
 ---@param callbacks MiniFugitPreviewActions
 ---@return boolean
 function M.apply_current_hunk(self, kind, callbacks)
+    if self.host.base ~= nil then
+        common.notify_warn(
+            'read-only: changes since ' .. self.host.base:sub(1, 7)
+        )
+        return false
+    end
+
     local section = self.section
 
     if kind == 'stage' and section ~= 'unstaged' then

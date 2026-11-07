@@ -5,6 +5,16 @@ local Buffer = require('minifugit.ui.buffer')
 
 local M = {}
 
+---@param self GitStatusWindow
+---@return boolean
+local function read_only(self)
+    if self.base == nil then
+        return false
+    end
+    common.notify_warn('read-only: changes since ' .. self.base:sub(1, 7))
+    return true
+end
+
 local function stop_visual_mode()
     local mode = vim.fn.mode()
 
@@ -162,6 +172,10 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.stage_entry(self)
+    if read_only(self) then
+        return false
+    end
+
     local item = selection.current_entry_item(self)
 
     if item == nil then
@@ -184,12 +198,20 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.unstage_entry(self)
+    if read_only(self) then
+        return false
+    end
+
     return M.update_entry(self, git.unstage_entries, 'unstage')
 end
 
 ---@param self GitStatusWindow
 ---@return boolean
 function M.stage_all_entries(self)
+    if read_only(self) then
+        return false
+    end
+
     return M.update_entries(
         self,
         git.stage_entries,
@@ -200,6 +222,10 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.unstage_all_entries(self)
+    if read_only(self) then
+        return false
+    end
+
     return M.update_entries(
         self,
         git.unstage_entries,
@@ -210,6 +236,10 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.stage_selected_entries(self)
+    if read_only(self) then
+        return false
+    end
+
     local items = selection.selected_entry_items(self)
 
     if all_items_in_section(items, 'staged') then
@@ -222,6 +252,10 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.unstage_selected_entries(self)
+    if read_only(self) then
+        return false
+    end
+
     return M.update_entry_items(
         self,
         git.unstage_entries,
@@ -234,6 +268,10 @@ end
 ---@param force boolean
 ---@return boolean
 function M.discard_entry(self, force)
+    if read_only(self) then
+        return false
+    end
+
     local item = selection.current_entry_item(self)
 
     if item == nil then
@@ -451,6 +489,10 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.commit(self)
+    if read_only(self) then
+        return false
+    end
+
     if self.win == nil or not common.is_valid_win(self.win) then
         common.notify_error(nil, 'Status window is not open')
         return false
@@ -536,6 +578,10 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.push(self)
+    if read_only(self) then
+        return false
+    end
+
     if self.win == nil or not common.is_valid_win(self.win) then
         common.notify_error(nil, 'Status window is not open')
         return false

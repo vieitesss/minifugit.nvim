@@ -12,7 +12,7 @@ local conflict_statuses = {
     UU = true,
 }
 
----@alias GitStatusSectionName 'conflicts'|'staged'|'unstaged'|'untracked'|'unpushed'
+---@alias GitStatusSectionName 'conflicts'|'staged'|'unstaged'|'untracked'|'unpushed'|'base'
 
 ---@class GitStatusSection
 ---@field name GitStatusSectionName
@@ -25,6 +25,7 @@ local conflict_statuses = {
 
 ---@class GitStatusRenderOpts
 ---@field filter string?
+---@field base string? Pinned commit hash.
 ---@field loading_message string?
 ---@field loading_frame string?
 
@@ -288,7 +289,13 @@ end
 function M.render(snapshot, groups, opts)
     opts = opts or {}
 
-    local lines = { M.head_line(snapshot.branch, groups) }
+    local short_base = opts.base and opts.base:sub(1, 7)
+    local lines = {
+        short_base ~= nil and message_line(
+            'Base: ' .. short_base .. ' (read-only)',
+            'Title'
+        ) or M.head_line(snapshot.branch, groups),
+    }
 
     if snapshot.root ~= nil and snapshot.root ~= '' then
         table.insert(
@@ -317,7 +324,14 @@ function M.render(snapshot, groups, opts)
 
     if #snapshot.entries == 0 and #snapshot.unpushed_commits == 0 then
         table.insert(lines, render.line(''))
-        table.insert(lines, message_line('Working tree clean', 'Comment'))
+        table.insert(
+            lines,
+            message_line(
+                short_base ~= nil and ('No changes since ' .. short_base)
+                    or 'Working tree clean',
+                'Comment'
+            )
+        )
         return lines
     end
 
@@ -332,6 +346,15 @@ function M.render(snapshot, groups, opts)
             )
             return lines
         end
+    end
+
+    if short_base ~= nil then
+        append_section(lines, {
+            name = 'base',
+            title = 'Changes since ' .. short_base,
+            entries = entries,
+        }, groups)
+        return lines
     end
 
     for _, section in ipairs(sections(entries)) do

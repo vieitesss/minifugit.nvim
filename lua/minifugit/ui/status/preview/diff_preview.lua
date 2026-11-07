@@ -304,6 +304,18 @@ local function stacked_syntax_current(self, gen, preview_key)
         and vim.api.nvim_buf_is_valid(self.stacked.buf.id)
 end
 
+---@param self DiffPreview
+---@param entry GitStatusEntry
+---@param section GitStatusSectionName?
+---@return GitSplitDiff?
+---@return string?
+local function split_diff(self, entry, section)
+    if self.host.base ~= nil then
+        return git.base_split_diff(entry, self.host.base, self.host.root)
+    end
+    return git.split_diff(entry, section, self.host.root)
+end
+
 ---Overlay source syntax onto the stacked preview without replacing buffer
 ---text (avoids cursor jumps). Scheduled after the fast unified-patch paint
 ---so CursorMoved is never blocked by split_diff + treesitter.
@@ -327,7 +339,7 @@ local function schedule_stacked_syntax(self, lines, entry, section, preview_key)
             return
         end
 
-        local split_diff = git.split_diff(entry, section, self.host.root)
+        local split_diff = split_diff(self, entry, section)
 
         if split_diff == nil then
             return
@@ -703,11 +715,38 @@ function DiffPreview:open(entry, section, opts)
         end
     end
 
-    local lines, err = git.diff(entry, section, self.host.root)
+    local lines, err
+    if self.host.base ~= nil then
+        lines, err = git.base_diff(entry, self.host.base, self.host.root)
+    else
+        lines, err = git.diff(entry, section, self.host.root)
+    end
 
     if err ~= nil then
         common.notify_error(err, 'Cannot show diff')
         return false
+    end
+
+    if self.host.base ~= nil then
+        for _, line in ipairs(lines) do
+            if
+                vim.startswith(line, 'Binary files ')
+                or line == 'GIT binary patch'
+            then
+                set_context(self, nil, nil, nil, section, entry)
+                local ok = display.show_stacked(
+                    self,
+                    { render.line('binary file') },
+                    preview_key,
+                    diff_title(entry, section),
+                    self.actions
+                )
+                if ok and opts.focus then
+                    display.focus_open_diff(self)
+                end
+                return ok
+            end
+        end
     end
 
     local parsed_hunks = diff_parser.parse_hunks(lines)
@@ -715,9 +754,10 @@ function DiffPreview:open(entry, section, opts)
     -- Split layout needs both file sides. Stacked only needs the unified
     -- patch; source syntax is overlaid asynchronously after the first paint
     -- (fetching full file contents synchronously made cursor-follow laggy).
-    if layout == 'split' then
-        local split_diff, split_err =
-            git.split_diff(entry, section, self.host.root)
+    -- Base entries without content hunks show metadata in stacked view, but
+    -- keep the chosen layout so the next content change can still use split.
+    if layout == 'split' and (self.host.base == nil or #parsed_hunks > 0) then
+        local split_diff, split_err = split_diff(self, entry, section)
 
         if split_diff ~= nil then
             local ok = display.show_split(

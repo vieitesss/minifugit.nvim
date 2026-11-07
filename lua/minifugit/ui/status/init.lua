@@ -15,6 +15,7 @@ local git = require('minifugit.git')
 
 ---@class GitStatusWindow
 ---@field root string Pinned repository root, captured when the window is created.
+---@field base string? Pinned commit hash for read-only base mode.
 ---@field buf Buffer
 ---@field preview DiffPreview
 ---@field help_buf Buffer?
@@ -677,6 +678,7 @@ function GitStatusWindow:render_cached()
         filter = self.filter,
         loading_message = self.loading_message,
         loading_frame = loading_frame,
+        base = self.base,
     })
 
     self.buf:set_modifiable(true)
@@ -686,7 +688,18 @@ function GitStatusWindow:render_cached()
 end
 
 function GitStatusWindow:render()
-    self.snapshot = git.status_snapshot(self.root)
+    if self.base ~= nil then
+        local entries, err = git.base_entries(self.base, self.root)
+        self.snapshot = {
+            branch = '',
+            root = self.root,
+            entries = entries,
+            unpushed_commits = {},
+            error = err,
+        }
+    else
+        self.snapshot = git.status_snapshot(self.root)
+    end
     self:render_cached()
 end
 
@@ -742,12 +755,15 @@ end
 
 ---@param opts MinifugitStatusInstanceOptions
 ---@param root string? Resolved repository root; defaults to the current cwd's root.
+---@param base string? Pinned commit hash for read-only base mode.
 ---@return GitStatusWindow
-function GitStatusWindow.new(opts, root)
+function GitStatusWindow.new(opts, root, base)
     vim.validate('root', root, 'string', true)
+    vim.validate('base', base, 'string', true)
     local self = setmetatable({}, GitStatusWindow)
 
     self.root = root or git.root()
+    self.base = base
     self.options = opts
     self.on_close_callbacks = {}
     self.on_close_windows = {}

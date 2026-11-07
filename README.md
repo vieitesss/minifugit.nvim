@@ -127,11 +127,22 @@ All options are optional:
 
 - `cwd` (string): a directory inside a Git repository, including a linked
   worktree. The resolved root is pinned without changing Neovim's cwd. Omit it
-  to use the current cwd with the same behavior as `status()`.
+  to use the current cwd; without `base`, this has the same behavior as `status()`.
+- `base` (string): open a read-only comparison of that revision with the working
+  tree. The revision is resolved to a full commit hash once when opening; refresh
+  keeps that commit pinned even if `HEAD` or a branch moves. The header shows its
+  first seven characters and `read-only`. One `Changes since <short rev>` section
+  shows tracked `A`, `M`, `D`, and `R` changes, plus non-ignored untracked files
+  marked `??`. Renames show `old -> new`. Committed and uncommitted edits appear
+  together in stacked and split previews. A rename or mode change without content
+  changes previews as metadata in either layout. No unpushed-commits section is shown.
+  Stage, unstage, discard, commit, push, and preview hunk actions only notify
+  `read-only: changes since <short rev>`; viewing, filtering, refresh, and opening
+  working tree files still work. A clean comparison says `No changes since <short rev>`.
 - `open_in_tab` (boolean): override `status.open_in_tab` when opening a window.
   `false` uses the current tab; `true` opens or reuses a dedicated repository tab.
-  A visible window for the same root is only focused and refreshed, regardless
-  of this option. A hidden instance is recreated if its opening mode differs.
+  Focusing a visible matching instance preserves its opening mode. A hidden
+  instance is recreated if its opening mode differs.
 - `on_close` (function): run once, scheduled after the status window disappears.
   Closing with `q` or `:close` may leave its buffer hidden. Buffer deletion or
   wiping, owned-tab closure, and instance destruction (`reset()`, re-pin, or
@@ -143,9 +154,20 @@ All options are optional:
 
 `open()` returns `true` on success. An explicit missing, non-directory, or
 non-Git `cwd` returns `nil, err` (a string) without creating windows, buffers,
-or tabs. Invalid option types raise validation errors. An explicit `cwd` for
-another root replaces the current visible status window; omitting it preserves
-that window's pin. `status()` calls `open({})` and ignores its return value.
+or tabs. An unknown, empty, or option-like (starting with `-`) `base` returns
+`nil, 'Invalid base revision: <base>'` with no editor resources created. With
+`base` but no `cwd`, resolution uses the current cwd, which must be in Git;
+otherwise the error is `Not inside a git repository: <cwd>`.
+Invalid option types raise validation errors.
+
+An explicit `cwd` for another root replaces the visible status instance. An
+explicit `base` resolving to a different commit or root also replaces it; an
+equivalent revision in the same root focuses and refreshes it. Omitting `base`
+keeps the visible comparison; with no `base`, omitting `cwd` also preserves its
+root pin. A hidden instance is destroyed and recreated if its
+root, opening mode, or pinned base differs, including calls between base and
+normal mode. Dedicated repository-tab reuse follows these same rules.
+`status()` calls `open({})` and ignores its return value.
 
 Each tabpage has its own status window. With `status.open_in_tab = true`, calls
 for a repository reuse its existing minifugit tab. Replacing a status window

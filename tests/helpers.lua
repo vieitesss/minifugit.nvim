@@ -83,8 +83,8 @@ function M.capture_status_windows()
     local original_new = StatusWindow.new
     local instances = {}
 
-    StatusWindow.new = function(opts, root)
-        local instance = original_new(opts, root)
+    StatusWindow.new = function(...)
+        local instance = original_new(...)
         instances[instance.buf.id] = instance
         return instance
     end
