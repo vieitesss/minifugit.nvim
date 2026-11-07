@@ -83,6 +83,25 @@ local function mapped_normal_keys(keys)
     )
 end
 
+---@param action fun()
+---@return string? message
+---@return integer? level
+local function capture_notification(action)
+    local original_notify = vim.notify
+    local message
+    local level
+    vim.notify = function(notified_message, notified_level)
+        message = notified_message
+        level = notified_level
+    end
+    local ok, err = pcall(action)
+    vim.notify = original_notify
+    if not ok then
+        error(err, 0)
+    end
+    return message, level
+end
+
 ---@param actual table<string, any>
 ---@param expected table<string, any>
 ---@return boolean
@@ -2511,6 +2530,75 @@ describe('minifugit status UI', function()
         end
     )
 
+    unix_it('escapes newline paths in untracked discard prompts', function()
+        local path = repo .. '/line\nbreak.txt'
+        helpers.write_file(path, { 'new' })
+        assert.is_true(minifugit.open())
+        local buf = vim.api.nvim_get_current_buf()
+        local win = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_cursor(
+            win,
+            { row_containing(buf, 'line^@break.txt'), 0 }
+        )
+        local unchanged = helpers.snapshot_editor_state()
+        local original_confirm = vim.fn.confirm
+        local prompt
+        vim.fn.confirm = function(message)
+            prompt = message
+            return 2
+        end
+        local ok, discarded = pcall(function()
+            return status_window():discard_entry(false)
+        end)
+        vim.fn.confirm = original_confirm
+        assert.is_true(ok, discarded)
+        assert.is_false(discarded)
+
+        unchanged()
+        assert.are.equal(buf, vim.api.nvim_get_current_buf())
+        assert.are.equal(win, vim.api.nvim_get_current_win())
+        assert.are.equal(1, vim.fn.filereadable(path))
+        assert.are.same({ 'new' }, vim.fn.readfile(path))
+        assert.are.equal('Delete untracked path line^@break.txt?', prompt)
+        assert.is_nil(prompt:find('\n', 1, true))
+    end)
+
+    unix_it('escapes newline paths in tracked discard prompts', function()
+        local path = repo .. '/line\nbreak.txt'
+        helpers.write_file(path, { 'original' })
+        helpers.run({ 'git', 'add', '.' }, repo)
+        helpers.run({ 'git', 'commit', '-m', 'add newline file' }, repo)
+        helpers.write_file(path, { 'changed' })
+        assert.is_true(minifugit.open())
+        local buf = vim.api.nvim_get_current_buf()
+        local win = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_cursor(
+            win,
+            { row_containing(buf, 'line^@break.txt'), 0 }
+        )
+        local unchanged = helpers.snapshot_editor_state()
+        local original_confirm = vim.fn.confirm
+        local prompt
+        vim.fn.confirm = function(message)
+            prompt = message
+            return 2
+        end
+        local ok, discarded = pcall(function()
+            return status_window():discard_entry(false)
+        end)
+        vim.fn.confirm = original_confirm
+        assert.is_true(ok, discarded)
+        assert.is_false(discarded)
+
+        unchanged()
+        assert.are.equal(buf, vim.api.nvim_get_current_buf())
+        assert.are.equal(win, vim.api.nvim_get_current_win())
+        assert.are.equal(1, vim.fn.filereadable(path))
+        assert.are.same({ 'changed' }, vim.fn.readfile(path))
+        assert.are.equal('Discard changes in line^@break.txt?', prompt)
+        assert.is_nil(prompt:find('\n', 1, true))
+    end)
+
     unix_it('filters the escaped current and original file names', function()
         helpers.write_file(repo .. '/old\nname.txt', { 'rename' })
         helpers.run({ 'git', 'add', '.' }, repo)
@@ -2583,6 +2671,46 @@ describe('minifugit status UI', function()
         end
     )
 
+    unix_it('escapes newline paths in split fallback warnings', function()
+        local path = repo .. '/missing\nfile.txt'
+        helpers.write_file(path, { 'original' })
+        helpers.run({ 'git', 'add', '.' }, repo)
+        helpers.run({ 'git', 'commit', '-m', 'add newline file' }, repo)
+        helpers.write_file(path, { 'changed' })
+        minifugit.options.preview.diff_layout = 'split'
+        local target = vim.api.nvim_get_current_win()
+        local original_buf = vim.api.nvim_get_current_buf()
+        assert.is_true(minifugit.open())
+        local buf = vim.api.nvim_get_current_buf()
+        vim.api.nvim_win_set_cursor(
+            0,
+            { row_containing(buf, 'missing^@file.txt'), 0 }
+        )
+        -- The file can disappear after status collection but before previewing.
+        assert.are.equal(0, vim.fn.delete(path))
+
+        local warning, warning_level = capture_notification(function()
+            assert.is_true(status_window():diff_entry())
+        end)
+
+        local win, preview = diff_win_named('Minifugit diff')
+        assert.are.equal(target, win)
+        assert.are.equal(buf, vim.api.nvim_get_current_buf())
+        helpers.assert_has_line_containing(buffer_lines(preview), 'original')
+        vim.api.nvim_set_current_win(win)
+        mapped_normal_keys('q')
+        assert.are.equal(original_buf, vim.api.nvim_win_get_buf(target))
+        assert.are.equal(2, #normal_windows(0))
+        assert.are.equal(
+            '[minifugit] Cannot stat file: '
+                .. vim.fn.resolve(repo)
+                .. '/missing^@file.txt; showing stacked diff',
+            warning
+        )
+        assert.are.equal(vim.log.levels.WARN, warning_level)
+        assert.is_nil(warning:find('\n', 1, true))
+    end)
+
     unix_it(
         'escapes split rename titles and refuses to open newline paths',
         function()
@@ -2633,15 +2761,9 @@ describe('minifugit status UI', function()
                 { row_containing(right, 'changed fourth'), 0 }
             )
             local unchanged = helpers.snapshot_editor_state()
-            local original_notify = vim.notify
-            local warning
-            local warning_level
-            vim.notify = function(message, level)
-                warning = message
-                warning_level = level
-            end
-            mapped_normal_keys('<CR>')
-            vim.notify = original_notify
+            local warning, warning_level = capture_notification(function()
+                mapped_normal_keys('<CR>')
+            end)
 
             unchanged()
             assert.are.equal(right, vim.api.nvim_get_current_buf())
@@ -2670,15 +2792,9 @@ describe('minifugit status UI', function()
                     { row_containing(buf, 'line^@break.txt'), 0 }
                 )
                 local unchanged = helpers.snapshot_editor_state()
-                local original_notify = vim.notify
-                local warning
-                local warning_level
-                vim.notify = function(message, level)
-                    warning = message
-                    warning_level = level
-                end
-                mapped_normal_keys('<CR>')
-                vim.notify = original_notify
+                local warning, warning_level = capture_notification(function()
+                    mapped_normal_keys('<CR>')
+                end)
 
                 unchanged()
                 assert.are.equal(buf, vim.api.nvim_get_current_buf())

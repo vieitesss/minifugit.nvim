@@ -790,7 +790,9 @@ function DiffPreview:open(entry, section, opts)
         end
 
         if split_err ~= nil and opts.notify ~= false then
-            common.notify_warn(split_err .. '; showing stacked diff')
+            common.notify_warn(
+                vim.fn.strtrans(split_err) .. '; showing stacked diff'
+            )
         end
     end
 
