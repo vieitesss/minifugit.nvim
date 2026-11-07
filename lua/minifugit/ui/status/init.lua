@@ -39,6 +39,7 @@ local git = require('minifugit.git')
 ---@field loading_frame integer
 ---@field loading_timer uv.uv_timer_t?
 ---@field autocmd_group integer?
+---@field on_close_callbacks (fun())[]
 local GitStatusWindow = {}
 GitStatusWindow.__index = GitStatusWindow
 
@@ -296,6 +297,24 @@ function GitStatusWindow:maybe_close_owned_tab()
 end
 
 ---@param self GitStatusWindow
+local function notify_closed(self)
+    local callbacks = self.on_close_callbacks
+    self.on_close_callbacks = {}
+    if #callbacks == 0 then
+        return
+    end
+
+    vim.schedule(function()
+        for _, callback in ipairs(callbacks) do
+            local ok, err = pcall(callback)
+            if not ok then
+                log.error('on_close callback failed: ' .. tostring(err))
+            end
+        end
+    end)
+end
+
+---@param self GitStatusWindow
 local function ensure_autocmds(self)
     if self.autocmd_group ~= nil then
         pcall(vim.api.nvim_del_augroup_by_id, self.autocmd_group)
@@ -330,6 +349,19 @@ local function ensure_autocmds(self)
                     release_status_win(self)
                 end
             end)
+        end,
+    })
+
+    vim.api.nvim_create_autocmd({
+        'BufWinLeave',
+        'BufDelete',
+        'BufUnload',
+        'BufWipeout',
+    }, {
+        group = self.autocmd_group,
+        buffer = self.buf.id,
+        callback = function()
+            notify_closed(self)
         end,
     })
 
@@ -506,6 +538,7 @@ function GitStatusWindow:close()
             if tabpage == self.tabpage and self:close_owned_tab() then
                 self.win = nil
                 self.win_prev_winopts = nil
+                notify_closed(self)
                 return true
             end
 
@@ -526,6 +559,7 @@ function GitStatusWindow:close()
     self.win = nil
     self.win_prev_winopts = nil
     self:maybe_close_owned_tab()
+    notify_closed(self)
 
     return true
 end
@@ -671,12 +705,14 @@ end
 ---@field _status_tab? {tabpage: integer, foreign_buffer: boolean}
 
 ---@param opts MinifugitStatusInstanceOptions
+---@param root string? Resolved repository root; defaults to the current cwd's root.
 ---@return GitStatusWindow
-function GitStatusWindow.new(opts)
+function GitStatusWindow.new(opts, root)
     local self = setmetatable({}, GitStatusWindow)
 
-    self.root = git.root()
+    self.root = root or git.root()
     self.options = opts
+    self.on_close_callbacks = {}
     self.groups = create_highlight_groups()
     self.highlights = create_highlights()
     self.lines = {}
