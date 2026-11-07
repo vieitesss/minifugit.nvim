@@ -490,6 +490,35 @@ describe('minifugit.git', function()
         )
     end)
 
+    -- Windows does not allow control characters in file names.
+    local unix_it = vim.fn.has('win32') == 1 and pending or it
+    unix_it('keeps CRLF and lone carriage returns in status paths', function()
+        for _, path in ipairs({ 'line\r\nbreak.txt', 'trailing\r' }) do
+            helpers.write_file(repo .. '/' .. path, { 'new' })
+        end
+
+        assert.are.same({
+            { staged = '?', unstaged = '?', path = 'line\r\nbreak.txt' },
+            { staged = '?', unstaged = '?', path = 'trailing\r' },
+        }, git.status())
+    end)
+
+    unix_it('normalizes text by default but preserves raw -z output', function()
+        helpers.run({ 'git', 'config', 'core.autocrlf', 'false' }, repo)
+        helpers.write_file(repo .. '/tracked.txt', { 'one\r', 'two\r' })
+        helpers.write_file(repo .. '/line\r\nbreak.txt', { 'new' })
+        helpers.run({ 'git', 'add', '.' }, repo)
+        helpers.run({ 'git', 'commit', '-m', 'track CRLF content' }, repo)
+
+        local text = git.run({ 'show', 'HEAD:tracked.txt' })
+        assert.are.equal(0, text.exit_code, text.stderr)
+        assert.are.equal('one\ntwo\n', text.output)
+
+        local raw = git.run({ 'ls-files', '-z' }, { text = false })
+        assert.are.equal(0, raw.exit_code, raw.stderr)
+        assert.are.equal('line\r\nbreak.txt\0tracked.txt\0', raw.output)
+    end)
+
     it('lists files inside untracked directories recursively', function()
         helpers.write_file(
             vim.fs.joinpath(repo, 'new-dir/file.txt'),
@@ -716,6 +745,26 @@ describe('minifugit.git', function()
 
         assert.is_nil(err)
         assert.are.same({ added = 2, modified = 1, deleted = 0 }, counts)
+    end)
+
+    unix_it('counts tracked CRLF file changes from snapshot paths', function()
+        local path = 'line\r\nbreak.txt'
+        helpers.write_file(repo .. '/' .. path, { 'one', 'two' })
+        helpers.run({ 'git', 'add', '--', path }, repo)
+        helpers.run({ 'git', 'commit', '-m', 'track CRLF filename' }, repo)
+        helpers.write_file(
+            repo .. '/' .. path,
+            { 'one changed', 'two', 'three' }
+        )
+
+        local snapshot = git.status_snapshot(repo)
+        assert.is_nil(snapshot.error)
+        assert.are.equal(1, #snapshot.entries)
+        local counts, err = git.file_change_counts(snapshot.entries[1].path)
+
+        assert.is_nil(err)
+        assert.are.same({ added = 1, modified = 1, deleted = 0 }, counts)
+        assert.are.equal(path, snapshot.entries[1].path)
     end)
 
     it('counts untracked file lines as added', function()

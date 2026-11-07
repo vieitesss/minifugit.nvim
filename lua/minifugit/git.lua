@@ -140,9 +140,10 @@ local function null_device_path()
     return '/dev/null'
 end
 
----Executes a git command and returns the result
+---Executes a git command and returns the result.
+---Text mode defaults to true; disable it for NUL-separated path output.
 ---@param args string[] List of git arguments (e.g., {"status", "--porcelain"})
----@param opts? table Options { cwd = string?, ignore_error = boolean? }
+---@param opts? {cwd: string?, ignore_error: boolean?, text: boolean?}
 ---@return GitResult
 function git.run(args, opts)
     opts = opts or {}
@@ -160,7 +161,7 @@ function git.run(args, opts)
 
     local cwd = opts.cwd or vim.fn.getcwd()
 
-    local job = vim.system(cmd, { text = true, cwd = cwd })
+    local job = vim.system(cmd, { text = opts.text ~= false, cwd = cwd })
     local result = job:wait()
 
     local output = result.stdout or ''
@@ -341,7 +342,7 @@ function git.status()
         '--porcelain=v1',
         '-z',
         '--untracked-files=all',
-    })
+    }, { text = false })
 
     if out.exit_code ~= 0 then
         return {}
@@ -393,7 +394,7 @@ function git.status_snapshot(root)
 
     local status_out = git.run(
         { 'status', '--porcelain=v1', '-z', '--untracked-files=all' },
-        { cwd = root }
+        { cwd = root, text = false }
     )
 
     if status_out.exit_code ~= 0 then
@@ -574,6 +575,7 @@ end
 ---@return string? error
 function git.base_entries(base, root)
     local opts = root_opts(root)
+    opts.text = false
     local out =
         git.run({ 'diff', '--name-status', '-z', '-M', base, '--' }, opts)
     if out.exit_code ~= 0 then
@@ -1271,7 +1273,7 @@ function git.file_change_counts(path)
         '--untracked-files=all',
         '--',
         ':(literal)' .. relative_path,
-    }, { cwd = root, ignore_error = true })
+    }, { cwd = root, ignore_error = true, text = false })
 
     if status_out.exit_code ~= 0 then
         return empty_change_counts(), return_result(status_out)

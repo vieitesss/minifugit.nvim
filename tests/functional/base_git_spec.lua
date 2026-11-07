@@ -44,6 +44,27 @@ describe('base revision git API', function()
         end
     )
 
+    -- Windows does not allow control characters in file names.
+    local unix_it = vim.fn.has('win32') == 1 and pending or it
+    unix_it('keeps tracked and untracked CRLF base entry paths', function()
+        local tracked = 'tracked\r\nbreak.txt'
+        local untracked = 'untracked\r\nbreak.txt'
+        helpers.write_file(repo .. '/' .. tracked, { 'original' })
+        helpers.run({ 'git', 'add', '--', tracked }, repo)
+        helpers.run({ 'git', 'commit', '-m', 'track CRLF filename' }, repo)
+        base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
+        helpers.write_file(repo .. '/' .. tracked, { 'changed' })
+        helpers.write_file(repo .. '/' .. untracked, { 'new' })
+
+        local entries, err = git.base_entries(base, repo)
+
+        assert.is_nil(err)
+        assert.are.same({
+            { staged = ' ', unstaged = 'M', path = tracked },
+            { staged = '?', unstaged = '?', path = untracked },
+        }, entries)
+    end)
+
     it(
         'keeps copies as additions regardless of rename configuration',
         function()
