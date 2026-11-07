@@ -2530,6 +2530,36 @@ describe('minifugit status UI', function()
         end
     )
 
+    unix_it('stages the raw CRLF path from its escaped status row', function()
+        local path = 'line\r\nbreak.txt'
+        helpers.write_file(repo .. '/' .. path, { 'new' })
+        assert.is_true(minifugit.open())
+        local buf = vim.api.nvim_get_current_buf()
+        local win = vim.api.nvim_get_current_win()
+        assert.are.equal('minifugit', vim.bo[buf].filetype)
+        assert.are.equal(buf, vim.api.nvim_win_get_buf(win))
+        vim.api.nvim_win_set_cursor(
+            win,
+            { row_containing(buf, 'break.txt'), 0 }
+        )
+
+        mapped_normal_keys('s')
+
+        -- Read raw bytes so the assertion cannot normalize the staged name.
+        local staged = vim.system({
+            'git',
+            'diff',
+            '--cached',
+            '--name-only',
+            '-z',
+        }, { cwd = repo, text = false }):wait()
+        assert.are.equal(0, staged.code, staged.stderr)
+        assert.are.equal(path .. '\0', staged.stdout)
+        assert.are.equal(win, vim.api.nvim_get_current_win())
+        assert.are.equal(buf, vim.api.nvim_get_current_buf())
+        assert_has_line(buffer_lines(buf), 'A  line^M^@break.txt')
+    end)
+
     unix_it('escapes newline paths in untracked discard prompts', function()
         local path = repo .. '/line\nbreak.txt'
         helpers.write_file(path, { 'new' })
