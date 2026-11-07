@@ -760,14 +760,16 @@ function GitStatusWindow:stop_loading()
     end
 end
 
----@class MinifugitStatusInstanceOptions: MinifugitOptions
----@field _status_tab? {tabpage: integer, foreign_buffer: boolean}
+---@class MinifugitStatusReusedTab
+---@field tabpage integer Owned tabpage to reuse.
+---@field foreign_buffer boolean
 
----@param opts MinifugitStatusInstanceOptions
+---@param opts MinifugitOptions
 ---@param root string? Resolved repository root; defaults to the current cwd's root.
 ---@param base string? Pinned commit hash for read-only base mode.
+---@param reused_tab MinifugitStatusReusedTab? Owned tabpage to reuse.
 ---@return GitStatusWindow
-function GitStatusWindow.new(opts, root, base)
+function GitStatusWindow.new(opts, root, base, reused_tab)
     vim.validate('root', root, 'string', true)
     vim.validate('base', base, 'string', true)
     local self = setmetatable({}, GitStatusWindow)
@@ -803,7 +805,6 @@ function GitStatusWindow.new(opts, root, base)
 
     local target_win
     local placeholder_buf
-    local reused_tab = opts._status_tab
     self.win, self.win_prev_winopts, target_win, placeholder_buf =
         window.create_status_win(
             self.buf,

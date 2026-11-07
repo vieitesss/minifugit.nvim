@@ -10,6 +10,7 @@
 - **Target window**: A normal edit or explorer window selected by the status UI, or a preview split anchored to the status window when no edit window is available.
 - **Stacked layout**: Single-window diff preview showing one combined diff in the target window.
 - **Split layout**: Two-window diff preview showing the two sides of a diff side by side.
+- **Status registry**: Per-entrypoint ownership of one status instance per tabpage, including migration and owned-tab re-selection.
 
 ## Commands
 - Test: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedDirectory tests { minimal_init = 'tests/minimal_init.lua' }"`
