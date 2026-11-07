@@ -29,6 +29,11 @@ local defaults = {
     },
 }
 
+---@class MinifugitOpenOptions
+---@field cwd string? Directory inside the requested repository or worktree.
+---@field open_in_tab boolean? Override the global setting for this window.
+---@field on_close fun()? Scheduled once when the status window stops showing.
+
 ---@class Minifugit
 ---@field did_setup boolean
 ---@field options MinifugitOptions
@@ -269,38 +274,88 @@ function M.current_file_change_counts()
     return require('minifugit.git').current_file_change_counts()
 end
 
-function M.status()
-    log.info('status command called')
-
-    if not M.did_setup then
-        M.options = resolve_options()
+---@param cwd string?
+---@return string? root
+---@return string? error
+local function resolve_open_root(cwd)
+    if cwd == nil then
+        return nil
     end
 
-    local tabpage = vim.api.nvim_get_current_tabpage()
-    local gsw = status_window(tabpage)
+    local git = require('minifugit.git')
+    cwd = vim.fs.normalize(vim.fn.fnamemodify(cwd, ':p'))
+    if vim.fn.isdirectory(cwd) == 0 then
+        return nil, 'Not an existing directory: ' .. cwd
+    end
+
+    local root = git.root(cwd)
+    if root == '' then
+        return nil, 'Not inside a git repository: ' .. cwd
+    end
+
+    return root
+end
+
+---@param root string? Explicit root; nil preserves a visible window's pin.
+---@param open_in_tab boolean
+---@return GitStatusWindow
+local function open_status_window(root, open_in_tab)
+    local git = require('minifugit.git')
+    local explicit_root = root ~= nil
+    local tabpage
+    local gsw
     local reusable_tab
+    local exposed = false
+    -- Destroying an owned tab can expose another registered status window.
+    -- Only the instance selected first may be replaced; an exposed one is
+    -- reused when it matches and otherwise left alone.
+    repeat
+        tabpage = vim.api.nvim_get_current_tabpage()
+        gsw = status_window(tabpage)
 
-    if gsw ~= nil and #vim.fn.win_findbuf(gsw.buf.id) == 0 then
-        local git = require('minifugit.git')
+        if gsw ~= nil then
+            local hidden = #vim.fn.win_findbuf(gsw.buf.id) == 0
+            if explicit_root or hidden then
+                root = root or git.root()
 
-        if git.root() ~= gsw.root then
-            local owned_tab = gsw.tabpage
-            local foreign_buffer = gsw.tab_foreign_buffer
-            unregister_window(tabpage, gsw)
-            gsw = nil
-            if
-                owned_tab ~= nil and vim.api.nvim_tabpage_is_valid(owned_tab)
-            then
-                reusable_tab = {
-                    tabpage = owned_tab,
-                    foreign_buffer = foreign_buffer,
-                }
+                if
+                    root ~= gsw.root
+                    or (
+                        hidden
+                        and gsw.options.status.open_in_tab ~= open_in_tab
+                    )
+                then
+                    if exposed then
+                        gsw = nil
+                        -- The exposed tab keeps its window, so the new one
+                        -- needs a tab of its own.
+                        open_in_tab = true
+                    else
+                        local owned_tab = gsw.tabpage
+                        local foreign_buffer = gsw.tab_foreign_buffer
+                        local repinned = root ~= gsw.root
+                        unregister_window(tabpage, gsw)
+                        gsw = nil
+                        if
+                            repinned
+                            and open_in_tab
+                            and owned_tab ~= nil
+                            and vim.api.nvim_tabpage_is_valid(owned_tab)
+                        then
+                            reusable_tab = {
+                                tabpage = owned_tab,
+                                foreign_buffer = foreign_buffer,
+                            }
+                        end
+                    end
+                end
             end
         end
-    end
+        exposed = true
+    until tabpage == vim.api.nvim_get_current_tabpage()
 
-    if gsw == nil and M.options.status.open_in_tab then
-        local root = require('minifugit.git').root()
+    if gsw == nil and open_in_tab then
+        root = root or git.root()
         for owned_tab, candidate in pairs(windows) do
             if
                 candidate.tabpage == owned_tab
@@ -319,15 +374,56 @@ function M.status()
         gsw:refresh()
     else
         local GitStatusWindow = require('minifugit.ui.status')
-        local opts = M.options
+        local options = vim.tbl_deep_extend('force', vim.deepcopy(M.options), {
+            status = { open_in_tab = open_in_tab },
+        })
         if reusable_tab ~= nil then
-            opts = vim.tbl_extend('force', opts, { _status_tab = reusable_tab })
+            options._status_tab = reusable_tab
         end
-        gsw = GitStatusWindow.new(opts)
+        gsw = GitStatusWindow.new(options, root)
         register_window(gsw.tabpage or tabpage, gsw)
     end
 
+    return gsw
+end
+
+---@param opts MinifugitOpenOptions?
+---@return true? success
+---@return string? error
+function M.open(opts)
+    vim.validate('opts', opts, 'table', true, '`opts` should be a table')
+    opts = opts or {}
+    vim.validate('opts.cwd', opts.cwd, 'string', true)
+    vim.validate('opts.open_in_tab', opts.open_in_tab, 'boolean', true)
+    vim.validate('opts.on_close', opts.on_close, 'function', true)
+
+    log.info('open called')
+
+    if not M.did_setup then
+        M.options = resolve_options()
+    end
+
+    local root, err = resolve_open_root(opts.cwd)
+    if err ~= nil then
+        return nil, err
+    end
+
+    local open_in_tab = opts.open_in_tab
+    if open_in_tab == nil then
+        open_in_tab = M.options.status.open_in_tab
+    end
+    local gsw = open_status_window(root, open_in_tab)
+
+    if opts.on_close ~= nil then
+        table.insert(gsw.on_close_callbacks, opts.on_close)
+    end
+
     log.info(string.format('Window opened win=%d buf=%d', gsw.win, gsw.buf.id))
+    return true
+end
+
+function M.status()
+    M.open({})
 end
 
 ---@param opts MinifugitOptions?

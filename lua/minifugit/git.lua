@@ -273,13 +273,14 @@ end
 ---@type table<string, string>
 local roots_by_context = {}
 
+---@param cwd string? Discovery directory; defaults to the current cwd.
 ---@return string
-function git.root()
+function git.root(cwd)
     if not ensure_git() then
         return ''
     end
 
-    local cwd = vim.fn.getcwd()
+    cwd = cwd or vim.fn.getcwd()
     local git_dir = vim.env.GIT_DIR
     local git_work_tree = vim.env.GIT_WORK_TREE
     local key = table.concat({

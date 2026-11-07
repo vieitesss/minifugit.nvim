@@ -111,8 +111,46 @@ Open the status window:
 require('minifugit').status()
 ```
 
+### Programmatic opening
+
+```lua
+local ok, err = require('minifugit').open({
+    cwd = '/path/to/worktree',
+    open_in_tab = false,
+    on_close = function()
+        print('Minifugit closed')
+    end,
+})
+```
+
+All options are optional:
+
+- `cwd` (string): a directory inside a Git repository, including a linked
+  worktree. The resolved root is pinned without changing Neovim's cwd. Omit it
+  to use the current cwd with the same behavior as `status()`.
+- `open_in_tab` (boolean): override `status.open_in_tab` when opening a window.
+  `false` uses the current tab; `true` opens or reuses a dedicated repository tab.
+  A visible window for the same root is only focused and refreshed, regardless
+  of this option. A hidden instance is recreated if its opening mode differs.
+- `on_close` (function): run once, scheduled after the status window disappears.
+  Closing with `q` or `:close` may leave its buffer hidden. Buffer deletion or
+  wiping, owned-tab closure, and instance destruction (`reset()`, re-pin, or
+  replacement) also count. Callbacks are consumed only when a scheduled check
+  finds no window showing the status buffer; refresh and re-show do not run them.
+  Multiple calls on the same instance register callbacks in order. Reopening
+  before that check keeps all callbacks pending for the next real close.
+  Callback errors are caught and logged without stopping other callbacks.
+
+`open()` returns `true` on success. An explicit missing, non-directory, or
+non-Git `cwd` returns `nil, err` (a string) without creating windows, buffers,
+or tabs. Invalid option types raise validation errors. An explicit `cwd` for
+another root replaces the current visible status window; omitting it preserves
+that window's pin. `status()` calls `open({})` and ignores its return value.
+
 Each tabpage has its own status window. With `status.open_in_tab = true`, calls
-for a repository reuse its existing minifugit tab.
+for a repository reuse its existing minifugit tab. Replacing a status window
+never closes another tab's window: if closing the replaced tab lands on a tab
+whose status window cannot be reused, the new window opens in its own tab.
 
 The status header shows the pinned repository root. Changing cwd does not
 redirect an open window's actions; close and reopen status in another repository

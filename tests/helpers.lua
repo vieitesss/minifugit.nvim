@@ -4,6 +4,7 @@
 ---@field write_file fun(path: string, lines: string[])
 ---@field clone_repo_with_changed_file fun(repo: string, path: string, lines: string[]): string
 ---@field capture_status_windows fun(): fun(): GitStatusWindow?, fun()
+---@field snapshot_editor_state fun(): fun()
 
 local git_env = {
     GIT_CONFIG_GLOBAL = vim.uv.os_uname().sysname == 'Windows_NT' and 'NUL'
@@ -58,6 +59,21 @@ function M.clone_repo_with_changed_file(repo, path, lines)
     return clone
 end
 
+---Snapshot window, buffer, and tab identities.
+---Return an assertion that none have changed.
+---@return fun()
+function M.snapshot_editor_state()
+    local wins = vim.api.nvim_list_wins()
+    local bufs = vim.api.nvim_list_bufs()
+    local tabs = vim.api.nvim_list_tabpages()
+
+    return function()
+        assert.are.same(wins, vim.api.nvim_list_wins())
+        assert.are.same(bufs, vim.api.nvim_list_bufs())
+        assert.are.same(tabs, vim.api.nvim_list_tabpages())
+    end
+end
+
 ---Capture instances for existing UI specs that exercise window methods.
 ---The caller must restore the constructor after each test.
 ---@return fun(): GitStatusWindow?
@@ -67,8 +83,8 @@ function M.capture_status_windows()
     local original_new = StatusWindow.new
     local instances = {}
 
-    StatusWindow.new = function(opts)
-        local instance = original_new(opts)
+    StatusWindow.new = function(opts, root)
+        local instance = original_new(opts, root)
         instances[instance.buf.id] = instance
         return instance
     end
