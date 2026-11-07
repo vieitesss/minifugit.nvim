@@ -9,18 +9,9 @@ describe('base revision git API', function()
 
     before_each(function()
         original_cwd = vim.fn.getcwd()
-        repo = vim.fn.tempname()
-        vim.fn.mkdir(repo, 'p')
-        helpers.run({ 'git', 'init', '-b', 'main' }, repo)
-        helpers.run({ 'git', 'config', 'user.name', 'Minifugit Test' }, repo)
-        helpers.run(
-            { 'git', 'config', 'user.email', 'test@example.test' },
-            repo
-        )
-        helpers.write_file(repo .. '/tracked.txt', { 'base text' })
-        helpers.run({ 'git', 'add', '.' }, repo)
-        helpers.run({ 'git', 'commit', '-m', 'base' }, repo)
-        base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
+        repo, base = helpers.create_repo({
+            ['tracked.txt'] = { 'base text' },
+        })
     end)
 
     after_each(function()
@@ -50,6 +41,36 @@ describe('base revision git API', function()
                 { staged = ' ', unstaged = 'M', path = 'tracked.txt' },
                 { staged = '?', unstaged = '?', path = 'untracked.txt' },
             }, entries)
+        end
+    )
+
+    it(
+        'keeps copies as additions regardless of rename configuration',
+        function()
+            helpers.write_file(repo .. '/copy.txt', { 'base text' })
+            helpers.write_file(repo .. '/tracked.txt', { 'base text', 'extra' })
+            helpers.run({ 'git', 'add', '.' }, repo)
+
+            for _, settings in ipairs({
+                { diff = 'copies', status = 'true' },
+                { diff = 'true', status = 'copies' },
+                { diff = 'copies', status = 'copies' },
+            }) do
+                helpers.run(
+                    { 'git', 'config', 'diff.renames', settings.diff },
+                    repo
+                )
+                helpers.run(
+                    { 'git', 'config', 'status.renames', settings.status },
+                    repo
+                )
+                local entries, err = git.base_entries(base, repo)
+                assert.is_nil(err)
+                assert.are.same({
+                    { staged = ' ', unstaged = 'A', path = 'copy.txt' },
+                    { staged = ' ', unstaged = 'M', path = 'tracked.txt' },
+                }, entries)
+            end
         end
     )
 

@@ -5,16 +5,6 @@ local Buffer = require('minifugit.ui.buffer')
 
 local M = {}
 
----@param self GitStatusWindow
----@return boolean
-local function read_only(self)
-    if self.base == nil then
-        return false
-    end
-    common.notify_warn('read-only: changes since ' .. self.base:sub(1, 7))
-    return true
-end
-
 local function stop_visual_mode()
     local mode = vim.fn.mode()
 
@@ -172,7 +162,7 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.stage_entry(self)
-    if read_only(self) then
+    if self:reject_read_only() then
         return false
     end
 
@@ -198,7 +188,7 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.unstage_entry(self)
-    if read_only(self) then
+    if self:reject_read_only() then
         return false
     end
 
@@ -208,7 +198,7 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.stage_all_entries(self)
-    if read_only(self) then
+    if self:reject_read_only() then
         return false
     end
 
@@ -222,7 +212,7 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.unstage_all_entries(self)
-    if read_only(self) then
+    if self:reject_read_only() then
         return false
     end
 
@@ -236,7 +226,7 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.stage_selected_entries(self)
-    if read_only(self) then
+    if self:reject_read_only() then
         return false
     end
 
@@ -252,7 +242,7 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.unstage_selected_entries(self)
-    if read_only(self) then
+    if self:reject_read_only() then
         return false
     end
 
@@ -268,7 +258,7 @@ end
 ---@param force boolean
 ---@return boolean
 function M.discard_entry(self, force)
-    if read_only(self) then
+    if self:reject_read_only() then
         return false
     end
 
@@ -489,7 +479,7 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.commit(self)
-    if read_only(self) then
+    if self:reject_read_only() then
         return false
     end
 
@@ -578,7 +568,7 @@ end
 ---@param self GitStatusWindow
 ---@return boolean
 function M.push(self)
-    if read_only(self) then
+    if self:reject_read_only() then
         return false
     end
 

@@ -2,6 +2,7 @@
 ---@field assert_has_line_containing fun(lines: string[], expected: string)
 ---@field run fun(args: string[], cwd: string): string
 ---@field write_file fun(path: string, lines: string[])
+---@field create_repo fun(files: table<string, string[]>): string, string
 ---@field clone_repo_with_changed_file fun(repo: string, path: string, lines: string[]): string
 ---@field capture_status_windows fun(): fun(): GitStatusWindow?, fun()
 ---@field snapshot_editor_state fun(): fun()
@@ -47,6 +48,24 @@ local M = {
         vim.fn.writefile(lines, path)
     end,
 }
+
+---Create a temporary repository with a base commit containing the given files.
+---@param files table<string, string[]> Relative paths and their contents.
+---@return string repo The caller owns cleanup and cwd changes.
+---@return string base Full hash of the initial commit.
+function M.create_repo(files)
+    local repo = vim.fn.tempname()
+    vim.fn.mkdir(repo, 'p')
+    M.run({ 'git', 'init', '-b', 'main' }, repo)
+    M.run({ 'git', 'config', 'user.name', 'Minifugit Test' }, repo)
+    M.run({ 'git', 'config', 'user.email', 'test@example.test' }, repo)
+    for path, contents in pairs(files) do
+        M.write_file(repo .. '/' .. path, contents)
+    end
+    M.run({ 'git', 'add', '.' }, repo)
+    M.run({ 'git', 'commit', '-m', 'base' }, repo)
+    return repo, vim.trim(M.run({ 'git', 'rev-parse', 'HEAD' }, repo))
+end
 
 ---@param repo string
 ---@param path string Relative path in the cloned repository.

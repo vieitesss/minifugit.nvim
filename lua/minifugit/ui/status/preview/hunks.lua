@@ -81,10 +81,7 @@ end
 ---@param callbacks MiniFugitPreviewActions
 ---@return boolean
 function M.apply_current_hunk(self, kind, callbacks)
-    if self.host.base ~= nil then
-        common.notify_warn(
-            'read-only: changes since ' .. self.host.base:sub(1, 7)
-        )
+    if self.host:reject_read_only() then
         return false
     end
 

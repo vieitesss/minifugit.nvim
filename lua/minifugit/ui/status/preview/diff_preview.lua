@@ -309,7 +309,7 @@ end
 ---@param section GitStatusSectionName?
 ---@return GitSplitDiff?
 ---@return string?
-local function split_diff(self, entry, section)
+local function load_split_diff(self, entry, section)
     if self.host.base ~= nil then
         return git.base_split_diff(entry, self.host.base, self.host.root)
     end
@@ -339,7 +339,7 @@ local function schedule_stacked_syntax(self, lines, entry, section, preview_key)
             return
         end
 
-        local split_diff = split_diff(self, entry, section)
+        local split_diff = load_split_diff(self, entry, section)
 
         if split_diff == nil then
             return
@@ -757,7 +757,7 @@ function DiffPreview:open(entry, section, opts)
     -- Base entries without content hunks show metadata in stacked view, but
     -- keep the chosen layout so the next content change can still use split.
     if layout == 'split' and (self.host.base == nil or #parsed_hunks > 0) then
-        local split_diff, split_err = split_diff(self, entry, section)
+        local split_diff, split_err = load_split_diff(self, entry, section)
 
         if split_diff ~= nil then
             local ok = display.show_split(

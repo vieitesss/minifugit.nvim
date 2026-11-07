@@ -38,6 +38,15 @@ local function diff_window(name)
     error('Missing preview: ' .. name)
 end
 
+local function hide_status_buffer(status_win)
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if win ~= status_win then
+            vim.api.nvim_win_set_buf(status_win, vim.api.nvim_win_get_buf(win))
+            return
+        end
+    end
+end
+
 describe('read-only base mode UI', function()
     local repo
     local base
@@ -61,18 +70,12 @@ describe('read-only base mode UI', function()
         vim.notify = function(message)
             table.insert(notifications, message)
         end
-        repo = vim.fn.tempname()
-        vim.fn.mkdir(repo, 'p')
-        run({ 'init', '-b', 'main' })
-        run({ 'config', 'user.name', 'Minifugit Test' })
-        run({ 'config', 'user.email', 'test@example.test' })
-        write('modified.txt', { 'base first', 'base second', 'unchanged' })
-        write('deleted.txt', { 'delete me' })
-        write('old.txt', { 'rename me', 'unchanged rename content' })
-        write('.gitignore', { 'ignored.txt' })
-        run({ 'add', '.' })
-        run({ 'commit', '-m', 'base' })
-        base = vim.trim(run({ 'rev-parse', 'HEAD' }))
+        repo, base = helpers.create_repo({
+            ['modified.txt'] = { 'base first', 'base second', 'unchanged' },
+            ['deleted.txt'] = { 'delete me' },
+            ['old.txt'] = { 'rename me', 'unchanged rename content' },
+            ['.gitignore'] = { 'ignored.txt' },
+        })
         vim.cmd.cd(repo)
         vim.cmd.enew()
         package.loaded.minifugit = nil
@@ -184,7 +187,6 @@ describe('read-only base mode UI', function()
             assert.is_true(vim.tbl_contains(lines(right), 'uncommitted second'))
             assert.are.equal(status, vim.api.nvim_get_current_buf())
             keys('al')
-            diff_window('Minifugit diff')
             local preview_win = diff_window('Minifugit diff')
             vim.api.nvim_set_current_win(preview_win)
             keys('q')
@@ -598,16 +600,7 @@ describe('read-only base mode UI', function()
             minifugit.open({ base = base, open_in_tab = true })
             local old = vim.api.nvim_get_current_buf()
             local old_tab = vim.api.nvim_get_current_tabpage()
-            local status_win = vim.api.nvim_get_current_win()
-            for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-                if win ~= status_win then
-                    vim.api.nvim_win_set_buf(
-                        status_win,
-                        vim.api.nvim_win_get_buf(win)
-                    )
-                    break
-                end
-            end
+            hide_status_buffer(vim.api.nvim_get_current_win())
             assert.are.equal(0, #vim.fn.win_findbuf(old))
             vim.api.nvim_set_current_tabpage(origin)
             minifugit.open({ base = 'HEAD', open_in_tab = true })
@@ -628,16 +621,7 @@ describe('read-only base mode UI', function()
             minifugit.open({ base = base, open_in_tab = true })
             local old = vim.api.nvim_get_current_buf()
             local old_tab = vim.api.nvim_get_current_tabpage()
-            local status_win = vim.api.nvim_get_current_win()
-            for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-                if win ~= status_win then
-                    vim.api.nvim_win_set_buf(
-                        status_win,
-                        vim.api.nvim_win_get_buf(win)
-                    )
-                    break
-                end
-            end
+            hide_status_buffer(vim.api.nvim_get_current_win())
             vim.api.nvim_set_current_tabpage(origin)
             minifugit.open({ open_in_tab = true })
             assert.is_false(vim.api.nvim_buf_is_valid(old))

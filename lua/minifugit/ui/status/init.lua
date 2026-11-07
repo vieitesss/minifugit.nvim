@@ -481,6 +481,16 @@ function GitStatusWindow:diff_entry()
 end
 
 ---@return boolean
+function GitStatusWindow:reject_read_only()
+    if self.base == nil then
+        return false
+    end
+
+    common.notify_warn('read-only: changes since ' .. self.base:sub(1, 7))
+    return true
+end
+
+---@return boolean
 function GitStatusWindow:stage_entry()
     return actions.stage_entry(self)
 end

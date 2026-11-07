@@ -588,7 +588,7 @@ function git.base_entries(base, root)
         local marker = fields[index]:sub(1, 1)
         local path = fields[index + 1]
         index = index + 2
-        if marker == 'R' or marker == 'C' then
+        if marker == 'R' then
             table.insert(
                 records,
                 ' ' .. marker .. ' ' .. fields[index] .. '\0' .. path .. '\0'
@@ -1075,6 +1075,54 @@ local function read_blob_lines(spec, root)
 end
 
 ---@param entry GitStatusEntry
+---@param left_spec string
+---@param left_title string
+---@param root string?
+---@param filetype string?
+---@return GitSplitDiff?
+---@return string?
+local function blob_to_worktree_diff(
+    entry,
+    left_spec,
+    left_title,
+    root,
+    filetype
+)
+    local left, right = {}, {}
+    local err
+
+    if entry.unstaged ~= 'A' then
+        left, err = read_blob_lines(left_spec, root)
+        if err ~= nil then
+            return nil, err
+        end
+    end
+
+    if entry.unstaged ~= 'D' then
+        right, err = read_worktree_lines(entry.path, root)
+        if err ~= nil then
+            return nil, err
+        end
+    end
+
+    return {
+        left = {
+            title = entry.unstaged == 'A' and '/dev/null' or left_title,
+            lines = left,
+        },
+        right = {
+            title = entry.unstaged == 'D' and '/dev/null'
+                or 'worktree:' .. entry.path,
+            lines = right,
+        },
+        filetype = filetype
+            or vim.filetype.match({ filename = entry.path })
+            or '',
+    },
+        nil
+end
+
+---@param entry GitStatusEntry
 ---@param section GitStatusSectionName?
 ---@param root string?
 ---@return GitSplitDiff?
@@ -1143,41 +1191,13 @@ function git.split_diff(entry, section, root)
     end
 
     if section == 'unstaged' then
-        local left = {}
-        local err
-
-        if entry.unstaged ~= 'A' then
-            left, err = read_blob_lines(':' .. entry.path, root)
-
-            if err ~= nil then
-                return nil, err
-            end
-        end
-
-        local right = {}
-
-        if entry.unstaged ~= 'D' then
-            right, err = read_worktree_lines(entry.path, root)
-
-            if err ~= nil then
-                return nil, err
-            end
-        end
-
-        return {
-            left = {
-                title = entry.unstaged == 'A' and '/dev/null'
-                    or 'index:' .. entry.path,
-                lines = left,
-            },
-            right = {
-                title = entry.unstaged == 'D' and '/dev/null'
-                    or 'worktree:' .. entry.path,
-                lines = right,
-            },
-            filetype = ft,
-        },
-            nil
+        return blob_to_worktree_diff(
+            entry,
+            ':' .. entry.path,
+            'index:' .. entry.path,
+            root,
+            ft
+        )
     end
 
     return nil, 'Split diff preview requires a status section'
@@ -1194,36 +1214,8 @@ function git.base_split_diff(entry, base, root)
         return git.split_diff(entry, 'untracked', root)
     end
 
-    local old_path = entry.orig_path or entry.path
-    local left, right = {}, {}
-    local err
-    if entry.unstaged ~= 'A' then
-        left, err = read_blob_lines(base .. ':' .. old_path, root)
-        if err ~= nil then
-            return nil, err
-        end
-    end
-    if entry.unstaged ~= 'D' then
-        right, err = read_worktree_lines(entry.path, root)
-        if err ~= nil then
-            return nil, err
-        end
-    end
-
-    return {
-        left = {
-            title = entry.unstaged == 'A' and '/dev/null'
-                or base .. ':' .. old_path,
-            lines = left,
-        },
-        right = {
-            title = entry.unstaged == 'D' and '/dev/null'
-                or 'worktree:' .. entry.path,
-            lines = right,
-        },
-        filetype = vim.filetype.match({ filename = entry.path }) or '',
-    },
-        nil
+    local left_spec = base .. ':' .. (entry.orig_path or entry.path)
+    return blob_to_worktree_diff(entry, left_spec, left_spec, root)
 end
 
 ---@param commit GitCommit
