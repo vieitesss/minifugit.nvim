@@ -548,6 +548,95 @@ describe('minifugit status UI', function()
         end
     )
 
+    it('reopens hidden owned status in its original workflow tab', function()
+        minifugit.setup({
+            status = { open_in_tab = true },
+            preview = { diff_layout = 'stacked' },
+        })
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'changed A' }
+        )
+        local caller_tab = vim.api.nvim_get_current_tabpage()
+        minifugit.status()
+        local owned_tab = vim.api.nvim_get_current_tabpage()
+        local status_buf = vim.api.nvim_get_current_buf()
+        local status_win = vim.api.nvim_get_current_win()
+        local tabs_before = #vim.api.nvim_list_tabpages()
+        vim.api.nvim_win_set_cursor(
+            status_win,
+            { row_containing(status_buf, 'tracked.txt'), 0 }
+        )
+        mapped_normal_keys('=')
+        local diff_win, diff_buf = diff_win_named('Minifugit diff')
+
+        vim.api.nvim_win_close(status_win, true)
+        assert.are.equal(0, #status_windows(owned_tab))
+        assert.is_true(vim.api.nvim_win_is_valid(diff_win))
+        vim.api.nvim_set_current_tabpage(caller_tab)
+
+        minifugit.status()
+
+        assert.are.equal(owned_tab, vim.api.nvim_get_current_tabpage())
+        assert.are.equal(tabs_before, #vim.api.nvim_list_tabpages())
+        assert.are.equal(status_buf, vim.api.nvim_get_current_buf())
+        assert.are.same(
+            { vim.api.nvim_get_current_win() },
+            status_windows(owned_tab)
+        )
+        assert.are.equal(diff_win, diff_win_named('Minifugit diff'))
+        assert.are.equal(owned_tab, vim.api.nvim_win_get_tabpage(diff_win))
+        helpers.assert_has_line_containing(buffer_lines(diff_buf), 'changed A')
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'updated A' }
+        )
+        vim.api.nvim_win_set_cursor(
+            vim.api.nvim_get_current_win(),
+            { row_containing(status_buf, 'tracked.txt'), 0 }
+        )
+        mapped_normal_keys('r')
+        helpers.assert_has_line_containing(buffer_lines(diff_buf), 'updated A')
+
+        mapped_normal_keys('<CR>')
+
+        assert.are.equal(owned_tab, vim.api.nvim_get_current_tabpage())
+        assert.are.equal(diff_win, vim.api.nvim_get_current_win())
+        assert.are.equal(
+            vim.uv.fs_realpath(vim.fs.joinpath(repo, 'tracked.txt')),
+            vim.uv.fs_realpath(vim.api.nvim_buf_get_name(0))
+        )
+        assert.are.same(
+            { 'updated A' },
+            buffer_lines(vim.api.nvim_get_current_buf())
+        )
+        local file_buf = vim.api.nvim_get_current_buf()
+
+        vim.api.nvim_win_close(status_windows(owned_tab)[1], true)
+        vim.api.nvim_set_current_tabpage(caller_tab)
+        minifugit.status()
+        assert.are.equal(owned_tab, vim.api.nvim_get_current_tabpage())
+        assert.are.equal(tabs_before, #vim.api.nvim_list_tabpages())
+        assert.are.equal(status_buf, vim.api.nvim_get_current_buf())
+        assert.are.equal(file_buf, vim.api.nvim_win_get_buf(diff_win))
+        local settled = false
+        vim.schedule(function()
+            settled = true
+        end)
+        assert.is_true(vim.wait(1000, function()
+            return settled
+        end))
+
+        vim.api.nvim_win_close(diff_win, true)
+        minifugit.reset()
+
+        assert.is_false(vim.api.nvim_buf_is_valid(status_buf))
+        assert.is_false(vim.api.nvim_buf_is_valid(diff_buf))
+        assert.is_false(tabpage_is_valid(owned_tab))
+        assert.is_true(vim.api.nvim_buf_is_valid(file_buf))
+        assert.are.equal(tabs_before - 1, #vim.api.nvim_list_tabpages())
+    end)
+
     for _, layout in ipairs({ 'stacked', 'split' }) do
         it('keeps independent ' .. layout .. ' previews in two tabs', function()
             minifugit.setup({ preview = { diff_layout = layout } })
@@ -664,6 +753,67 @@ describe('minifugit status UI', function()
             assert_has_line(buffer_lines(buf_b), '?? only-b.txt')
         end
     )
+
+    it('reuses owned B when hidden owned A re-pins to B', function()
+        minifugit.setup({ status = { open_in_tab = true } })
+        local caller_tab = vim.api.nvim_get_current_tabpage()
+        minifugit.status()
+        local tab_a = vim.api.nvim_get_current_tabpage()
+        local buf_a = vim.api.nvim_get_current_buf()
+        local win_a = vim.api.nvim_get_current_win()
+        local foreign_path = vim.fs.joinpath(repo, 'foreign.txt')
+        helpers.write_file(foreign_path, { 'foreign' })
+        for _, win in ipairs(normal_windows(tab_a)) do
+            if win ~= win_a then
+                vim.api.nvim_set_current_win(win)
+                vim.cmd.edit(vim.fn.fnameescape(foreign_path))
+                break
+            end
+        end
+        local settled = false
+        vim.schedule(function()
+            settled = true
+        end)
+        assert.is_true(vim.wait(1000, function()
+            return settled
+        end))
+        vim.api.nvim_set_current_win(win_a)
+        mapped_normal_keys('q')
+        assert.is_true(tabpage_is_valid(tab_a))
+        assert.are.equal(0, #vim.fn.win_findbuf(buf_a))
+
+        vim.api.nvim_set_current_tabpage(caller_tab)
+        change_to_other_repo()
+        minifugit.status()
+        local tab_b = vim.api.nvim_get_current_tabpage()
+        local buf_b = vim.api.nvim_get_current_buf()
+        local tabs_before = #vim.api.nvim_list_tabpages()
+        vim.api.nvim_set_current_tabpage(tab_a)
+        vim.cmd.cd(vim.fn.fnameescape(other_repo))
+
+        minifugit.status()
+
+        local visible_b = 0
+        for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
+            for _, win in ipairs(status_windows(tab)) do
+                local lines = buffer_lines(vim.api.nvim_win_get_buf(win))
+                if
+                    vim.tbl_contains(
+                        lines,
+                        'Root: ' .. vim.fn.resolve(other_repo)
+                    )
+                then
+                    visible_b = visible_b + 1
+                end
+            end
+        end
+        assert.are.equal(1, visible_b)
+        assert.are.equal(tab_b, vim.api.nvim_get_current_tabpage())
+        assert.are.equal(buf_b, vim.api.nvim_get_current_buf())
+        assert.are.equal(tabs_before, #vim.api.nvim_list_tabpages())
+        assert.is_false(vim.api.nvim_buf_is_valid(buf_a))
+        assert_has_line(buffer_lines(buf_b), ' M tracked.txt')
+    end)
 
     it(
         'keeps separate owned tabs pinned and cleans up only the closed root',

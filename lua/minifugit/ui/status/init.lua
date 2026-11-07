@@ -377,7 +377,7 @@ function GitStatusWindow:show()
     local target_win
     local placeholder_buf
     self.win, self.win_prev_winopts, target_win, placeholder_buf =
-        window.create_status_win(self.buf, self.options.status)
+        window.create_status_win(self.buf, self.options.status, self.tabpage)
     status_tab.attach(self, target_win, placeholder_buf)
     selection.move_to_first_entry(self)
 end

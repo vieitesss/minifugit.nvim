@@ -237,22 +237,6 @@ function M.status()
     local tabpage = vim.api.nvim_get_current_tabpage()
     local gsw = status_window(tabpage)
 
-    if gsw == nil and M.options.status.open_in_tab then
-        local root = require('minifugit.git').root()
-        for owned_tab, candidate in pairs(windows) do
-            if
-                candidate.tabpage == owned_tab
-                and vim.api.nvim_tabpage_is_valid(owned_tab)
-                and has_valid_status_buffer(candidate)
-                and candidate.root == root
-            then
-                tabpage = owned_tab
-                gsw = candidate
-                break
-            end
-        end
-    end
-
     if gsw ~= nil and #vim.fn.win_findbuf(gsw.buf.id) == 0 then
         local git = require('minifugit.git')
 
@@ -262,13 +246,24 @@ function M.status()
         end
     end
 
+    if gsw == nil and M.options.status.open_in_tab then
+        local root = require('minifugit.git').root()
+        for owned_tab, candidate in pairs(windows) do
+            if
+                candidate.tabpage == owned_tab
+                and vim.api.nvim_tabpage_is_valid(owned_tab)
+                and has_valid_status_buffer(candidate)
+                and candidate.root == root
+            then
+                gsw = candidate
+                break
+            end
+        end
+    end
+
     if gsw ~= nil then
         gsw:refresh()
         gsw:show()
-        if gsw.tabpage ~= nil and gsw.tabpage ~= tabpage then
-            windows[tabpage] = nil
-            register_window(gsw.tabpage, gsw)
-        end
     else
         local GitStatusWindow = require('minifugit.ui.status')
         gsw = GitStatusWindow.new(M.options)
