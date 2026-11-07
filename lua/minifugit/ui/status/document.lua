@@ -7,9 +7,17 @@ local render = require('minifugit.ui.render')
 ---@field title string
 ---@field entries GitStatusEntry[]
 
----@class GitStatusLineData
+---Data carried by a rendered status entry row.
+---@class GitStatusEntryLineData
 ---@field entry GitStatusEntry
 ---@field section GitStatusSectionName
+
+---Data carried by a rendered unpushed commit row.
+---@class GitStatusCommitLineData
+---@field commit GitCommit
+---@field section GitStatusSectionName
+
+---@alias GitStatusLineData GitStatusEntryLineData|GitStatusCommitLineData
 
 ---@class StatusDocumentOptions
 ---@field filter string?
@@ -225,13 +233,9 @@ local function is_unstaged(entry)
 end
 
 ---@param entry GitStatusEntry
----@param query string?
+---@param query string Non-empty filter text.
 ---@return boolean
 local function matches_filter(entry, query)
-    if query == nil or query == '' then
-        return true
-    end
-
     local needle = query:lower()
     local path = vim.fn.strtrans(entry.path):lower()
     local orig_path = entry.orig_path
@@ -304,11 +308,9 @@ end
 
 ---@param snapshot GitStatusSnapshot
 ---@param groups table<string, string>
----@param opts? StatusDocumentOptions
+---@param opts StatusDocumentOptions
 ---@return MiniFugitRenderLine[]
 local function render_lines(snapshot, groups, opts)
-    opts = opts or {}
-
     local short_base = opts.base and opts.base:sub(1, 7)
     local lines = {
         short_base ~= nil and message_line(
@@ -457,10 +459,12 @@ local function item_at(lines, row, kind)
         return nil
     end
 
+    ---@cast data GitStatusEntryLineData
     if kind ~= 'commit' and type(data.entry) == 'table' then
         return entry_item(data.entry, data.section)
     end
 
+    ---@cast data GitStatusCommitLineData
     if kind ~= 'entry' and type(data.commit) == 'table' then
         return commit_item(data.commit)
     end
@@ -598,6 +602,12 @@ StatusDocument.__index = StatusDocument
 function StatusDocument.new(snapshot, groups, opts)
     vim.validate('snapshot', snapshot, 'table')
     vim.validate('groups', groups, 'table')
+    vim.validate('opts', opts, 'table', true)
+    opts = opts or {}
+    vim.validate('opts.filter', opts.filter, 'string', true)
+    vim.validate('opts.base', opts.base, 'string', true)
+    vim.validate('opts.loading_message', opts.loading_message, 'string', true)
+    vim.validate('opts.loading_frame', opts.loading_frame, 'string', true)
 
     return setmetatable({
         lines = render_lines(snapshot, groups, opts),

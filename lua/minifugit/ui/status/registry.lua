@@ -131,6 +131,18 @@ end
 ---@param request MinifugitStatusRequest
 ---@return GitStatusWindow
 function StatusRegistry:open(request)
+    vim.validate('request', request, 'table')
+    vim.validate('request.root', request.root, 'string', true)
+    vim.validate('request.base', request.base, 'string', true)
+    vim.validate('request.options', request.options, 'table')
+    vim.validate('request.options.status', request.options.status, 'table')
+    vim.validate(
+        'request.options.status.open_in_tab',
+        request.options.status.open_in_tab,
+        'boolean'
+    )
+    vim.validate('request.on_close', request.on_close, 'function', true)
+
     local git = require('minifugit.git')
     local root = request.root
     local base = request.base
@@ -234,6 +246,7 @@ end
 
 ---@param tabpage integer? Tabpage to reset; defaults to the current one.
 function StatusRegistry:reset(tabpage)
+    vim.validate('tabpage', tabpage, 'number', true)
     tabpage = tabpage or vim.api.nvim_get_current_tabpage()
     unregister_window(self, tabpage, self.windows[tabpage])
 end

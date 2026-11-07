@@ -67,6 +67,28 @@ describe('minifugit status registry', function()
         vim.fn.delete(repo, 'rf')
     end)
 
+    it('validates request inputs before creating editor resources', function()
+        local registry = StatusRegistry.new()
+        local unchanged = helpers.snapshot_editor_state()
+        local options = status_options(false)
+
+        for _, invalid in ipairs({
+            {},
+            { options = 'invalid' },
+            { options = {} },
+            { options = { status = { open_in_tab = 'yes' } } },
+            { root = 1, options = options },
+            { base = 1, options = options },
+            { options = options, on_close = 'invalid' },
+        }) do
+            assert.has_error(function()
+                registry:open(invalid)
+            end)
+        end
+
+        unchanged()
+    end)
+
     it('keeps one instance map per registry object', function()
         local first = StatusRegistry.new()
         local second = StatusRegistry.new()

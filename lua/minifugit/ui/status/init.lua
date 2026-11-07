@@ -32,9 +32,9 @@ local git = require('minifugit.git')
 ---@field options MinifugitOptions
 ---@field groups table<string, string>
 ---@field highlights table<string, { ensure: fun() }>
----@field document StatusDocument?
+---@field document StatusDocument Rendered status lines and row identities.
 ---@field lines MiniFugitRenderLine[]
----@field snapshot GitStatusSnapshot?
+---@field snapshot GitStatusSnapshot Snapshot rendered by the last full render.
 ---@field filter string
 ---@field loading_message string?
 ---@field loading_frame integer
@@ -307,9 +307,7 @@ end
 
 ---@param self GitStatusWindow
 local function move_to_first_entry(self)
-    if self.document ~= nil then
-        set_cursor_row(self, self.document:resolve())
-    end
+    set_cursor_row(self, self.document:resolve())
 end
 
 ---Place the tracked cursor for `state`, keeping the baseline fallback: when no
@@ -529,10 +527,6 @@ end
 ---@param state GitStatusCursorState?
 ---@return StatusItem?
 function GitStatusWindow:current_item(kind, state)
-    if self.document == nil then
-        return nil
-    end
-
     return self.document:item(status_cursor_row(self), kind, state)
 end
 
@@ -550,19 +544,11 @@ function GitStatusWindow:selected_entry_items()
         end_row = vim.fn.getpos("'>")[2]
     end
 
-    if self.document == nil then
-        return {}
-    end
-
     return self.document:entries(start_row, end_row)
 end
 
 ---@return GitStatusEntry[]
 function GitStatusWindow:all_entries()
-    if self.document == nil then
-        return {}
-    end
-
     local entries = {}
 
     for _, item in ipairs(self.document:entries()) do
@@ -574,10 +560,6 @@ end
 
 ---@return GitStatusCursorState
 function GitStatusWindow:capture_cursor_state()
-    if self.document == nil then
-        return { follow_entry = true }
-    end
-
     local state = self.document:capture(status_cursor_row(self))
     state.row = tracked_cursor_row(self)
 
@@ -903,8 +885,20 @@ end
 ---@param reused_tab MinifugitStatusReusedTab? Owned tabpage to reuse.
 ---@return GitStatusWindow
 function GitStatusWindow.new(opts, root, base, reused_tab)
+    vim.validate('opts', opts, 'table')
+    vim.validate('opts.status', opts.status, 'table')
     vim.validate('root', root, 'string', true)
     vim.validate('base', base, 'string', true)
+    vim.validate('reused_tab', reused_tab, 'table', true)
+    if reused_tab ~= nil then
+        vim.validate('reused_tab.tabpage', reused_tab.tabpage, 'number')
+        vim.validate(
+            'reused_tab.foreign_buffer',
+            reused_tab.foreign_buffer,
+            'boolean'
+        )
+    end
+
     local self = setmetatable({}, GitStatusWindow)
 
     self.root = root or git.root()

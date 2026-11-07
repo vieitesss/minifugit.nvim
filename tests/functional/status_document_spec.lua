@@ -111,6 +111,27 @@ local function duplicate_document()
 end
 
 describe('status document', function()
+    it('validates constructor inputs before rendering', function()
+        assert.has_error(function()
+            StatusDocument.new(nil, GROUPS)
+        end)
+        assert.has_error(function()
+            StatusDocument.new(snapshot(), nil)
+        end)
+
+        for _, opts in ipairs({
+            'filtered',
+            { filter = 1 },
+            { base = 1 },
+            { loading_message = 1 },
+            { loading_frame = 1 },
+        }) do
+            assert.has_error(function()
+                StatusDocument.new(snapshot(), GROUPS, opts)
+            end)
+        end
+    end)
+
     describe('lines', function()
         it(
             'renders sections in status order with duplicates per section',

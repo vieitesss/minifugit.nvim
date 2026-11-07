@@ -557,6 +557,25 @@ describe('minifugit status UI', function()
         assert_editor_unchanged()
     end)
 
+    it('validates a reused tab before creating UI', function()
+        local StatusWindow = require('minifugit.ui.status')
+        local assert_editor_unchanged = helpers.snapshot_editor_state()
+        local tabpage = vim.api.nvim_get_current_tabpage()
+
+        for _, reused_tab in ipairs({
+            'tab',
+            {},
+            { tabpage = 'one', foreign_buffer = false },
+            { tabpage = tabpage, foreign_buffer = 1 },
+        }) do
+            assert.has_error(function()
+                StatusWindow.new(minifugit.options, repo, nil, reused_tab)
+            end)
+        end
+
+        assert_editor_unchanged()
+    end)
+
     it('rejects a non-git cwd without windows, buffers or tabs', function()
         other_repo = vim.fn.tempname()
         vim.fn.mkdir(other_repo, 'p')
