@@ -226,6 +226,14 @@ end
 function M.open_entry(self, entry)
     local path = entry_path(entry, self.root)
 
+    if path:find('\n', 1, true) ~= nil then
+        common.notify_warn(
+            'Cannot open a file name that contains a newline: '
+                .. vim.fn.strtrans(path)
+        )
+        return false
+    end
+
     if vim.uv.fs_stat(path) == nil then
         log.error('Cannot open missing worktree path: ' .. path)
         vim.notify(

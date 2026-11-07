@@ -65,10 +65,12 @@ end
 ---@return string
 local function discard_message(item)
     if item.section == 'untracked' then
-        return 'Delete untracked path ' .. item.entry.path .. '?'
+        return 'Delete untracked path '
+            .. vim.fn.strtrans(item.entry.path)
+            .. '?'
     end
 
-    return 'Discard changes in ' .. item.entry.path .. '?'
+    return 'Discard changes in ' .. vim.fn.strtrans(item.entry.path) .. '?'
 end
 
 ---@param item GitStatusEntryItem

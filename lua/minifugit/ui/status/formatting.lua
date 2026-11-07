@@ -51,12 +51,12 @@ local function entry_text(entry)
         return entry.staged
             .. entry.unstaged
             .. ' '
-            .. entry.orig_path
+            .. vim.fn.strtrans(entry.orig_path)
             .. ' -> '
-            .. entry.path
+            .. vim.fn.strtrans(entry.path)
     end
 
-    return entry.staged .. entry.unstaged .. ' ' .. entry.path
+    return entry.staged .. entry.unstaged .. ' ' .. vim.fn.strtrans(entry.path)
 end
 
 ---@param stage string
@@ -215,8 +215,10 @@ local function matches_filter(entry, query)
     end
 
     local needle = query:lower()
-    local path = entry.path:lower()
-    local orig_path = entry.orig_path and entry.orig_path:lower() or ''
+    local path = vim.fn.strtrans(entry.path):lower()
+    local orig_path = entry.orig_path
+            and vim.fn.strtrans(entry.orig_path):lower()
+        or ''
 
     return path:find(needle, 1, true) ~= nil
         or orig_path:find(needle, 1, true) ~= nil

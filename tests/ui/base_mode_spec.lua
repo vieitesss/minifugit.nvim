@@ -149,6 +149,59 @@ describe('read-only base mode UI', function()
         end
     )
 
+    -- Windows does not allow control characters in file names.
+    local unix_it = vim.fn.has('win32') == 1 and pending or it
+    unix_it('escapes both newline paths in a base-mode rename', function()
+        write('old\nbreak.txt', { 'rename content' })
+        run({ 'add', 'old\nbreak.txt' })
+        run({ 'commit', '-m', 'add newline file' })
+        run({ 'mv', 'old\nbreak.txt', 'new\nbreak.txt' })
+
+        assert.is_true(minifugit.open({ base = 'HEAD' }))
+
+        local buf = vim.api.nvim_get_current_buf()
+        assert.are.equal('minifugit', vim.bo[buf].filetype)
+        assert.are.equal(buf, vim.api.nvim_win_get_buf(0))
+        assert.is_true(
+            vim.tbl_contains(lines(buf), ' R old^@break.txt -> new^@break.txt')
+        )
+    end)
+
+    unix_it('escapes newline paths in base split fallback warnings', function()
+        local path = 'missing\nfile.txt'
+        write(path, { 'original' })
+        run({ 'add', '--', path })
+        run({ 'commit', '-m', 'add newline file' })
+        write(path, { 'changed' })
+        minifugit.options.preview.diff_layout = 'split'
+        local target = vim.api.nvim_get_current_win()
+        local original_buf = vim.api.nvim_get_current_buf()
+        assert.is_true(minifugit.open({ base = 'HEAD' }))
+        local status = vim.api.nvim_get_current_buf()
+        select_entry(status, 'missing^@file.txt')
+        -- The file can disappear after status collection but before previewing.
+        assert.are.equal(0, vim.fn.delete(repo .. '/' .. path))
+
+        keys('=')
+
+        local warning = notifications[#notifications]
+        local win, preview = diff_window('Minifugit diff')
+        assert.are.equal(target, win)
+        assert.are.equal(status, vim.api.nvim_get_current_buf())
+        helpers.assert_has_line_containing(lines(preview), 'original')
+        vim.api.nvim_set_current_win(win)
+        keys('q')
+        assert.are.equal(original_buf, vim.api.nvim_win_get_buf(target))
+        assert.are.equal(2, #vim.api.nvim_tabpage_list_wins(0))
+        assert.are.equal(
+            '[minifugit] Cannot stat file: '
+                .. vim.fn.resolve(repo)
+                .. '/missing^@file.txt; showing stacked diff',
+            warning
+        )
+        assert.is_nil(warning:find('\n', 1, true))
+    end)
+
     it(
         'previews committed and uncommitted edits together in the stacked layout',
         function()

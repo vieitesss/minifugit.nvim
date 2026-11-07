@@ -289,7 +289,7 @@ local function diff_title(entry, section)
             and (entry.orig_path .. ' -> ' .. entry.path)
         or entry.path
 
-    return preview_util.winbar_text(prefix .. ': ' .. path)
+    return preview_util.winbar_text(prefix .. ': ' .. vim.fn.strtrans(path))
 end
 
 ---@param self DiffPreview
@@ -576,6 +576,14 @@ function DiffPreview:goto_code()
     local path = root ~= '' and vim.fs.joinpath(root, position.path)
         or position.path
 
+    if path:find('\n', 1, true) ~= nil then
+        common.notify_warn(
+            'Cannot open a file name that contains a newline: '
+                .. vim.fn.strtrans(path)
+        )
+        return false
+    end
+
     if vim.fn.filereadable(path) == 0 then
         common.notify_warn('Cannot open ' .. position.path)
         return false
@@ -782,7 +790,9 @@ function DiffPreview:open(entry, section, opts)
         end
 
         if split_err ~= nil and opts.notify ~= false then
-            common.notify_warn(split_err .. '; showing stacked diff')
+            common.notify_warn(
+                vim.fn.strtrans(split_err) .. '; showing stacked diff'
+            )
         end
     end
 
@@ -790,7 +800,9 @@ function DiffPreview:open(entry, section, opts)
     local raw_rows
 
     if #lines == 0 then
-        diff_lines = { render.line('No diff for ' .. entry.path) }
+        diff_lines = {
+            render.line('No diff for ' .. vim.fn.strtrans(entry.path)),
+        }
     else
         diff_lines, raw_rows = diff_render.render_lines(lines, self.groups, {
             show_headers = self.show_headers,
