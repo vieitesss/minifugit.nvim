@@ -40,6 +40,7 @@ end
 
 describe('minifugit line numbers when opening code from a diff', function()
     local original_cwd, repo, minifugit
+    local status_window, restore_constructor
 
     before_each(function()
         original_cwd = vim.fn.getcwd()
@@ -66,6 +67,7 @@ describe('minifugit line numbers when opening code from a diff', function()
                 package.loaded[name] = nil
             end
         end
+        status_window, restore_constructor = helpers.capture_status_windows()
         minifugit = require('minifugit').setup({
             status = { width = 0.4, min_width = 20 },
             preview = { diff_layout = 'stacked' },
@@ -73,6 +75,7 @@ describe('minifugit line numbers when opening code from a diff', function()
     end)
 
     after_each(function()
+        restore_constructor()
         if minifugit then
             minifugit.reset()
         end
@@ -86,7 +89,7 @@ describe('minifugit line numbers when opening code from a diff', function()
     end)
 
     local function select_tracked_entry()
-        local gsw = minifugit.gsw
+        local gsw = status_window()
         local entry_row
         for row, line in
             ipairs(vim.api.nvim_buf_get_lines(gsw.buf.id, 0, -1, false))
@@ -102,7 +105,7 @@ describe('minifugit line numbers when opening code from a diff', function()
     ---Preview the diff for tracked.txt, jump to source, return the opened
     ---window's number/relativenumber.
     local function preview_and_goto()
-        local gsw = minifugit.gsw
+        local gsw = status_window()
         select_tracked_entry()
         assert.is_true(gsw:diff_entry())
 
@@ -140,10 +143,10 @@ describe('minifugit line numbers when opening code from a diff', function()
 
         minifugit.status()
         select_tracked_entry()
-        assert.is_true(minifugit.gsw:diff_entry())
+        assert.is_true(status_window():diff_entry())
 
-        local preview_win = minifugit.gsw.preview.stacked.win
-            or minifugit.gsw.preview.left.win
+        local preview_win = status_window().preview.stacked.win
+            or status_window().preview.left.win
         assert.are.equal(explorer_win, preview_win)
     end)
 

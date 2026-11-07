@@ -40,7 +40,7 @@ function M.ensure_stacked(self, actions)
     self.stacked.buf = Buffer.new({
         listed = false,
         scratch = true,
-        name = 'Minifugit diff',
+        name = string.format('Minifugit diff [%d]', self.host.buf.id),
     })
 
     vim.keymap.set('n', 'q', actions.close_diff, {
@@ -118,11 +118,12 @@ function M.ensure_stacked(self, actions)
     return self.stacked.buf
 end
 
+---@param self DiffPreview
 ---@param buf_name string
 ---@param existing Buffer?
 ---@param actions MiniFugitPreviewBufferActions
 ---@return Buffer
-function M.ensure_split(_, buf_name, existing, actions)
+function M.ensure_split(self, buf_name, existing, actions)
     if existing ~= nil and existing:is_valid() then
         return existing
     end
@@ -130,7 +131,7 @@ function M.ensure_split(_, buf_name, existing, actions)
     local buf = Buffer.new({
         listed = false,
         scratch = true,
-        name = buf_name,
+        name = string.format('%s [%d]', buf_name, self.host.buf.id),
     })
 
     vim.keymap.set('n', 'q', actions.close_diff, {

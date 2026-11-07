@@ -685,8 +685,12 @@ function GitStatusWindow.new(opts)
     ensure_highlights(self)
 
     ---@type BufferOpts
-    local buf_opts = { listed = false, scratch = true, name = 'Minifugit' }
+    local buf_opts = { listed = false, scratch = true }
     self.buf = Buffer.new(buf_opts)
+    vim.api.nvim_buf_set_name(
+        self.buf.id,
+        string.format('Minifugit [%d]', self.buf.id)
+    )
 
     self.preview = DiffPreview.new(self)
 

@@ -111,6 +111,9 @@ Open the status window:
 require('minifugit').status()
 ```
 
+Each tabpage has its own status window. With `status.open_in_tab = true`, calls
+for a repository reuse its existing minifugit tab.
+
 The status header shows the pinned repository root. Changing cwd does not
 redirect an open window's actions; close and reopen status in another repository
 to switch repositories.
