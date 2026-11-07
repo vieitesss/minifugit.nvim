@@ -151,6 +151,15 @@ local function status_windows(tabpage)
     return wins
 end
 
+---@param tabpage integer
+---@return integer
+local function activate_status_window(tabpage)
+    vim.api.nvim_set_current_tabpage(tabpage)
+    local win = status_windows(tabpage)[1]
+    vim.api.nvim_set_current_win(win)
+    return win
+end
+
 ---@param bufnr integer
 ---@return integer?
 local function win_showing_buf(bufnr)
@@ -285,6 +294,12 @@ describe('minifugit status UI', function()
         vim.cmd.cd(vim.fn.fnameescape(other_repo))
     end
 
+    ---@class MinifugitTestStatusTab
+    ---@field tabpage integer
+    ---@field buffer integer
+
+    ---@return MinifugitTestStatusTab
+    ---@return MinifugitTestStatusTab
     local function open_two_status_tabs()
         helpers.write_file(vim.fs.joinpath(repo, 'only-a.txt'), { 'A' })
         helpers.write_file(
@@ -292,16 +307,29 @@ describe('minifugit status UI', function()
             { 'changed A' }
         )
         minifugit.status()
-        local tab_a = vim.api.nvim_get_current_tabpage()
-        local buf_a = vim.api.nvim_get_current_buf()
+        local status_a = {
+            tabpage = vim.api.nvim_get_current_tabpage(),
+            buffer = vim.api.nvim_get_current_buf(),
+        }
         vim.cmd.tabnew()
         change_to_other_repo()
         helpers.write_file(vim.fs.joinpath(other_repo, 'only-b.txt'), { 'B' })
         minifugit.status()
-        return tab_a,
-            buf_a,
-            vim.api.nvim_get_current_tabpage(),
-            vim.api.nvim_get_current_buf()
+        return status_a,
+            {
+                tabpage = vim.api.nvim_get_current_tabpage(),
+                buffer = vim.api.nvim_get_current_buf(),
+            }
+    end
+
+    ---@param status MinifugitTestStatusTab
+    local function preview_tracked_entry(status)
+        local win = activate_status_window(status.tabpage)
+        vim.api.nvim_win_set_cursor(
+            win,
+            { row_containing(status.buffer, 'tracked.txt'), 0 }
+        )
+        mapped_normal_keys('=')
     end
 
     it('shows independent repository entries in two tabpages', function()
@@ -366,10 +394,10 @@ describe('minifugit status UI', function()
     it(
         'stages through the second tab keymap without changing the first',
         function()
-            local tab_a, buf_a, tab_b, buf_b = open_two_status_tabs()
+            local status_a, status_b = open_two_status_tabs()
             vim.api.nvim_win_set_cursor(
                 vim.api.nvim_get_current_win(),
-                { row_containing(buf_b, 'tracked.txt'), 0 }
+                { row_containing(status_b.buffer, 'tracked.txt'), 0 }
             )
 
             mapped_normal_keys('s')
@@ -385,15 +413,15 @@ describe('minifugit status UI', function()
                 '',
                 helpers.run({ 'git', 'diff', '--cached', '--name-only' }, repo)
             )
-            assert_has_line(buffer_lines(buf_b), 'Staged (1)')
-            assert_has_line(buffer_lines(buf_b), 'M  tracked.txt')
-            vim.api.nvim_set_current_tabpage(tab_a)
+            assert_has_line(buffer_lines(status_b.buffer), 'Staged (1)')
+            assert_has_line(buffer_lines(status_b.buffer), 'M  tracked.txt')
+            vim.api.nvim_set_current_tabpage(status_a.tabpage)
             minifugit.status()
-            assert.are.equal(buf_a, vim.api.nvim_get_current_buf())
-            assert_has_line(buffer_lines(buf_a), 'Unstaged (1)')
-            assert_has_line(buffer_lines(buf_a), ' M tracked.txt')
-            assert_has_line(buffer_lines(buf_a), '?? only-a.txt')
-            assert.are.equal(1, #status_windows(tab_b))
+            assert.are.equal(status_a.buffer, vim.api.nvim_get_current_buf())
+            assert_has_line(buffer_lines(status_a.buffer), 'Unstaged (1)')
+            assert_has_line(buffer_lines(status_a.buffer), ' M tracked.txt')
+            assert_has_line(buffer_lines(status_a.buffer), '?? only-a.txt')
+            assert.are.equal(1, #status_windows(status_b.tabpage))
         end
     )
 
@@ -401,40 +429,52 @@ describe('minifugit status UI', function()
         it(
             action .. ' in one tab leaves the other status refreshable',
             function()
-                local tab_a, buf_a, tab_b, buf_b = open_two_status_tabs()
-                vim.api.nvim_set_current_tabpage(tab_a)
+                local status_a, status_b = open_two_status_tabs()
+                vim.api.nvim_set_current_tabpage(status_a.tabpage)
                 minifugit.status()
                 if action == 'close' then
                     mapped_normal_keys('q')
                 else
                     minifugit.reset()
-                    assert.is_false(vim.api.nvim_buf_is_valid(buf_a))
+                    assert.is_false(vim.api.nvim_buf_is_valid(status_a.buffer))
                 end
-                assert.are.equal(0, #status_windows(tab_a))
+                assert.are.equal(0, #status_windows(status_a.tabpage))
 
                 helpers.write_file(
                     vim.fs.joinpath(other_repo, 'new-in-b.txt'),
                     { 'new B' }
                 )
-                vim.api.nvim_set_current_tabpage(tab_b)
+                vim.api.nvim_set_current_tabpage(status_b.tabpage)
                 minifugit.status()
 
-                assert.are.equal(buf_b, vim.api.nvim_get_current_buf())
-                assert.are.equal(1, #status_windows(tab_b))
-                assert_has_line(buffer_lines(buf_b), '?? new-in-b.txt')
-                assert_has_line(buffer_lines(buf_b), '?? only-b.txt')
-                vim.api.nvim_set_current_tabpage(tab_a)
+                assert.are.equal(
+                    status_b.buffer,
+                    vim.api.nvim_get_current_buf()
+                )
+                assert.are.equal(1, #status_windows(status_b.tabpage))
+                assert_has_line(
+                    buffer_lines(status_b.buffer),
+                    '?? new-in-b.txt'
+                )
+                assert_has_line(buffer_lines(status_b.buffer), '?? only-b.txt')
+                vim.api.nvim_set_current_tabpage(status_a.tabpage)
                 vim.cmd.cd(vim.fn.fnameescape(repo))
                 minifugit.status()
-                assert.are.equal(1, #status_windows(tab_a))
+                assert.are.equal(1, #status_windows(status_a.tabpage))
                 assert_has_line(
                     buffer_lines(vim.api.nvim_get_current_buf()),
                     '?? only-a.txt'
                 )
                 if action == 'close' then
-                    assert.are.equal(buf_a, vim.api.nvim_get_current_buf())
+                    assert.are.equal(
+                        status_a.buffer,
+                        vim.api.nvim_get_current_buf()
+                    )
                 else
-                    assert.are_not.equal(buf_a, vim.api.nvim_get_current_buf())
+                    assert.are_not.equal(
+                        status_a.buffer,
+                        vim.api.nvim_get_current_buf()
+                    )
                 end
             end
         )
@@ -443,19 +483,19 @@ describe('minifugit status UI', function()
     it(
         'cleans up a closed tab without disturbing another status tab',
         function()
-            local tab_a, buf_a, tab_b, buf_b = open_two_status_tabs()
-            vim.api.nvim_set_current_tabpage(tab_a)
+            local status_a, status_b = open_two_status_tabs()
+            vim.api.nvim_set_current_tabpage(status_a.tabpage)
 
             vim.cmd.tabclose()
 
             assert.is_true(vim.wait(1000, function()
-                return not vim.api.nvim_buf_is_valid(buf_a)
+                return not vim.api.nvim_buf_is_valid(status_a.buffer)
             end))
-            assert.is_false(tabpage_is_valid(tab_a))
-            vim.api.nvim_set_current_tabpage(tab_b)
+            assert.is_false(tabpage_is_valid(status_a.tabpage))
+            vim.api.nvim_set_current_tabpage(status_b.tabpage)
             minifugit.status()
-            assert.are.equal(buf_b, vim.api.nvim_get_current_buf())
-            assert_has_line(buffer_lines(buf_b), '?? only-b.txt')
+            assert.are.equal(status_b.buffer, vim.api.nvim_get_current_buf())
+            assert_has_line(buffer_lines(status_b.buffer), '?? only-b.txt')
 
             vim.cmd.tabnew()
             vim.cmd.cd(vim.fn.fnameescape(repo))
@@ -467,7 +507,7 @@ describe('minifugit status UI', function()
                 buffer_lines(vim.api.nvim_get_current_buf()),
                 '?? only-a.txt'
             )
-            assert.are.equal(1, #status_windows(tab_b))
+            assert.are.equal(1, #status_windows(status_b.tabpage))
         end
     )
 
@@ -476,15 +516,15 @@ describe('minifugit status UI', function()
             command
                 .. ' cleans only its own status entry, even after replacement',
             function()
-                local tab_a, buf_a, tab_b, buf_b = open_two_status_tabs()
-                vim.api.nvim_set_current_tabpage(tab_a)
-                vim.cmd[command]({ tostring(buf_a), bang = true })
+                local status_a, status_b = open_two_status_tabs()
+                vim.api.nvim_set_current_tabpage(status_a.tabpage)
+                vim.cmd[command]({ tostring(status_a.buffer), bang = true })
                 vim.cmd.cd(vim.fn.fnameescape(repo))
                 minifugit.status()
                 local replacement_buf = vim.api.nvim_get_current_buf()
-                assert.are_not.equal(buf_a, replacement_buf)
+                assert.are_not.equal(status_a.buffer, replacement_buf)
 
-                vim.api.nvim_set_current_tabpage(tab_b)
+                vim.api.nvim_set_current_tabpage(status_b.tabpage)
                 helpers.write_file(
                     vim.fs.joinpath(other_repo, 'new-in-b.txt'),
                     { 'B' }
@@ -498,12 +538,18 @@ describe('minifugit status UI', function()
                     return settled
                 end))
 
-                assert.are.equal(buf_b, vim.api.nvim_get_current_buf())
-                assert_has_line(buffer_lines(buf_b), '?? new-in-b.txt')
-                assert.are.equal(1, #status_windows(tab_b))
+                assert.are.equal(
+                    status_b.buffer,
+                    vim.api.nvim_get_current_buf()
+                )
+                assert_has_line(
+                    buffer_lines(status_b.buffer),
+                    '?? new-in-b.txt'
+                )
+                assert.are.equal(1, #status_windows(status_b.tabpage))
                 assert.is_true(vim.api.nvim_buf_is_valid(replacement_buf))
-                assert.are.equal(1, #status_windows(tab_a))
-                vim.api.nvim_set_current_tabpage(tab_a)
+                assert.are.equal(1, #status_windows(status_a.tabpage))
+                vim.api.nvim_set_current_tabpage(status_a.tabpage)
                 minifugit.status()
                 assert.are.equal(
                     replacement_buf,
@@ -640,30 +686,18 @@ describe('minifugit status UI', function()
     for _, layout in ipairs({ 'stacked', 'split' }) do
         it('keeps independent ' .. layout .. ' previews in two tabs', function()
             minifugit.setup({ preview = { diff_layout = layout } })
-            local tab_a, buf_a, tab_b, buf_b = open_two_status_tabs()
+            local status_a, status_b = open_two_status_tabs()
             vim.cmd.cd(vim.fn.fnameescape(repo))
             local diff_name = layout == 'split' and 'Minifugit diff right'
                 or 'Minifugit diff'
-            vim.api.nvim_set_current_tabpage(tab_a)
-            vim.api.nvim_set_current_win(status_windows(tab_a)[1])
-            vim.api.nvim_win_set_cursor(
-                vim.api.nvim_get_current_win(),
-                { row_containing(buf_a, 'tracked.txt'), 0 }
-            )
-            mapped_normal_keys('=')
+            preview_tracked_entry(status_a)
             local diff_win_a, diff_buf_a = diff_win_named(diff_name)
             helpers.assert_has_line_containing(
                 buffer_lines(diff_buf_a),
                 'changed A'
             )
 
-            vim.api.nvim_set_current_tabpage(tab_b)
-            vim.api.nvim_set_current_win(status_windows(tab_b)[1])
-            vim.api.nvim_win_set_cursor(
-                vim.api.nvim_get_current_win(),
-                { row_containing(buf_b, 'tracked.txt'), 0 }
-            )
-            mapped_normal_keys('=')
+            preview_tracked_entry(status_b)
             local diff_win_b, diff_buf_b = diff_win_named(diff_name)
             assert.are_not.equal(diff_buf_a, diff_buf_b)
             helpers.assert_has_line_containing(
@@ -679,12 +713,12 @@ describe('minifugit status UI', function()
             assert.is_true(vim.wo[diff_win_b].wrap)
             assert.is_false(vim.wo[diff_win_a].wrap)
 
-            vim.api.nvim_set_current_tabpage(tab_a)
+            vim.api.nvim_set_current_tabpage(status_a.tabpage)
             minifugit.reset()
             assert.is_false(vim.api.nvim_buf_is_valid(diff_buf_a))
-            vim.api.nvim_set_current_tabpage(tab_b)
+            vim.api.nvim_set_current_tabpage(status_b.tabpage)
             minifugit.status()
-            assert.are.equal(buf_b, vim.api.nvim_get_current_buf())
+            assert.are.equal(status_b.buffer, vim.api.nvim_get_current_buf())
             assert.is_true(vim.api.nvim_buf_is_valid(diff_buf_b))
             helpers.assert_has_line_containing(
                 buffer_lines(diff_buf_b),
@@ -694,10 +728,9 @@ describe('minifugit status UI', function()
     end
 
     it('keeps help buffers independent in two tabs', function()
-        local tab_a, _, tab_b = open_two_status_tabs()
+        local status_a, status_b = open_two_status_tabs()
         vim.cmd.cd(vim.fn.fnameescape(repo))
-        vim.api.nvim_set_current_tabpage(tab_a)
-        vim.api.nvim_set_current_win(status_windows(tab_a)[1])
+        activate_status_window(status_a.tabpage)
         mapped_normal_keys('?')
         local help_win_a = vim.api.nvim_get_current_win()
         local help_buf_a = vim.api.nvim_get_current_buf()
@@ -706,8 +739,7 @@ describe('minifugit status UI', function()
             vim.api.nvim_win_get_config(help_win_a).relative
         )
 
-        vim.api.nvim_set_current_tabpage(tab_b)
-        vim.api.nvim_set_current_win(status_windows(tab_b)[1])
+        activate_status_window(status_b.tabpage)
         mapped_normal_keys('?')
         local help_win_b = vim.api.nvim_get_current_win()
         local help_buf_b = vim.api.nvim_get_current_buf()
@@ -722,15 +754,15 @@ describe('minifugit status UI', function()
         assert.is_false(vim.api.nvim_win_is_valid(help_win_b))
         assert.is_true(vim.api.nvim_win_is_valid(help_win_a))
         assert.is_true(vim.api.nvim_buf_is_valid(help_buf_a))
-        assert.are.equal(1, #status_windows(tab_a))
-        assert.are.equal(1, #status_windows(tab_b))
+        assert.are.equal(1, #status_windows(status_a.tabpage))
+        assert.are.equal(1, #status_windows(status_b.tabpage))
     end)
 
     it(
         're-pins only the hidden window when reopening in another root',
         function()
-            local tab_a, buf_a, tab_b, buf_b = open_two_status_tabs()
-            vim.api.nvim_set_current_tabpage(tab_a)
+            local status_a, status_b = open_two_status_tabs()
+            vim.api.nvim_set_current_tabpage(status_a.tabpage)
             minifugit.status()
             mapped_normal_keys('q')
             vim.cmd.cd(vim.fn.fnameescape(other_repo))
@@ -738,19 +770,19 @@ describe('minifugit status UI', function()
             minifugit.status()
 
             local replacement_buf = vim.api.nvim_get_current_buf()
-            assert.are_not.equal(buf_a, replacement_buf)
-            assert.is_false(vim.api.nvim_buf_is_valid(buf_a))
-            assert.are.equal(1, #status_windows(tab_a))
+            assert.are_not.equal(status_a.buffer, replacement_buf)
+            assert.is_false(vim.api.nvim_buf_is_valid(status_a.buffer))
+            assert.are.equal(1, #status_windows(status_a.tabpage))
             assert_has_line(buffer_lines(replacement_buf), '?? only-b.txt')
             assert_has_line(
                 buffer_lines(replacement_buf),
                 'Root: ' .. vim.fn.resolve(other_repo)
             )
-            vim.api.nvim_set_current_tabpage(tab_b)
+            vim.api.nvim_set_current_tabpage(status_b.tabpage)
             minifugit.status()
-            assert.are.equal(buf_b, vim.api.nvim_get_current_buf())
-            assert.are.equal(1, #status_windows(tab_b))
-            assert_has_line(buffer_lines(buf_b), '?? only-b.txt')
+            assert.are.equal(status_b.buffer, vim.api.nvim_get_current_buf())
+            assert.are.equal(1, #status_windows(status_b.tabpage))
+            assert_has_line(buffer_lines(status_b.buffer), '?? only-b.txt')
         end
     )
 
@@ -821,39 +853,42 @@ describe('minifugit status UI', function()
             minifugit.setup({ status = { open_in_tab = true } })
             local caller_tab = vim.api.nvim_get_current_tabpage()
             local initial_tabs = #vim.api.nvim_list_tabpages()
-            local tab_a, buf_a, tab_b, buf_b = open_two_status_tabs()
+            local status_a, status_b = open_two_status_tabs()
             assert.are.equal(initial_tabs + 3, #vim.api.nvim_list_tabpages())
             vim.api.nvim_set_current_tabpage(caller_tab)
             vim.cmd.cd(vim.fn.fnameescape(repo))
             minifugit.status()
-            assert.are.equal(tab_a, vim.api.nvim_get_current_tabpage())
-            assert.are.equal(buf_a, vim.api.nvim_get_current_buf())
+            assert.are.equal(
+                status_a.tabpage,
+                vim.api.nvim_get_current_tabpage()
+            )
+            assert.are.equal(status_a.buffer, vim.api.nvim_get_current_buf())
             assert.are.equal(initial_tabs + 3, #vim.api.nvim_list_tabpages())
 
             vim.cmd.tabclose()
             assert.is_true(vim.wait(1000, function()
-                return not vim.api.nvim_buf_is_valid(buf_a)
+                return not vim.api.nvim_buf_is_valid(status_a.buffer)
             end))
-            vim.api.nvim_set_current_tabpage(tab_b)
+            vim.api.nvim_set_current_tabpage(status_b.tabpage)
             minifugit.status()
-            assert.are.equal(buf_b, vim.api.nvim_get_current_buf())
-            assert_has_line(buffer_lines(buf_b), '?? only-b.txt')
+            assert.are.equal(status_b.buffer, vim.api.nvim_get_current_buf())
+            assert_has_line(buffer_lines(status_b.buffer), '?? only-b.txt')
             assert_has_line(
-                buffer_lines(buf_b),
+                buffer_lines(status_b.buffer),
                 'Root: ' .. vim.fn.resolve(other_repo)
             )
 
             vim.api.nvim_set_current_tabpage(caller_tab)
             minifugit.status()
             local replacement_tab = vim.api.nvim_get_current_tabpage()
-            assert.are_not.equal(tab_a, replacement_tab)
+            assert.are_not.equal(status_a.tabpage, replacement_tab)
             assert.are_not.equal(caller_tab, replacement_tab)
             assert.are.equal(initial_tabs + 3, #vim.api.nvim_list_tabpages())
             assert_has_line(
                 buffer_lines(vim.api.nvim_get_current_buf()),
                 '?? only-a.txt'
             )
-            assert.are.equal(1, #status_windows(tab_b))
+            assert.are.equal(1, #status_windows(status_b.tabpage))
         end
     )
 

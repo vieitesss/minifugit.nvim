@@ -3,7 +3,7 @@
 ---@field run fun(args: string[], cwd: string): string
 ---@field write_file fun(path: string, lines: string[])
 ---@field clone_repo_with_changed_file fun(repo: string, path: string, lines: string[]): string
----@field capture_status_windows fun(): fun(bufnr: integer?): GitStatusWindow?, fun()
+---@field capture_status_windows fun(): fun(): GitStatusWindow?, fun()
 
 local git_env = {
     GIT_CONFIG_GLOBAL = vim.uv.os_uname().sysname == 'Windows_NT' and 'NUL'
@@ -60,7 +60,7 @@ end
 
 ---Capture instances for existing UI specs that exercise window methods.
 ---The caller must restore the constructor after each test.
----@return fun(bufnr: integer?): GitStatusWindow?
+---@return fun(): GitStatusWindow?
 ---@return fun()
 function M.capture_status_windows()
     local StatusWindow = require('minifugit.ui.status')
@@ -73,11 +73,7 @@ function M.capture_status_windows()
         return instance
     end
 
-    return function(bufnr)
-        if bufnr ~= nil then
-            return instances[bufnr]
-        end
-
+    return function()
         local current = instances[vim.api.nvim_get_current_buf()]
         if current ~= nil then
             return current
