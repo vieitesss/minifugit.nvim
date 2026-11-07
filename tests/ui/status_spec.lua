@@ -2215,6 +2215,66 @@ describe('minifugit status UI', function()
         )
     end)
 
+    it('stages and unstages every visible entry with S and U', function()
+        helpers.write_file(vim.fs.joinpath(repo, 'tracked.txt'), { 'changed' })
+        helpers.write_file(vim.fs.joinpath(repo, 'only-a.txt'), { 'new' })
+        minifugit.status()
+        local gsw = status_window()
+        assert_has_line(buffer_lines(gsw.buf.id), ' M tracked.txt')
+        assert_has_line(buffer_lines(gsw.buf.id), '?? only-a.txt')
+
+        mapped_normal_keys('S')
+
+        assert.are.equal(
+            'A  only-a.txt\nM  tracked.txt\n',
+            helpers.run({ 'git', 'status', '--short' }, repo)
+        )
+
+        mapped_normal_keys('U')
+
+        assert.are.equal(
+            ' M tracked.txt\n?? only-a.txt\n',
+            helpers.run({ 'git', 'status', '--short' }, repo)
+        )
+    end)
+
+    it(
+        'moves the tracked cursor to the first entry when the current status view rests on a header',
+        function()
+            helpers.write_file(vim.fs.joinpath(repo, 'a.txt'), { 'a' })
+            helpers.write_file(vim.fs.joinpath(repo, 'b.txt'), { 'b' })
+            minifugit.status()
+            local gsw = status_window()
+            local tracked = gsw.win
+            local other = vim.api.nvim_open_win(gsw.buf.id, false, {
+                split = 'right',
+                win = tracked,
+            })
+            vim.api.nvim_win_set_cursor(
+                tracked,
+                { helpers.row_containing(gsw.buf.id, 'b.txt'), 0 }
+            )
+            vim.api.nvim_win_set_cursor(other, { 1, 0 })
+            vim.api.nvim_set_current_win(other)
+
+            gsw:refresh()
+
+            local first_entry = helpers.row_containing(gsw.buf.id, 'a.txt')
+            assert.are.equal(
+                other,
+                vim.api.nvim_get_current_win(),
+                'The untracked status view must stay current'
+            )
+            assert.are.equal(1, vim.api.nvim_win_get_cursor(other)[1])
+            assert.are.equal(
+                first_entry,
+                vim.api.nvim_win_get_cursor(tracked)[1],
+                'The tracked status view must fall back to the first entry'
+            )
+            assert.are.equal('?? a.txt', buffer_lines(gsw.buf.id)[first_entry])
+        end
+    )
+
     it(
         're-pins a closed status session when reopened in another repository',
         function()

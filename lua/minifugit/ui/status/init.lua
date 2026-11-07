@@ -312,6 +312,32 @@ local function move_to_first_entry(self)
     end
 end
 
+---Place the tracked cursor for `state`, keeping the baseline fallback: when no
+---item sits under the current status view after placement, move the tracked
+---view to the first entry. The current view may be another window showing the
+---same status buffer, while `state.row` belongs to `self.win`.
+---@param self GitStatusWindow
+---@param state GitStatusCursorState
+local function restore_cursor(self, state)
+    local row = self.document:resolve(state)
+
+    if state.follow_entry == false and state.row ~= nil then
+        set_cursor_row(self, row)
+        return
+    end
+
+    if row == nil then
+        move_to_first_entry(self)
+        return
+    end
+
+    set_cursor_row(self, row)
+
+    if self:current_item() == nil then
+        move_to_first_entry(self)
+    end
+end
+
 ---@param self GitStatusWindow
 local function refresh_highlights(self)
     ensure_highlights(self)
@@ -531,13 +557,19 @@ function GitStatusWindow:selected_entry_items()
     return self.document:entries(start_row, end_row)
 end
 
----@return GitStatusEntryItem[]
+---@return GitStatusEntry[]
 function GitStatusWindow:all_entries()
     if self.document == nil then
         return {}
     end
 
-    return self.document:entries()
+    local entries = {}
+
+    for _, item in ipairs(self.document:entries()) do
+        table.insert(entries, item.entry)
+    end
+
+    return entries
 end
 
 ---@return GitStatusCursorState
@@ -558,7 +590,7 @@ function GitStatusWindow:refresh(state)
     state = state or self:capture_cursor_state()
 
     self:render()
-    set_cursor_row(self, self.document:resolve(state))
+    restore_cursor(self, state)
     self.preview:refresh(state)
 
     return true
