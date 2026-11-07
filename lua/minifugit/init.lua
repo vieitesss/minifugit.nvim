@@ -278,13 +278,24 @@ function M.status()
 
     local tabpage = vim.api.nvim_get_current_tabpage()
     local gsw = status_window(tabpage)
+    local reusable_tab
 
     if gsw ~= nil and #vim.fn.win_findbuf(gsw.buf.id) == 0 then
         local git = require('minifugit.git')
 
         if git.root() ~= gsw.root then
+            local owned_tab = gsw.tabpage
+            local foreign_buffer = gsw.tab_foreign_buffer
             unregister_window(tabpage, gsw)
             gsw = nil
+            if
+                owned_tab ~= nil and vim.api.nvim_tabpage_is_valid(owned_tab)
+            then
+                reusable_tab = {
+                    tabpage = owned_tab,
+                    foreign_buffer = foreign_buffer,
+                }
+            end
         end
     end
 
@@ -308,7 +319,11 @@ function M.status()
         gsw:refresh()
     else
         local GitStatusWindow = require('minifugit.ui.status')
-        gsw = GitStatusWindow.new(M.options)
+        local opts = M.options
+        if reusable_tab ~= nil then
+            opts = vim.tbl_extend('force', opts, { _status_tab = reusable_tab })
+        end
+        gsw = GitStatusWindow.new(opts)
         register_window(gsw.tabpage or tabpage, gsw)
     end
 

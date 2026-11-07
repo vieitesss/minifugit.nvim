@@ -983,6 +983,61 @@ describe('minifugit status UI', function()
         end
     )
 
+    it(
+        'reuses a surviving foreign file tab when hidden status re-pins',
+        function()
+            minifugit.setup({ status = { open_in_tab = true } })
+            minifugit.status()
+            local owned_tab = vim.api.nvim_get_current_tabpage()
+            local old_buf = vim.api.nvim_get_current_buf()
+            local status_win = vim.api.nvim_get_current_win()
+            local foreign_win
+            for _, win in ipairs(normal_windows(owned_tab)) do
+                if win ~= status_win then
+                    foreign_win = win
+                    break
+                end
+            end
+            vim.api.nvim_set_current_win(foreign_win)
+            vim.cmd.edit(
+                vim.fn.fnameescape(vim.fs.joinpath(repo, 'tracked.txt'))
+            )
+            local foreign_buf = vim.api.nvim_get_current_buf()
+            local settled = false
+            vim.schedule(function()
+                settled = true
+            end)
+            assert.is_true(vim.wait(1000, function()
+                return settled
+            end))
+            vim.api.nvim_win_close(status_win, true)
+            change_to_other_repo()
+            local tabs_before = #vim.api.nvim_list_tabpages()
+
+            minifugit.status()
+
+            local replacement_buf = vim.api.nvim_get_current_buf()
+            assert.are.equal(owned_tab, vim.api.nvim_get_current_tabpage())
+            assert.are.equal(tabs_before, #vim.api.nvim_list_tabpages())
+            assert.are_not.equal(old_buf, replacement_buf)
+            assert.is_false(vim.api.nvim_buf_is_valid(old_buf))
+            assert.are.equal(1, #status_windows(owned_tab))
+            assert_has_line(
+                buffer_lines(replacement_buf),
+                'Root: ' .. vim.fn.resolve(other_repo)
+            )
+            assert_has_line(buffer_lines(replacement_buf), ' M tracked.txt')
+            assert.are.equal(foreign_buf, vim.api.nvim_win_get_buf(foreign_win))
+
+            minifugit.reset()
+
+            assert.is_false(vim.api.nvim_buf_is_valid(replacement_buf))
+            assert.is_true(tabpage_is_valid(owned_tab))
+            assert.are.equal(foreign_buf, vim.api.nvim_win_get_buf(foreign_win))
+            assert.are.equal(tabs_before, #vim.api.nvim_list_tabpages())
+        end
+    )
+
     it('reuses owned B when hidden owned A re-pins to B', function()
         minifugit.setup({ status = { open_in_tab = true } })
         local caller_tab = vim.api.nvim_get_current_tabpage()

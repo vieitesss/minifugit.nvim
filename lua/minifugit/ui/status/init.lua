@@ -667,7 +667,10 @@ function GitStatusWindow:stop_loading()
     end
 end
 
----@param opts MinifugitOptions
+---@class MinifugitStatusInstanceOptions: MinifugitOptions
+---@field _status_tab? {tabpage: integer, foreign_buffer: boolean}
+
+---@param opts MinifugitStatusInstanceOptions
 ---@return GitStatusWindow
 function GitStatusWindow.new(opts)
     local self = setmetatable({}, GitStatusWindow)
@@ -700,9 +703,17 @@ function GitStatusWindow.new(opts)
 
     local target_win
     local placeholder_buf
+    local reused_tab = opts._status_tab
     self.win, self.win_prev_winopts, target_win, placeholder_buf =
-        window.create_status_win(self.buf, self.options.status)
+        window.create_status_win(
+            self.buf,
+            self.options.status,
+            reused_tab and reused_tab.tabpage
+        )
     status_tab.attach(self, target_win, placeholder_buf)
+    if reused_tab ~= nil then
+        self.tab_foreign_buffer = reused_tab.foreign_buffer
+    end
     selection.move_to_first_entry(self)
     ensure_autocmds(self)
 
