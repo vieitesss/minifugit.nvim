@@ -4,6 +4,7 @@
 ---@field write_file fun(path: string, lines: string[])
 ---@field create_repo fun(files: table<string, string[]>): string, string
 ---@field clone_repo_with_changed_file fun(repo: string, path: string, lines: string[]): string
+---@field change_to_other_repo fun(repo: string): string
 ---@field capture_status_windows fun(): fun(): GitStatusWindow?, fun()
 ---@field snapshot_editor_state fun(): fun()
 ---@field settle_callbacks fun()
@@ -79,6 +80,16 @@ function M.clone_repo_with_changed_file(repo, path, lines)
     local clone = vim.fn.tempname()
     M.run({ 'git', 'clone', '--local', repo, clone }, repo)
     M.write_file(vim.fs.joinpath(clone, path), lines)
+    return clone
+end
+
+---Clone `repo` with a changed tracked file and switch the editor to the clone.
+---@param repo string
+---@return string Temporary clone; the caller owns cleanup and the cwd restore.
+function M.change_to_other_repo(repo)
+    local clone =
+        M.clone_repo_with_changed_file(repo, 'tracked.txt', { 'changed in B' })
+    vim.cmd.cd(vim.fn.fnameescape(clone))
     return clone
 end
 

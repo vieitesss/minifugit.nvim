@@ -25,7 +25,7 @@ without leaving Neovim.
 
 ## Requirements
 
-- Neovim 0.10+
+- Neovim 0.11+
 - `git` executable on `PATH`
 
 ## Configuration

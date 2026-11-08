@@ -62,11 +62,7 @@ describe('minifugit line numbers when opening code from a diff', function()
         vim.go.relativenumber = true
         vim.cmd.cd(vim.fn.fnameescape(repo))
         vim.cmd.enew()
-        for name in pairs(package.loaded) do
-            if name == 'minifugit' or name:match('^minifugit%.') then
-                package.loaded[name] = nil
-            end
-        end
+        helpers.reload_minifugit()
         status_window, restore_constructor = helpers.capture_status_windows()
         minifugit = require('minifugit').setup({
             status = { width = 0.4, min_width = 20 },
