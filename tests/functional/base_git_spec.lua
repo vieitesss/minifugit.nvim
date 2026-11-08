@@ -55,6 +55,26 @@ describe('base revision git API', function()
         }, repo)
     end
 
+    ---Write exact bytes: `helpers.write_file` always ends the file with a NL.
+    ---@param path string
+    ---@param contents string
+    local function write_raw(path, contents)
+        local file = assert(vim.uv.fs_open(path, 'w', 420))
+        assert(vim.uv.fs_write(file, contents, 0))
+        assert(vim.uv.fs_close(file))
+    end
+
+    ---@param entries GitStatusEntry[]
+    ---@param path string
+    ---@return GitStatusEntry?
+    local function entry_by_path(entries, path)
+        for _, entry in ipairs(entries) do
+            if entry.path == path then
+                return entry
+            end
+        end
+    end
+
     it(
         'collects tracked changes and non-ignored untracked files without duplicating staged additions',
         function()
@@ -389,6 +409,142 @@ describe('base revision git API', function()
         end
     )
 
+    it(
+        'keeps a cached deletion of a file without a final newline unchanged',
+        function()
+            write_raw(repo .. '/no-newline.txt', 'single line')
+            helpers.run({ 'git', 'add', 'no-newline.txt' }, repo)
+            helpers.run({ 'git', 'commit', '-m', 'add no-newline file' }, repo)
+            base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
+            helpers.run({ 'git', 'rm', '--cached', 'no-newline.txt' }, repo)
+
+            local entries, err = git.base_entries(base, repo)
+
+            assert.is_nil(err)
+            local entry = entry_by_path(entries, 'no-newline.txt')
+            assert.are.same(
+                { staged = ' ', unstaged = 'M', path = 'no-newline.txt' },
+                entry
+            )
+
+            local patch, patch_err = git.base_diff(entry, base, repo)
+
+            assert.is_nil(patch_err)
+            assert.are.same({}, patch)
+
+            local diff, split_err = git.base_split_diff(entry, base, repo)
+
+            assert.is_nil(split_err)
+            assert.are.same({ 'single line' }, diff.left.lines)
+            assert.are.same({ 'single line' }, diff.right.lines)
+        end
+    )
+
+    it(
+        'keeps a cached deletion of a CRLF file unchanged and still diffs an edit',
+        function()
+            local path = repo .. '/crlf.txt'
+            write_raw(path, 'first line\r\nsecond line\r\n')
+            helpers.run({ 'git', 'add', 'crlf.txt' }, repo)
+            helpers.run({ 'git', 'commit', '-m', 'add CRLF file' }, repo)
+            base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
+            helpers.run({ 'git', 'rm', '--cached', 'crlf.txt' }, repo)
+
+            local entries, err = git.base_entries(base, repo)
+
+            assert.is_nil(err)
+            local entry = entry_by_path(entries, 'crlf.txt')
+            assert.are.same(
+                { staged = ' ', unstaged = 'M', path = 'crlf.txt' },
+                entry
+            )
+
+            local patch, patch_err = git.base_diff(entry, base, repo)
+
+            assert.is_nil(patch_err)
+            assert.are.same({}, patch)
+
+            write_raw(path, 'first line\r\nchanged line\r\n')
+
+            patch, patch_err = git.base_diff(entry, base, repo)
+
+            assert.is_nil(patch_err)
+            helpers.assert_has_line_containing(patch, '-second line')
+            helpers.assert_has_line_containing(patch, '+changed line')
+        end
+    )
+
+    unix_it(
+        'quotes a cached deletion of a newline path in the patch header',
+        function()
+            local name = 'new\nline.txt'
+            local path = repo .. '/' .. name
+            write_raw(path, 'path content')
+            helpers.run({ 'git', 'add', '--', name }, repo)
+            helpers.run({ 'git', 'commit', '-m', 'add newline path' }, repo)
+            base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
+            helpers.run({ 'git', 'rm', '--cached', '--', name }, repo)
+            write_raw(path, 'edited content')
+
+            local entries, err = git.base_entries(base, repo)
+
+            assert.is_nil(err)
+            local entry = entry_by_path(entries, name)
+            assert.are.same(
+                { staged = ' ', unstaged = 'M', path = name },
+                entry
+            )
+
+            local patch, patch_err = git.base_diff(entry, base, repo)
+
+            assert.is_nil(patch_err)
+            assert.is_true(
+                vim.tbl_contains(
+                    patch,
+                    'diff --git "a/new\\nline.txt" "b/new\\nline.txt"'
+                )
+            )
+            helpers.assert_has_line_containing(patch, '+edited content')
+            for _, line in ipairs(patch) do
+                assert.is_nil(line:find('\n', 1, true))
+                assert.is_nil(line:find(repo, 1, true))
+            end
+        end
+    )
+
+    unix_it(
+        'keeps a cached deletion of an executable file unchanged',
+        function()
+            local path = repo .. '/script.sh'
+            write_raw(path, '#!/bin/sh\necho hi\n')
+            assert.is_true(vim.uv.fs_chmod(path, 493))
+            helpers.run({ 'git', 'add', 'script.sh' }, repo)
+            helpers.run({ 'git', 'commit', '-m', 'add script' }, repo)
+            base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
+            helpers.run({ 'git', 'rm', '--cached', 'script.sh' }, repo)
+
+            local entries, err = git.base_entries(base, repo)
+
+            assert.is_nil(err)
+            local entry = entry_by_path(entries, 'script.sh')
+            assert.are.same(
+                { staged = ' ', unstaged = 'M', path = 'script.sh' },
+                entry
+            )
+
+            local patch, patch_err = git.base_diff(entry, base, repo)
+
+            assert.is_nil(patch_err)
+            assert.are.same({}, patch)
+
+            local diff, split_err = git.base_split_diff(entry, base, repo)
+
+            assert.is_nil(split_err)
+            assert.are.same({ '#!/bin/sh', 'echo hi' }, diff.left.lines)
+            assert.are.same({ '#!/bin/sh', 'echo hi' }, diff.right.lines)
+        end
+    )
+
     unix_it(
         'reads a symlink target as the worktree side of base split previews',
         function()
@@ -413,6 +569,33 @@ describe('base revision git API', function()
             assert.is_nil(split_err)
             assert.are.same({ 'base text' }, diff.left.lines)
             assert.are.same({ 'target.txt' }, diff.right.lines)
+        end
+    )
+
+    unix_it(
+        'splits a newline-bearing symlink target into buffer-safe lines',
+        function()
+            helpers.write_file(repo .. '/target.txt', { 'target content' })
+            helpers.run({ 'git', 'add', 'target.txt' }, repo)
+            helpers.run({ 'git', 'commit', '-m', 'add target' }, repo)
+            base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
+            vim.fn.delete(repo .. '/tracked.txt')
+            assert.is_not_nil(
+                vim.uv.fs_symlink('missing\ntarget.txt', repo .. '/tracked.txt')
+            )
+
+            local entries, err = git.base_entries(base, repo)
+
+            assert.is_nil(err)
+            assert.are.same({
+                { staged = ' ', unstaged = 'T', path = 'tracked.txt' },
+            }, entries)
+
+            local diff, split_err = git.base_split_diff(entries[1], base, repo)
+
+            assert.is_nil(split_err)
+            assert.are.same({ 'base text' }, diff.left.lines)
+            assert.are.same({ 'missing', 'target.txt' }, diff.right.lines)
         end
     )
 
@@ -444,6 +627,31 @@ describe('base revision git API', function()
             )
         end
     )
+
+    it('reads the submodule HEAD after the parent root is pinned', function()
+        local sub_repo, first, second = create_sub_repo()
+        add_submodule('sub', sub_repo)
+        helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', first }, repo)
+        helpers.run({ 'git', 'add', '.' }, repo)
+        helpers.run({ 'git', 'commit', '-m', 'add submodule' }, repo)
+        base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
+        helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', second }, repo)
+
+        local root = git.root(repo)
+        assert.are.not_equal('', root)
+
+        local entries, err = git.base_entries(base, root)
+
+        assert.is_nil(err)
+        local entry = entry_by_path(entries, 'sub')
+        assert.are.same({ staged = ' ', unstaged = 'M', path = 'sub' }, entry)
+
+        local diff, split_err = git.base_split_diff(entry, base, root)
+
+        assert.is_nil(split_err)
+        assert.are.same({ 'Subproject commit ' .. first }, diff.left.lines)
+        assert.are.same({ 'Subproject commit ' .. second }, diff.right.lines)
+    end)
 
     it(
         'shows a placeholder for an unchecked-out submodule worktree side',

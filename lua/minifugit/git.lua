@@ -1167,10 +1167,12 @@ local function submodule_head(path, root)
         return nil
     end
 
-    local out = git.run(
-        { '-C', path, 'rev-parse', '--verify', 'HEAD' },
-        root_opts(root)
-    )
+    -- The parent root pins its own GIT_DIR/GIT_WORK_TREE, so `-C` must
+    -- discover the submodule repository instead of inheriting that pin.
+    local opts = root_opts(root)
+    opts.git_env = 'ignored'
+
+    local out = git.run({ '-C', path, 'rev-parse', '--verify', 'HEAD' }, opts)
 
     if out.exit_code ~= 0 then
         return nil
@@ -1244,7 +1246,8 @@ local function read_worktree_lines(path, root, gitlink)
             return {}, 'Cannot read file: ' .. tostring(readlink_err)
         end
 
-        return { target }, nil
+        -- A target may contain newlines, but buffer lines cannot.
+        return vim.split(target, '\n', { plain = true }), nil
     end
 
     if stat.type == 'directory' then
@@ -1604,8 +1607,7 @@ function git.diff(entry, section, root)
 end
 
 ---A path deleted from the index but still present in the worktree is
----untracked again, so `git diff <base>` reports only its deletion. Diff a
----temporary copy of the base blob against the worktree file instead.
+---untracked again, so `git diff <base>` reports only its deletion.
 ---@param path string
 ---@param root string?
 ---@return boolean
@@ -1619,63 +1621,6 @@ local function index_tracks(path, root)
     )
 
     return out.exit_code == 0
-end
-
----@param entry GitStatusEntry
----@param left_lines string[] Base blob contents.
----@param root string?
----@return string[]?
----@return string? error
-local function blob_to_worktree_patch(entry, left_lines, root)
-    root = root or git.root()
-
-    local worktree_path = vim.fs.normalize(
-        root ~= '' and vim.fs.joinpath(root, entry.path) or entry.path
-    )
-    local temp_path = vim.fs.normalize(vim.fn.tempname())
-    vim.fn.writefile(left_lines, temp_path)
-
-    local out = git.run({
-        'diff',
-        '--no-ext-diff',
-        '--no-index',
-        '--',
-        temp_path,
-        worktree_path,
-    }, root_opts(root))
-    vim.fn.delete(temp_path)
-
-    if out.exit_code > 1 then
-        return nil, return_result(out)
-    end
-
-    -- Git names the two files it was given; describe one change with the entry
-    -- path, like the other base diffs do.
-    local patch_path = '/' .. entry.path
-    local function rename(line)
-        if
-            not (
-                vim.startswith(line, 'diff --git ')
-                or vim.startswith(line, 'Binary files ')
-                or vim.startswith(line, '--- ')
-                or vim.startswith(line, '+++ ')
-            )
-        then
-            return line
-        end
-
-        line = line:gsub(vim.pesc(temp_path), function()
-            return patch_path
-        end)
-
-        return (
-            line:gsub(vim.pesc(worktree_path), function()
-                return patch_path
-            end)
-        )
-    end
-
-    return vim.tbl_map(rename, parse_diff(out.output)), nil
 end
 
 ---Unified preview from the pinned commit to the worktree.
@@ -1694,14 +1639,22 @@ function git.base_diff(entry, base, root)
     local path = entry.orig_path or entry.path
 
     if entry.unstaged == 'M' and not index_tracks(entry.path, root) then
-        local left_lines, left_err =
-            read_blob_lines({ rev = base, path = path }, root)
+        -- The worktree file is untracked after a cached deletion, so
+        -- `git diff <base>` only reports a deletion. Compare the base blob
+        -- with the worktree file directly: Git reads its bytes and mode.
+        local out = git.run({
+            'diff',
+            '--no-ext-diff',
+            base .. ':' .. path,
+            '--',
+            ':(literal)' .. entry.path,
+        }, root_opts(root))
 
-        if left_err ~= nil then
-            return {}, left_err
+        if out.exit_code ~= 0 then
+            return {}, return_result(out)
         end
 
-        return blob_to_worktree_patch(entry, left_lines, root)
+        return parse_diff(out.output), nil
     end
 
     local args = { 'diff', '--no-ext-diff', '-M', base, '--' }

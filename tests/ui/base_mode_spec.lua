@@ -184,6 +184,31 @@ describe('read-only base mode UI', function()
         )
     end)
 
+    unix_it(
+        'previews a newline-bearing symlink target in the split layout',
+        function()
+            assert.are.equal(0, vim.fn.delete(repo .. '/modified.txt'))
+            assert.is_not_nil(
+                vim.uv.fs_symlink(
+                    'missing\ntarget.txt',
+                    repo .. '/modified.txt'
+                )
+            )
+            minifugit.options.preview.diff_layout = 'split'
+            assert.is_true(minifugit.open({ base = base }))
+
+            local status = vim.api.nvim_get_current_buf()
+            select_entry(status, 'modified.txt')
+            keys('=')
+
+            local _, left = helpers.diff_win_named('Minifugit diff left')
+            local _, right = helpers.diff_win_named('Minifugit diff right')
+            assert.is_true(vim.tbl_contains(lines(left), 'base first'))
+            assert.is_true(vim.tbl_contains(lines(right), 'missing'))
+            assert.is_true(vim.tbl_contains(lines(right), 'target.txt'))
+        end
+    )
+
     unix_it('escapes newline paths in base split fallback warnings', function()
         local path = 'missing\nfile.txt'
         write(path, { 'original' })

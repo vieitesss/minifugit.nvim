@@ -169,6 +169,26 @@ describe('minifugit.git', function()
         end
     )
 
+    unix_it(
+        'splits a newline-bearing symlink target into buffer-safe lines',
+        function()
+            vim.fn.delete(vim.fs.joinpath(repo, 'tracked.txt'))
+            assert.is_not_nil(
+                vim.uv.fs_symlink(
+                    'missing\ntarget.txt',
+                    vim.fs.joinpath(repo, 'tracked.txt')
+                )
+            )
+            local entry = entry_by_path(git.status(), 'tracked.txt')
+
+            local split, err = git.split_diff(entry, 'unstaged', repo)
+
+            assert.is_nil(err)
+            assert.are.same({ 'one' }, split.left.lines)
+            assert.are.same({ 'missing', 'target.txt' }, split.right.lines)
+        end
+    )
+
     ---@param path string
     ---@param source string
     local function add_submodule(path, source)
@@ -210,6 +230,32 @@ describe('minifugit.git', function()
             local entry = entry_by_path(git.status(), 'sub')
 
             local split, err = git.split_diff(entry, 'unstaged', repo)
+
+            assert.is_nil(err)
+            assert.are.same({ 'Subproject commit ' .. first }, split.left.lines)
+            assert.are.same(
+                { 'Subproject commit ' .. second },
+                split.right.lines
+            )
+        end
+    )
+
+    it(
+        'reads the checked-out submodule HEAD after the root is pinned',
+        function()
+            local first, second = create_sub_repo()
+            add_submodule('sub', sub_repo)
+            helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', first }, repo)
+            helpers.run({ 'git', 'add', '.' }, repo)
+            helpers.run({ 'git', 'commit', '-m', 'add submodule' }, repo)
+            helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', second }, repo)
+
+            local root = git.root(repo)
+            assert.are.not_equal('', root)
+            local entry =
+                entry_by_path(git.status_snapshot(root).entries, 'sub')
+
+            local split, err = git.split_diff(entry, 'unstaged', root)
 
             assert.is_nil(err)
             assert.are.same({ 'Subproject commit ' .. first }, split.left.lines)
