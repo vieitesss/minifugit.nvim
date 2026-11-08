@@ -25,12 +25,15 @@ describe('minifugit.git', function()
     local repo
     ---@type string?
     local other_repo
+    ---@type string?
+    local sub_repo
     local original_git_dir
     local original_git_work_tree
 
     before_each(function()
         original_cwd = vim.fn.getcwd()
         other_repo = nil
+        sub_repo = nil
         original_git_dir = vim.env.GIT_DIR
         original_git_work_tree = vim.env.GIT_WORK_TREE
         repo = vim.fn.tempname()
@@ -59,6 +62,9 @@ describe('minifugit.git', function()
         end
         if other_repo ~= nil then
             vim.fn.delete(other_repo, 'rf')
+        end
+        if sub_repo ~= nil then
+            vim.fn.delete(sub_repo, 'rf')
         end
     end)
 
@@ -137,6 +143,105 @@ describe('minifugit.git', function()
             )
         end)
     end
+
+    -- Windows does not allow symlinks without extra privileges.
+    local unix_it = vim.fn.has('win32') == 1 and pending or it
+    unix_it(
+        'reads a symlink target as the worktree side of split previews',
+        function()
+            helpers.write_file(vim.fs.joinpath(repo, 'target.txt'), { 'one' })
+            helpers.run({ 'git', 'add', 'target.txt' }, repo)
+            helpers.run({ 'git', 'commit', '-m', 'add target' }, repo)
+            vim.fn.delete(vim.fs.joinpath(repo, 'tracked.txt'))
+            assert.is_not_nil(
+                vim.uv.fs_symlink(
+                    'target.txt',
+                    vim.fs.joinpath(repo, 'tracked.txt')
+                )
+            )
+            local entry = entry_by_path(git.status(), 'tracked.txt')
+
+            local split, err = git.split_diff(entry, 'unstaged', repo)
+
+            assert.is_nil(err)
+            assert.are.same({ 'one' }, split.left.lines)
+            assert.are.same({ 'target.txt' }, split.right.lines)
+        end
+    )
+
+    ---@param path string
+    ---@param source string
+    local function add_submodule(path, source)
+        helpers.run({
+            'git',
+            '-c',
+            'protocol.file.allow=always',
+            'submodule',
+            'add',
+            source,
+            path,
+        }, repo)
+    end
+
+    ---Create a submodule source repository with two commits.
+    ---@return string first
+    ---@return string second
+    local function create_sub_repo()
+        sub_repo, first =
+            helpers.create_repo({ ['sub.txt'] = { 'sub content' } })
+        helpers.run(
+            { 'git', 'commit', '--allow-empty', '-m', 'second' },
+            sub_repo
+        )
+        local second =
+            vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, sub_repo))
+        return first, second
+    end
+
+    it(
+        'previews a submodule split from the index commit id to its checked-out HEAD',
+        function()
+            local first, second = create_sub_repo()
+            add_submodule('sub', sub_repo)
+            helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', first }, repo)
+            helpers.run({ 'git', 'add', '.' }, repo)
+            helpers.run({ 'git', 'commit', '-m', 'add submodule' }, repo)
+            helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', second }, repo)
+            local entry = entry_by_path(git.status(), 'sub')
+
+            local split, err = git.split_diff(entry, 'unstaged', repo)
+
+            assert.is_nil(err)
+            assert.are.same({ 'Subproject commit ' .. first }, split.left.lines)
+            assert.are.same(
+                { 'Subproject commit ' .. second },
+                split.right.lines
+            )
+        end
+    )
+
+    it(
+        'previews a staged submodule split from HEAD to the index commit id',
+        function()
+            local first, second = create_sub_repo()
+            add_submodule('sub', sub_repo)
+            helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', first }, repo)
+            helpers.run({ 'git', 'add', '.' }, repo)
+            helpers.run({ 'git', 'commit', '-m', 'add submodule' }, repo)
+            helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', second }, repo)
+            helpers.run({ 'git', 'add', 'sub' }, repo)
+            local entry = entry_by_path(git.status(), 'sub')
+
+            local split, err = git.split_diff(entry, 'staged', repo)
+
+            assert.is_nil(err)
+            assert.are.same({ 'Subproject commit ' .. first }, split.left.lines)
+            assert.are.same(
+                { 'Subproject commit ' .. second },
+                split.right.lines
+            )
+        end
+    )
 
     for _, kind in ipairs({ 'stage', 'unstage', 'discard' }) do
         it('applies a ' .. kind .. ' hunk in an explicit root', function()

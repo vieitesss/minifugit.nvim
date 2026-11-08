@@ -135,6 +135,37 @@ describe('read-only base mode UI', function()
         end
     )
 
+    it(
+        'lists one modified row and previews it from the base after a cached deletion',
+        function()
+            run({ 'rm', '--cached', 'modified.txt' })
+            write(
+                'modified.txt',
+                { 'worktree first', 'base second', 'unchanged' }
+            )
+
+            assert.is_true(minifugit.open({ base = base }))
+
+            local status = vim.api.nvim_get_current_buf()
+            local text = lines(status)
+            helpers.assert_has_line_containing(
+                text,
+                'Changes since ' .. base:sub(1, 7) .. ' (1)'
+            )
+            assert.is_true(vim.tbl_contains(text, ' M modified.txt'))
+            for _, line in ipairs(text) do
+                assert.is_nil(line:find('??', 1, true))
+            end
+
+            select_entry(status, 'modified.txt')
+            keys('=')
+
+            local _, preview = helpers.diff_win_named('Minifugit diff')
+            assert.is_true(vim.tbl_contains(lines(preview), 'base first'))
+            assert.is_true(vim.tbl_contains(lines(preview), 'worktree first'))
+        end
+    )
+
     -- Windows does not allow control characters in file names.
     local unix_it = vim.fn.has('win32') == 1 and pending or it
     unix_it('escapes both newline paths in a base-mode rename', function()

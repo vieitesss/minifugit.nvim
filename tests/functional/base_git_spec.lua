@@ -6,18 +6,54 @@ describe('base revision git API', function()
     local repo
     local original_cwd
     local base
+    local extra_repos
 
     before_each(function()
         original_cwd = vim.fn.getcwd()
         repo, base = helpers.create_repo({
             ['tracked.txt'] = { 'base text' },
         })
+        extra_repos = {}
     end)
 
     after_each(function()
         vim.cmd.cd(original_cwd)
         vim.fn.delete(repo, 'rf')
+        for _, path in ipairs(extra_repos) do
+            vim.fn.delete(path, 'rf')
+        end
     end)
+
+    ---Create a submodule source repository with two commits.
+    ---@return string sub_repo
+    ---@return string first
+    ---@return string second
+    local function create_sub_repo()
+        local sub_repo, first =
+            helpers.create_repo({ ['sub.txt'] = { 'sub content' } })
+        helpers.run(
+            { 'git', 'commit', '--allow-empty', '-m', 'second' },
+            sub_repo
+        )
+        local second =
+            vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, sub_repo))
+        table.insert(extra_repos, sub_repo)
+        return sub_repo, first, second
+    end
+
+    ---@param path string
+    ---@param sub_repo string
+    local function add_submodule(path, sub_repo)
+        helpers.run({
+            'git',
+            '-c',
+            'protocol.file.allow=always',
+            'submodule',
+            'add',
+            sub_repo,
+            path,
+        }, repo)
+    end
 
     it(
         'collects tracked changes and non-ignored untracked files without duplicating staged additions',
@@ -304,6 +340,175 @@ describe('base revision git API', function()
                     git.base_diff(by_path['untracked.txt'], base, repo),
                     '+untracked content'
                 )
+            )
+        end
+    )
+
+    it(
+        'merges a cached deletion and its untracked file into one modified entry',
+        function()
+            helpers.run({ 'git', 'rm', '--cached', 'tracked.txt' }, repo)
+            helpers.write_file(repo .. '/tracked.txt', { 'worktree text' })
+
+            local entries, err = git.base_entries(base, repo)
+
+            assert.is_nil(err)
+            assert.are.same({
+                { staged = ' ', unstaged = 'M', path = 'tracked.txt' },
+            }, entries)
+        end
+    )
+
+    it(
+        'previews a merged cached deletion from the base blob to the worktree file',
+        function()
+            helpers.run({ 'git', 'rm', '--cached', 'tracked.txt' }, repo)
+            helpers.write_file(repo .. '/tracked.txt', { 'worktree text' })
+            local entries = select(1, git.base_entries(base, repo))
+            local entry = entries[1]
+
+            local patch, err = git.base_diff(entry, base, repo)
+
+            assert.is_nil(err)
+            helpers.assert_has_line_containing(patch, '-base text')
+            helpers.assert_has_line_containing(patch, '+worktree text')
+            assert.is_true(vim.tbl_contains(patch, '--- a/tracked.txt'))
+            assert.is_true(vim.tbl_contains(patch, '+++ b/tracked.txt'))
+            assert.is_true(
+                vim.tbl_contains(
+                    patch,
+                    'diff --git a/tracked.txt b/tracked.txt'
+                )
+            )
+
+            local diff, split_err = git.base_split_diff(entry, base, repo)
+
+            assert.is_nil(split_err)
+            assert.are.same({ 'base text' }, diff.left.lines)
+            assert.are.same({ 'worktree text' }, diff.right.lines)
+        end
+    )
+
+    unix_it(
+        'reads a symlink target as the worktree side of base split previews',
+        function()
+            helpers.write_file(repo .. '/target.txt', { 'target content' })
+            helpers.run({ 'git', 'add', 'target.txt' }, repo)
+            helpers.run({ 'git', 'commit', '-m', 'add target' }, repo)
+            base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
+            vim.fn.delete(repo .. '/tracked.txt')
+            assert.is_not_nil(
+                vim.uv.fs_symlink('target.txt', repo .. '/tracked.txt')
+            )
+
+            local entries, err = git.base_entries(base, repo)
+
+            assert.is_nil(err)
+            assert.are.same({
+                { staged = ' ', unstaged = 'T', path = 'tracked.txt' },
+            }, entries)
+
+            local diff, split_err = git.base_split_diff(entries[1], base, repo)
+
+            assert.is_nil(split_err)
+            assert.are.same({ 'base text' }, diff.left.lines)
+            assert.are.same({ 'target.txt' }, diff.right.lines)
+        end
+    )
+
+    it(
+        'previews a submodule from the base commit id to its checked-out HEAD',
+        function()
+            local sub_repo, first, second = create_sub_repo()
+            add_submodule('sub', sub_repo)
+            helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', first }, repo)
+            helpers.run({ 'git', 'add', '.' }, repo)
+            helpers.run({ 'git', 'commit', '-m', 'add submodule' }, repo)
+            base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
+            helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', second }, repo)
+
+            local entries, err = git.base_entries(base, repo)
+
+            assert.is_nil(err)
+            assert.are.same({
+                { staged = ' ', unstaged = 'M', path = 'sub' },
+            }, entries)
+
+            local diff, split_err = git.base_split_diff(entries[1], base, repo)
+
+            assert.is_nil(split_err)
+            assert.are.same({ 'Subproject commit ' .. first }, diff.left.lines)
+            assert.are.same(
+                { 'Subproject commit ' .. second },
+                diff.right.lines
+            )
+        end
+    )
+
+    it(
+        'shows a placeholder for an unchecked-out submodule worktree side',
+        function()
+            local sub_repo, first, second = create_sub_repo()
+            add_submodule('sub', sub_repo)
+            helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', first }, repo)
+            helpers.run({ 'git', 'add', '.' }, repo)
+            helpers.run({ 'git', 'commit', '-m', 'add submodule' }, repo)
+            base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
+            helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', second }, repo)
+            helpers.run({ 'git', 'add', 'sub' }, repo)
+            helpers.run(
+                { 'git', 'submodule', 'deinit', '-f', '--', 'sub' },
+                repo
+            )
+
+            local entries, err = git.base_entries(base, repo)
+
+            assert.is_nil(err)
+            assert.are.same(
+                { { staged = ' ', unstaged = 'M', path = 'sub' } },
+                entries
+            )
+
+            local diff, split_err = git.base_split_diff(entries[1], base, repo)
+
+            assert.is_nil(split_err)
+            assert.are.same({ 'Subproject commit ' .. first }, diff.left.lines)
+            assert.are.same(
+                { 'Subproject commit (not checked out)' },
+                diff.right.lines
+            )
+        end
+    )
+
+    it(
+        'previews a submodule added since the base from its worktree HEAD',
+        function()
+            local sub_repo, _, second = create_sub_repo()
+            add_submodule('sub', sub_repo)
+            helpers.run({ 'git', 'add', '.' }, repo)
+            helpers.run({ 'git', 'commit', '-m', 'add submodule' }, repo)
+
+            local entries, err = git.base_entries(base, repo)
+
+            assert.is_nil(err)
+            local entry
+            for _, candidate in ipairs(entries) do
+                if candidate.path == 'sub' then
+                    entry = candidate
+                end
+            end
+            assert.are.same(
+                { staged = ' ', unstaged = 'A', path = 'sub' },
+                entry
+            )
+
+            local diff, split_err = git.base_split_diff(entry, base, repo)
+
+            assert.is_nil(split_err)
+            assert.are.same({}, diff.left.lines)
+            assert.are.same(
+                { 'Subproject commit ' .. second },
+                diff.right.lines
             )
         end
     )

@@ -132,8 +132,11 @@ All options are optional:
   tree. The revision is resolved to a full commit hash once when opening; refresh
   keeps that commit pinned even if `HEAD` or a branch moves. The header shows its
   first seven characters and `read-only`. One `Changes since <short rev>` section
-  shows tracked `A`, `M`, `D`, and `R` changes, plus non-ignored untracked files
-  marked `??`. Renames show `old -> new`. Committed and uncommitted edits appear
+  shows tracked `A`, `M`, `D`, `R`, and `T` changes, plus non-ignored untracked
+  files marked `??`. Renames show `old -> new`. A `T` marks a type change, such
+  as a file replaced by a symlink or a submodule. A path removed from the index
+  with `git rm --cached` but still present in the working tree shows as one `M`
+  change from the base. Committed and uncommitted edits appear
   together in stacked and split previews. A rename or mode change without content
   changes previews as metadata in either layout. No unpushed-commits section is shown.
   Stage, unstage, discard, commit, push, and preview hunk actions only notify

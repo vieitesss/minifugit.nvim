@@ -4,6 +4,11 @@
 ---@field path string
 ---@field orig_path string?
 
+---A blob side of a split preview: a tree-ish (`''` for the index) and a path.
+---@class GitBlobRef
+---@field rev string
+---@field path string
+
 ---@class GitDiffSide
 ---@field title string
 ---@field lines string[]
@@ -646,6 +651,40 @@ function git.resolve_commit(base, root)
     return return_result(out), nil
 end
 
+---`git rm --cached` reports the path as deleted from the pinned commit while
+---the still-present worktree file is untracked. One modified entry describes
+---that single change: the base blob on the left, the worktree file on the right.
+---@param entries GitStatusEntry[]
+---@return GitStatusEntry[]
+local function merge_cached_deletions(entries)
+    local deleted = {}
+    local untracked = {}
+
+    for _, entry in ipairs(entries) do
+        if entry.unstaged == 'D' then
+            deleted[entry.path] = true
+        elseif entry.unstaged == '?' then
+            untracked[entry.path] = true
+        end
+    end
+
+    local merged = {}
+
+    for _, entry in ipairs(entries) do
+        if entry.unstaged == 'D' and untracked[entry.path] then
+            table.insert(merged, {
+                staged = entry.staged,
+                unstaged = 'M',
+                path = entry.path,
+            })
+        elseif not (entry.unstaged == '?' and deleted[entry.path]) then
+            table.insert(merged, entry)
+        end
+    end
+
+    return merged
+end
+
 ---Tracked changes from the pinned commit to the worktree, plus untracked files.
 ---@param base string Pinned commit hash.
 ---@param root string?
@@ -690,7 +729,7 @@ function git.base_entries(base, root)
         end
     end
 
-    return parse_status(table.concat(records)), nil
+    return merge_cached_deletions(parse_status(table.concat(records))), nil
 end
 
 ---@param entry GitStatusEntry
@@ -1118,21 +1157,108 @@ local function fs_stat_path(path, root)
     return vim.uv.fs_stat(vim.fs.normalize(full_path))
 end
 
+---The checked-out HEAD of a submodule working tree, or nil when it is not
+---initialized. An empty directory would otherwise find the parent repository.
 ---@param path string
 ---@param root string?
+---@return string? hash
+local function submodule_head(path, root)
+    if vim.uv.fs_lstat(vim.fs.joinpath(path, '.git')) == nil then
+        return nil
+    end
+
+    local out = git.run(
+        { '-C', path, 'rev-parse', '--verify', 'HEAD' },
+        root_opts(root)
+    )
+
+    if out.exit_code ~= 0 then
+        return nil
+    end
+
+    local hash = vim.trim(out.output)
+
+    return hash ~= '' and hash or nil
+end
+
+---The commit id of a submodule (gitlink) entry. It is a commit of the
+---submodule repository, so `git show` cannot read it here, but the tree or
+---index metadata that records it still resolves.
+---@param ref GitBlobRef
+---@param root string?
+---@return string? hash
+local function gitlink_commit(ref, root)
+    local opts = root_opts(root)
+    opts.text = false
+
+    local out
+    local pattern
+
+    if ref.rev == '' then
+        out = git.run(
+            { 'ls-files', '--stage', '-z', '--', ':(literal)' .. ref.path },
+            opts
+        )
+        pattern = '^(%d+) (%x+) %d+\t'
+    else
+        out = git.run(
+            { 'ls-tree', '-z', ref.rev, '--', ':(literal)' .. ref.path },
+            opts
+        )
+        pattern = '^(%d+) commit (%x+)\t'
+    end
+
+    if out.exit_code ~= 0 then
+        return nil
+    end
+
+    local mode, hash = out.output:match(pattern)
+
+    if mode ~= '160000' then
+        return nil
+    end
+
+    return hash
+end
+
+---@param path string
+---@param root string?
+---@param gitlink boolean? The other side is a submodule (gitlink).
 ---@return string[]
 ---@return string?
-local function read_worktree_lines(path, root)
+local function read_worktree_lines(path, root, gitlink)
     root = root or git.root()
 
     local full_path = root ~= '' and vim.fs.joinpath(root, path) or path
-    local stat = vim.uv.fs_stat(full_path)
+    local stat = vim.uv.fs_lstat(full_path)
 
     if stat == nil then
         return {}, 'Cannot stat file: ' .. full_path
     end
 
+    -- Git shows a symlink as its target path, not the contents it points to.
+    if stat.type == 'link' then
+        local target, readlink_err = vim.uv.fs_readlink(full_path)
+
+        if target == nil then
+            return {}, 'Cannot read file: ' .. tostring(readlink_err)
+        end
+
+        return { target }, nil
+    end
+
     if stat.type == 'directory' then
+        if not gitlink then
+            gitlink = gitlink_commit({ rev = '', path = path }, root) ~= nil
+        end
+
+        if gitlink then
+            local hash = submodule_head(full_path, root)
+
+            return { 'Subproject commit ' .. (hash or '(not checked out)') },
+                nil
+        end
+
         return {}, 'Diff preview is not available for directories'
     end
 
@@ -1145,14 +1271,22 @@ local function read_worktree_lines(path, root)
     return lines, nil
 end
 
----@param spec string
+---@param ref GitBlobRef
 ---@param root string?
 ---@return string[]
 ---@return string?
-local function read_blob_lines(spec, root)
+---@return string? kind `'blob'` or `'gitlink'`.
+local function read_blob_lines(ref, root)
+    local spec = (ref.rev ~= '' and ref.rev .. ':' or ':') .. ref.path
     local out = git.run({ 'show', spec }, root_opts(root))
 
     if out.exit_code ~= 0 then
+        local hash = gitlink_commit(ref, root)
+
+        if hash ~= nil then
+            return { 'Subproject commit ' .. hash }, nil, 'gitlink'
+        end
+
         return {}, return_result(out)
     end
 
@@ -1166,11 +1300,11 @@ local function read_blob_lines(spec, root)
         table.remove(lines)
     end
 
-    return lines, nil
+    return lines, nil, 'blob'
 end
 
 ---@param entry GitStatusEntry
----@param left_spec string
+---@param left_ref GitBlobRef
 ---@param left_title string
 ---@param root string?
 ---@param filetype string?
@@ -1178,23 +1312,25 @@ end
 ---@return string?
 local function blob_to_worktree_diff(
     entry,
-    left_spec,
+    left_ref,
     left_title,
     root,
     filetype
 )
     local left, right = {}, {}
     local err
+    local left_kind
 
     if entry.unstaged ~= 'A' then
-        left, err = read_blob_lines(left_spec, root)
+        left, err, left_kind = read_blob_lines(left_ref, root)
         if err ~= nil then
             return nil, err
         end
     end
 
     if entry.unstaged ~= 'D' then
-        right, err = read_worktree_lines(entry.path, root)
+        right, err =
+            read_worktree_lines(entry.path, root, left_kind == 'gitlink')
         if err ~= nil then
             return nil, err
         end
@@ -1252,7 +1388,7 @@ function git.split_diff(entry, section, root)
         local err
 
         if entry.staged ~= 'A' then
-            left, err = read_blob_lines('HEAD:' .. old_path, root)
+            left, err = read_blob_lines({ rev = 'HEAD', path = old_path }, root)
 
             if err ~= nil then
                 return nil, err
@@ -1262,7 +1398,7 @@ function git.split_diff(entry, section, root)
         local right = {}
 
         if entry.staged ~= 'D' then
-            right, err = read_blob_lines(':' .. entry.path, root)
+            right, err = read_blob_lines({ rev = '', path = entry.path }, root)
 
             if err ~= nil then
                 return nil, err
@@ -1288,7 +1424,7 @@ function git.split_diff(entry, section, root)
     if section == 'unstaged' then
         return blob_to_worktree_diff(
             entry,
-            ':' .. entry.path,
+            { rev = '', path = entry.path },
             'index:' .. entry.path,
             root,
             ft
@@ -1309,8 +1445,11 @@ function git.base_split_diff(entry, base, root)
         return git.split_diff(entry, 'untracked', root)
     end
 
-    local left_spec = base .. ':' .. (entry.orig_path or entry.path)
-    return blob_to_worktree_diff(entry, left_spec, left_spec, root)
+    local path = entry.orig_path or entry.path
+    local left_spec = base .. ':' .. path
+    local left_ref = { rev = base, path = path }
+
+    return blob_to_worktree_diff(entry, left_ref, left_spec, root)
 end
 
 ---@param commit GitCommit
@@ -1464,6 +1603,81 @@ function git.diff(entry, section, root)
     return parse_diff(out.output)
 end
 
+---A path deleted from the index but still present in the worktree is
+---untracked again, so `git diff <base>` reports only its deletion. Diff a
+---temporary copy of the base blob against the worktree file instead.
+---@param path string
+---@param root string?
+---@return boolean
+local function index_tracks(path, root)
+    local opts = root_opts(root)
+    opts.text = false
+
+    local out = git.run(
+        { 'ls-files', '--error-unmatch', '-z', '--', ':(literal)' .. path },
+        opts
+    )
+
+    return out.exit_code == 0
+end
+
+---@param entry GitStatusEntry
+---@param left_lines string[] Base blob contents.
+---@param root string?
+---@return string[]?
+---@return string? error
+local function blob_to_worktree_patch(entry, left_lines, root)
+    root = root or git.root()
+
+    local worktree_path = vim.fs.normalize(
+        root ~= '' and vim.fs.joinpath(root, entry.path) or entry.path
+    )
+    local temp_path = vim.fs.normalize(vim.fn.tempname())
+    vim.fn.writefile(left_lines, temp_path)
+
+    local out = git.run({
+        'diff',
+        '--no-ext-diff',
+        '--no-index',
+        '--',
+        temp_path,
+        worktree_path,
+    }, root_opts(root))
+    vim.fn.delete(temp_path)
+
+    if out.exit_code > 1 then
+        return nil, return_result(out)
+    end
+
+    -- Git names the two files it was given; describe one change with the entry
+    -- path, like the other base diffs do.
+    local patch_path = '/' .. entry.path
+    local function rename(line)
+        if
+            not (
+                vim.startswith(line, 'diff --git ')
+                or vim.startswith(line, 'Binary files ')
+                or vim.startswith(line, '--- ')
+                or vim.startswith(line, '+++ ')
+            )
+        then
+            return line
+        end
+
+        line = line:gsub(vim.pesc(temp_path), function()
+            return patch_path
+        end)
+
+        return (
+            line:gsub(vim.pesc(worktree_path), function()
+                return patch_path
+            end)
+        )
+    end
+
+    return vim.tbl_map(rename, parse_diff(out.output)), nil
+end
+
 ---Unified preview from the pinned commit to the worktree.
 ---@param entry GitStatusEntry
 ---@param base string Pinned commit hash.
@@ -1473,6 +1687,21 @@ end
 function git.base_diff(entry, base, root)
     if entry.unstaged == '?' then
         return git.diff(entry, 'untracked', root)
+    end
+
+    root = root or git.root()
+
+    local path = entry.orig_path or entry.path
+
+    if entry.unstaged == 'M' and not index_tracks(entry.path, root) then
+        local left_lines, left_err =
+            read_blob_lines({ rev = base, path = path }, root)
+
+        if left_err ~= nil then
+            return {}, left_err
+        end
+
+        return blob_to_worktree_patch(entry, left_lines, root)
     end
 
     local args = { 'diff', '--no-ext-diff', '-M', base, '--' }
