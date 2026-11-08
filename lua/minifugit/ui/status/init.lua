@@ -41,6 +41,8 @@ local git = require('minifugit.git')
 ---@field loading_message string?
 ---@field loading_frame integer
 ---@field loading_timer uv.uv_timer_t?
+---@field auto_refresh_timer uv.uv_timer_t?
+---@field auto_refresh_token integer Run token of the newest focus debounce.
 ---@field autocmd_group integer?
 ---@field on_close_callbacks (fun())[]
 ---@field on_close_windows table<integer, boolean>
@@ -57,6 +59,7 @@ local OWNED_BUFFER_FIELDS = {
 local DIFF_HEADER_GROUP = 'MiniFugitDiffHeader'
 local DIFF_HUNK_HEADER_GROUP = 'MiniFugitDiffHunkHeader'
 local SPINNER_FRAMES = { '-', '\\', '|', '/' }
+local AUTO_REFRESH_DEBOUNCE_MS = 200
 
 local HIGHLIGHT_SPECS = {
     staged = {
@@ -403,6 +406,102 @@ local function notify_closed(self)
     end)
 end
 
+---Stop a pending auto-refresh so a manual refresh takes precedence. The run
+---token also voids a debounce that already fired but has not run its refresh.
+---@param self GitStatusWindow
+local function cancel_auto_refresh(self)
+    self.auto_refresh_token = self.auto_refresh_token + 1
+
+    if self.auto_refresh_timer ~= nil then
+        self.auto_refresh_timer:stop()
+    end
+end
+
+---@param self GitStatusWindow
+local function close_auto_refresh_timer(self)
+    local timer = self.auto_refresh_timer
+
+    if timer == nil then
+        return
+    end
+
+    self.auto_refresh_timer = nil
+    timer:stop()
+
+    if not timer:is_closing() then
+        timer:close()
+    end
+end
+
+---Whether the status buffer is shown in a window of the current tabpage.
+---Hidden windows and windows of other tabpages do not auto-refresh.
+---@param self GitStatusWindow
+---@return boolean
+local function visible_in_current_tab(self)
+    if self.buf == nil or not self.buf:is_valid() then
+        return false
+    end
+
+    local tabpage = vim.api.nvim_get_current_tabpage()
+
+    for _, win in ipairs(vim.fn.win_findbuf(self.buf.id)) do
+        if vim.api.nvim_win_get_tabpage(win) == tabpage then
+            return true
+        end
+    end
+
+    return false
+end
+
+---Refresh once unless the window is gone, its buffer is not visible in the
+---current tabpage, or an operation spinner is running.
+---@param self GitStatusWindow
+---@return boolean refreshed
+local function auto_refresh(self)
+    if not visible_in_current_tab(self) then
+        return false
+    end
+
+    if self.loading_message ~= nil then
+        return false
+    end
+
+    return self:refresh()
+end
+
+---Start, restart, or coalesce the focus debounce. A burst of focus events
+---restarts one timer, so it refreshes once when the burst settles.
+---@param self GitStatusWindow
+local function schedule_auto_refresh(self)
+    local timer = self.auto_refresh_timer
+
+    if timer == nil then
+        timer = vim.uv.new_timer()
+
+        if timer == nil then
+            log.error('Cannot create the auto-refresh timer')
+            return
+        end
+
+        self.auto_refresh_timer = timer
+    end
+
+    self.auto_refresh_token = self.auto_refresh_token + 1
+    local token = self.auto_refresh_token
+
+    timer:start(
+        AUTO_REFRESH_DEBOUNCE_MS,
+        0,
+        vim.schedule_wrap(function()
+            if token ~= self.auto_refresh_token then
+                return
+            end
+
+            auto_refresh(self)
+        end)
+    )
+end
+
 ---@param self GitStatusWindow
 local function ensure_autocmds(self)
     if self.autocmd_group ~= nil then
@@ -491,6 +590,15 @@ local function ensure_autocmds(self)
     })
 
     status_tab.install_autocmds(self)
+
+    if self.options.status.auto_refresh ~= false then
+        vim.api.nvim_create_autocmd('FocusGained', {
+            group = self.autocmd_group,
+            callback = function()
+                schedule_auto_refresh(self)
+            end,
+        })
+    end
 end
 
 function GitStatusWindow:show()
@@ -571,6 +679,7 @@ end
 ---@param state? GitStatusCursorState
 ---@return boolean
 function GitStatusWindow:refresh(state)
+    cancel_auto_refresh(self)
     state = state or self:capture_cursor_state()
 
     self:read_snapshot(state)
@@ -685,6 +794,8 @@ function GitStatusWindow:close()
     -- Drop in-flight read results: a closed window must not render them.
     self.read_generation = self.read_generation + 1
     self.reading = false
+    cancel_auto_refresh(self)
+    close_auto_refresh_timer(self)
     self:stop_loading()
     help.close(self)
 
@@ -953,6 +1064,7 @@ function GitStatusWindow.new(opts, root, base, reused_tab)
     self.loading_frame = 1
     self.read_generation = 0
     self.reading = false
+    self.auto_refresh_token = 0
     self.target_win = vim.api.nvim_get_current_win()
     status_tab.setup_state(self)
 

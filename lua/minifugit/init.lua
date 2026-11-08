@@ -9,6 +9,7 @@
 ---@field width number
 ---@field min_width integer
 ---@field open_in_tab boolean
+---@field auto_refresh boolean
 
 ---@class MinifugitOptions
 ---@field preview MinifugitPreviewOptions
@@ -26,6 +27,7 @@ local defaults = {
         width = 0.4,
         min_width = 20,
         open_in_tab = false,
+        auto_refresh = true,
     },
 }
 
@@ -113,6 +115,12 @@ local function validate_options(opts)
         vim.validate(
             'opts.status.open_in_tab',
             opts.status.open_in_tab,
+            'boolean',
+            true
+        )
+        vim.validate(
+            'opts.status.auto_refresh',
+            opts.status.auto_refresh,
             'boolean',
             true
         )

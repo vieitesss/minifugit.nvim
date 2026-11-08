@@ -22,6 +22,9 @@ without leaving Neovim.
 - Animated loading spinner while pushing your commits.
 - Non-blocking git reads: the status window and the diff preview load in the
   background, so the editor keeps responding on large repositories.
+- Refresh the status window automatically when you return focus to Neovim, so
+  Git changes made elsewhere show up without pressing `r`. Disable it with
+  `status.auto_refresh = false`.
 - View unpushed commits in the status window and preview the diffs.
 - Run `:checkhealth minifugit` to verify Neovim and Git requirements.
 
@@ -83,6 +86,9 @@ vim.g.minifugit = {
 
         -- Open the minifugit workflow in a dedicated tab.
         open_in_tab = false,
+
+        -- Refresh the status window when Neovim regains focus.
+        auto_refresh = true,
     },
 }
 ```
@@ -190,6 +196,13 @@ whose status window cannot be reused, the new window opens in its own tab.
 The status header shows the pinned repository root. Changing cwd does not
 redirect an open window's actions; close and reopen status in another repository
 to switch repositories.
+
+Returning focus to Neovim refreshes the visible status window of the current
+tabpage after a short debounce, so a burst of focus events causes one read. The
+refresh keeps the cursor, the filter, and the preview, and it is skipped while a
+push spinner runs; a manual `r` cancels a pending auto-refresh. Hidden windows
+and windows in other tabpages are left alone. Set `status.auto_refresh = false`
+to disable it.
 
 Default status-window mappings:
 
