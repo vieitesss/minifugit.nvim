@@ -295,16 +295,18 @@ function git.root(cwd)
 
     roots_by_context[key] = nil
 
+    -- Read the path byte for byte: text mode and `return_result()` would
+    -- rewrite or trim carriage returns that belong to the directory name.
     local out = git.run(
         { 'rev-parse', '--show-toplevel' },
-        { cwd = cwd, ignore_error = true }
+        { cwd = cwd, ignore_error = true, text = false }
     )
 
     if out.exit_code ~= 0 then
         return ''
     end
 
-    local root = return_result(out)
+    local root = out.output:gsub('\n$', '')
     roots_by_context[key] = root
 
     return root

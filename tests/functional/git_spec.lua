@@ -503,6 +503,20 @@ describe('minifugit.git', function()
         }, git.status())
     end)
 
+    unix_it('finds roots whose paths contain carriage returns', function()
+        local parent = vim.fn.tempname()
+
+        for _, name in ipairs({ 'repo\r\npath', 'repo\r' }) do
+            local dir = vim.fs.joinpath(parent, name)
+            vim.fn.mkdir(dir, 'p')
+            helpers.run({ 'git', 'init', '-b', 'main' }, dir)
+
+            assert.are.equal(vim.fn.resolve(dir), vim.fn.resolve(git.root(dir)))
+        end
+
+        vim.fn.delete(parent, 'rf')
+    end)
+
     unix_it('normalizes text by default but preserves raw -z output', function()
         helpers.run({ 'git', 'config', 'core.autocrlf', 'false' }, repo)
         helpers.write_file(repo .. '/tracked.txt', { 'one\r', 'two\r' })
