@@ -14,6 +14,7 @@
 - **Status registry**: Per-entrypoint ownership of one status instance per tabpage, including migration and owned-tab re-selection.
 - **Status item**: A selectable status entry together with its section, or an unpushed commit.
 - **Status document**: Rendered status lines plus the stable row identities they carry for one status snapshot.
+- **Conflict**: A status entry whose index still holds merge stages instead of one staged version; it stays a conflict until the user stages a resolution. Git calls these paths "unmerged".
 
 ## Commands
 - Test: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedDirectory tests { minimal_init = 'tests/minimal_init.lua' }"`

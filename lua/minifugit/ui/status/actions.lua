@@ -4,6 +4,68 @@ local Buffer = require('minifugit.ui.buffer')
 
 local M = {}
 
+-- Unstaging or discarding a conflict would drop its merge stages, so those
+-- actions refuse and point at the only supported resolution path.
+local CONFLICT_REFUSAL =
+    'Resolve the conflict in the file, then stage it with `s`'
+
+---@param items GitStatusEntryItem[]
+---@return boolean
+local function refuse_conflicts(items)
+    for _, item in ipairs(items) do
+        if item.section == 'conflicts' then
+            common.notify_warn(CONFLICT_REFUSAL)
+            return true
+        end
+    end
+
+    return false
+end
+
+---@param path string
+---@return boolean
+local function has_conflict_markers(path)
+    local file = io.open(path, 'rb')
+
+    if file == nil then
+        return false
+    end
+
+    for line in file:lines() do
+        if line:match('^<<<<<<< ') or line:match('^>>>>>>> ') then
+            file:close()
+            return true
+        end
+    end
+
+    file:close()
+    return false
+end
+
+---Warn about staged conflicts whose files still hold conflict markers.
+---@param items GitStatusEntryItem[]
+---@param root string
+local function warn_conflict_markers(items, root)
+    local paths = {}
+
+    for _, item in ipairs(items) do
+        if
+            item.section == 'conflicts'
+            and has_conflict_markers(vim.fs.joinpath(root, item.entry.path))
+        then
+            table.insert(paths, vim.fn.strtrans(item.entry.path))
+        end
+    end
+
+    if #paths > 0 then
+        common.notify_warn(
+            table.concat(paths, ', ')
+                .. (#paths == 1 and ' still contains' or ' still contain')
+                .. ' conflict markers'
+        )
+    end
+end
+
 local function stop_visual_mode()
     local mode = vim.fn.mode()
 
@@ -132,6 +194,10 @@ function M.update_entry_items(self, action, items, kind)
 
     stop_visual_mode()
 
+    if kind == 'unstage' and refuse_conflicts(items) then
+        return false
+    end
+
     local entries = entries_for_action(items, kind)
 
     if #entries == 0 then
@@ -142,7 +208,13 @@ function M.update_entry_items(self, action, items, kind)
         return false
     end
 
-    return M.update_entries(self, action, entries)
+    local updated = M.update_entries(self, action, entries)
+
+    if updated and kind == 'stage' then
+        warn_conflict_markers(items, self.root)
+    end
+
+    return updated
 end
 
 ---@param self GitStatusWindow
@@ -203,13 +275,25 @@ function M.stage_all_entries(self)
         return false
     end
 
-    return M.update_entries(self, git.stage_entries, self:all_entries())
+    local items = self.document:entries()
+    local updated =
+        M.update_entries(self, git.stage_entries, self:all_entries())
+
+    if updated then
+        warn_conflict_markers(items, self.root)
+    end
+
+    return updated
 end
 
 ---@param self GitStatusWindow
 ---@return boolean
 function M.unstage_all_entries(self)
     if self:reject_read_only() then
+        return false
+    end
+
+    if refuse_conflicts(self.document:entries()) then
         return false
     end
 
@@ -259,6 +343,10 @@ function M.discard_entry(self, force)
 
     if item == nil then
         common.notify_warn('No git status entry under cursor')
+        return false
+    end
+
+    if refuse_conflicts({ item }) then
         return false
     end
 
