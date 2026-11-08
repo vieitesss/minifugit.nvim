@@ -2,7 +2,12 @@
 ---@field assert_has_line_containing fun(lines: string[], expected: string)
 ---@field run fun(args: string[], cwd: string): string
 ---@field write_file fun(path: string, lines: string[])
+---@field write_raw fun(path: string, contents: string)
+---@field entry_by_path fun(entries: GitStatusEntry[], path: string): GitStatusEntry?
 ---@field create_repo fun(files: table<string, string[]>): string, string
+---@field create_sub_repo fun(): string, string, string
+---@field add_submodule fun(repo: string, path: string, source: string)
+---@field record_submodule fun(repo: string, path: string, source: string, commit: string)
 ---@field clone_repo_with_changed_file fun(repo: string, path: string, lines: string[]): string
 ---@field change_to_other_repo fun(repo: string): string
 ---@field capture_status_windows fun(): fun(): GitStatusWindow?, fun()
@@ -52,6 +57,26 @@ local M = {
         vim.fn.mkdir(vim.fs.dirname(path), 'p')
         vim.fn.writefile(lines, path)
     end,
+
+    ---Write exact bytes: `write_file` always ends the file with a newline.
+    ---@param path string
+    ---@param contents string
+    write_raw = function(path, contents)
+        local file = assert(vim.uv.fs_open(path, 'w', 420))
+        assert(vim.uv.fs_write(file, contents, 0))
+        assert(vim.uv.fs_close(file))
+    end,
+
+    ---@param entries GitStatusEntry[]
+    ---@param path string
+    ---@return GitStatusEntry?
+    entry_by_path = function(entries, path)
+        for _, entry in ipairs(entries) do
+            if entry.path == path then
+                return entry
+            end
+        end
+    end,
 }
 
 ---Create a temporary repository with a base commit containing the given files.
@@ -70,6 +95,46 @@ function M.create_repo(files)
     M.run({ 'git', 'add', '.' }, repo)
     M.run({ 'git', 'commit', '-m', 'base' }, repo)
     return repo, vim.trim(M.run({ 'git', 'rev-parse', 'HEAD' }, repo))
+end
+
+---Create a submodule source repository with two commits.
+---@return string repo The caller owns cleanup and cwd changes.
+---@return string first Full hash of the initial commit.
+---@return string second Full hash of the empty second commit.
+function M.create_sub_repo()
+    local repo, first = M.create_repo({ ['sub.txt'] = { 'sub content' } })
+    M.run({ 'git', 'commit', '--allow-empty', '-m', 'second' }, repo)
+    local second = vim.trim(M.run({ 'git', 'rev-parse', 'HEAD' }, repo))
+
+    return repo, first, second
+end
+
+---Add `source` as a submodule of `repo` at `path`.
+---@param repo string
+---@param path string
+---@param source string
+function M.add_submodule(repo, path, source)
+    M.run({
+        'git',
+        '-c',
+        'protocol.file.allow=always',
+        'submodule',
+        'add',
+        source,
+        path,
+    }, repo)
+end
+
+---Add `source` as a submodule recording `commit`, and commit it in `repo`.
+---@param repo string Parent repository.
+---@param path string Submodule path relative to `repo`.
+---@param source string Submodule source repository.
+---@param commit string Submodule commit the parent records.
+function M.record_submodule(repo, path, source, commit)
+    M.add_submodule(repo, path, source)
+    M.run({ 'git', '-C', path, 'checkout', '-q', commit }, repo)
+    M.run({ 'git', 'add', '.' }, repo)
+    M.run({ 'git', 'commit', '-m', 'add submodule' }, repo)
 end
 
 ---@param repo string

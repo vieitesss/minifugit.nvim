@@ -194,50 +194,33 @@ end
 ---@type table<string, table<string, string>>
 local pinned_env_by_root = {}
 
+---Environment and text mode for a git child.
+---@param git_env string? `'ignored'` hides the editor's `GIT_DIR` and
+---  `GIT_WORK_TREE`; `'inherited'` keeps them; nil uses the environment
+---  pinned for `cwd`.
 ---@param cwd string
----@return table<string, string>?
-local function pinned_env(cwd)
-    return pinned_env_by_root[vim.fs.normalize(cwd)]
-end
-
----Environment for a child that must not see the editor's Git discovery
----variables. `clear_env` removes them, so they must be absent instead of
----overridden with another value.
----@return table<string, string>
-local function environ_without_git_discovery()
-    local env = vim.fn.environ()
-    env.GIT_DIR = nil
-    env.GIT_WORK_TREE = nil
-
-    return env
-end
-
----@param opts {text: boolean?, git_env: string?} `git_env` is `'ignored'`
----  or `'inherited'`; nil uses the environment pinned for `cwd`.
----@param cwd string
----@param text boolean? Overrides `opts.text`.
+---@param text boolean
 ---@return table
-local function child_opts(opts, cwd, text)
-    if text == nil then
-        text = opts.text ~= false
-    end
-
-    if opts.git_env == 'ignored' then
+local function child_opts(git_env, cwd, text)
+    if git_env == 'ignored' then
         -- `clear_env` removes the variables; a merged `env` could only replace
         -- them, and GIT_DIR set to another value still redirects the call.
-        return {
-            text = text,
-            cwd = cwd,
-            env = environ_without_git_discovery(),
-            clear_env = true,
-        }
+        local env = vim.fn.environ()
+        env.GIT_DIR = nil
+        env.GIT_WORK_TREE = nil
+
+        return { text = text, cwd = cwd, env = env, clear_env = true }
     end
 
-    if opts.git_env == 'inherited' then
+    if git_env == 'inherited' then
         return { text = text, cwd = cwd }
     end
 
-    return { text = text, cwd = cwd, env = pinned_env(cwd) }
+    return {
+        text = text,
+        cwd = cwd,
+        env = pinned_env_by_root[vim.fs.normalize(cwd)],
+    }
 end
 
 ---Executes a git command and returns the result.
@@ -262,7 +245,8 @@ function git.run(args, opts)
     local cmd = git_command(args)
     local cwd = opts.cwd or vim.fn.getcwd()
 
-    local job = vim.system(cmd, child_opts(opts, cwd))
+    local job =
+        vim.system(cmd, child_opts(opts.git_env, cwd, opts.text ~= false))
     local res = normalize_result(job:wait())
 
     log_result(cmd, res, opts.ignore_error)
@@ -285,7 +269,7 @@ function git.run_async(args, opts, callback)
     local cmd = git_command(args)
     local cwd = opts.cwd or vim.fn.getcwd()
 
-    vim.system(cmd, child_opts(opts, cwd, true), function(result)
+    vim.system(cmd, child_opts(opts.git_env, cwd, true), function(result)
         vim.schedule(function()
             local res = normalize_result(result)
 
@@ -311,47 +295,43 @@ end
 ---@type table<string, string>
 local roots_by_context = {}
 
+---Read a `rev-parse` value byte for byte: text mode and `return_result()`
+---would rewrite or trim carriage returns that belong to a path.
+---@param arg string
+---@param cwd string
+---@param ignore_env boolean Ignore the editor's Git discovery variables.
+---@return string? value nil when `git rev-parse` fails
+local function rev_parse_value(arg, cwd, ignore_env)
+    local out = git.run({ 'rev-parse', arg }, {
+        cwd = cwd,
+        ignore_error = true,
+        text = false,
+        git_env = ignore_env and 'ignored' or 'inherited',
+    })
+
+    if out.exit_code ~= 0 then
+        return nil
+    end
+
+    return out.output:gsub('\n$', '')
+end
+
 ---Pin the absolute Git environment of `root` for its later calls.
 ---@param root string
 ---@param cwd string Directory the discovery ran in; relative values resolve
 ---  against it, as they did during discovery.
 ---@param ignore_env boolean
 local function pin_env(root, cwd, ignore_env)
-    local out = git.run({ 'rev-parse', '--absolute-git-dir' }, {
-        cwd = cwd,
-        ignore_error = true,
-        text = false,
-        git_env = ignore_env and 'ignored' or 'inherited',
-    })
+    local git_dir = rev_parse_value('--absolute-git-dir', cwd, ignore_env)
 
-    if out.exit_code ~= 0 then
+    if git_dir == nil then
         return
     end
 
     pinned_env_by_root[vim.fs.normalize(root)] = {
-        GIT_DIR = out.output:gsub('\n$', ''),
+        GIT_DIR = git_dir,
         GIT_WORK_TREE = root,
     }
-end
-
----Read the toplevel byte for byte: text mode and `return_result()` would
----rewrite or trim carriage returns that belong to the directory name.
----@param cwd string
----@param ignore_env boolean Ignore the editor's Git discovery variables.
----@return string root '' when no repository is found
-local function discover_root(cwd, ignore_env)
-    local out = git.run({ 'rev-parse', '--show-toplevel' }, {
-        cwd = cwd,
-        ignore_error = true,
-        text = false,
-        git_env = ignore_env and 'ignored' or 'inherited',
-    })
-
-    if out.exit_code ~= 0 then
-        return ''
-    end
-
-    return out.output:gsub('\n$', '')
 end
 
 ---Repository root of `cwd`, or of the current cwd when omitted.
@@ -405,7 +385,7 @@ function git.root(cwd)
 
     roots_by_context[key] = nil
 
-    local root = discover_root(cwd, ignore_env)
+    local root = rev_parse_value('--show-toplevel', cwd, ignore_env) or ''
     if root == '' then
         return ''
     end
@@ -1225,7 +1205,8 @@ end
 
 ---@param path string
 ---@param root string?
----@param gitlink boolean? The other side is a submodule (gitlink).
+---@param gitlink boolean? The other side is a submodule (gitlink); nil asks
+---  the index.
 ---@return string[]
 ---@return string?
 local function read_worktree_lines(path, root, gitlink)
@@ -1278,7 +1259,7 @@ end
 ---@param root string?
 ---@return string[]
 ---@return string?
----@return string? kind `'blob'` or `'gitlink'`.
+---@return boolean? gitlink Whether the ref is a submodule (gitlink) commit.
 local function read_blob_lines(ref, root)
     local spec = (ref.rev ~= '' and ref.rev .. ':' or ':') .. ref.path
     local out = git.run({ 'show', spec }, root_opts(root))
@@ -1287,7 +1268,7 @@ local function read_blob_lines(ref, root)
         local hash = gitlink_commit(ref, root)
 
         if hash ~= nil then
-            return { 'Subproject commit ' .. hash }, nil, 'gitlink'
+            return { 'Subproject commit ' .. hash }, nil, true
         end
 
         return {}, return_result(out)
@@ -1303,7 +1284,7 @@ local function read_blob_lines(ref, root)
         table.remove(lines)
     end
 
-    return lines, nil, 'blob'
+    return lines, nil
 end
 
 ---@param entry GitStatusEntry
@@ -1322,18 +1303,17 @@ local function blob_to_worktree_diff(
 )
     local left, right = {}, {}
     local err
-    local left_kind
+    local left_gitlink
 
     if entry.unstaged ~= 'A' then
-        left, err, left_kind = read_blob_lines(left_ref, root)
+        left, err, left_gitlink = read_blob_lines(left_ref, root)
         if err ~= nil then
             return nil, err
         end
     end
 
     if entry.unstaged ~= 'D' then
-        right, err =
-            read_worktree_lines(entry.path, root, left_kind == 'gitlink')
+        right, err = read_worktree_lines(entry.path, root, left_gitlink)
         if err ~= nil then
             return nil, err
         end
@@ -1636,33 +1616,29 @@ function git.base_diff(entry, base, root)
 
     root = root or git.root()
 
-    local path = entry.orig_path or entry.path
+    local args
 
     if entry.unstaged == 'M' and not index_tracks(entry.path, root) then
         -- The worktree file is untracked after a cached deletion, so
         -- `git diff <base>` only reports a deletion. Compare the base blob
         -- with the worktree file directly: Git reads its bytes and mode.
-        local out = git.run({
+        args = {
             'diff',
             '--no-ext-diff',
-            base .. ':' .. path,
+            base .. ':' .. (entry.orig_path or entry.path),
             '--',
             ':(literal)' .. entry.path,
-        }, root_opts(root))
-
-        if out.exit_code ~= 0 then
-            return {}, return_result(out)
-        end
-
-        return parse_diff(out.output), nil
+        }
+    else
+        args = { 'diff', '--no-ext-diff', '-M', base, '--' }
+        vim.list_extend(args, entry_pathspecs(entry))
     end
 
-    local args = { 'diff', '--no-ext-diff', '-M', base, '--' }
-    vim.list_extend(args, entry_pathspecs(entry))
     local out = git.run(args, root_opts(root))
     if out.exit_code ~= 0 then
         return {}, return_result(out)
     end
+
     return parse_diff(out.output), nil
 end
 

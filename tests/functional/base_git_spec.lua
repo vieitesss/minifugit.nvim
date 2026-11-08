@@ -24,55 +24,14 @@ describe('base revision git API', function()
         end
     end)
 
-    ---Create a submodule source repository with two commits.
+    ---Create a submodule source repository; `after_each` deletes it.
     ---@return string sub_repo
     ---@return string first
     ---@return string second
     local function create_sub_repo()
-        local sub_repo, first =
-            helpers.create_repo({ ['sub.txt'] = { 'sub content' } })
-        helpers.run(
-            { 'git', 'commit', '--allow-empty', '-m', 'second' },
-            sub_repo
-        )
-        local second =
-            vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, sub_repo))
-        table.insert(extra_repos, sub_repo)
-        return sub_repo, first, second
-    end
-
-    ---@param path string
-    ---@param sub_repo string
-    local function add_submodule(path, sub_repo)
-        helpers.run({
-            'git',
-            '-c',
-            'protocol.file.allow=always',
-            'submodule',
-            'add',
-            sub_repo,
-            path,
-        }, repo)
-    end
-
-    ---Write exact bytes: `helpers.write_file` always ends the file with a NL.
-    ---@param path string
-    ---@param contents string
-    local function write_raw(path, contents)
-        local file = assert(vim.uv.fs_open(path, 'w', 420))
-        assert(vim.uv.fs_write(file, contents, 0))
-        assert(vim.uv.fs_close(file))
-    end
-
-    ---@param entries GitStatusEntry[]
-    ---@param path string
-    ---@return GitStatusEntry?
-    local function entry_by_path(entries, path)
-        for _, entry in ipairs(entries) do
-            if entry.path == path then
-                return entry
-            end
-        end
+        local source, first, second = helpers.create_sub_repo()
+        table.insert(extra_repos, source)
+        return source, first, second
     end
 
     it(
@@ -412,7 +371,7 @@ describe('base revision git API', function()
     it(
         'keeps a cached deletion of a file without a final newline unchanged',
         function()
-            write_raw(repo .. '/no-newline.txt', 'single line')
+            helpers.write_raw(repo .. '/no-newline.txt', 'single line')
             helpers.run({ 'git', 'add', 'no-newline.txt' }, repo)
             helpers.run({ 'git', 'commit', '-m', 'add no-newline file' }, repo)
             base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
@@ -421,7 +380,7 @@ describe('base revision git API', function()
             local entries, err = git.base_entries(base, repo)
 
             assert.is_nil(err)
-            local entry = entry_by_path(entries, 'no-newline.txt')
+            local entry = helpers.entry_by_path(entries, 'no-newline.txt')
             assert.are.same(
                 { staged = ' ', unstaged = 'M', path = 'no-newline.txt' },
                 entry
@@ -444,7 +403,7 @@ describe('base revision git API', function()
         'keeps a cached deletion of a CRLF file unchanged and still diffs an edit',
         function()
             local path = repo .. '/crlf.txt'
-            write_raw(path, 'first line\r\nsecond line\r\n')
+            helpers.write_raw(path, 'first line\r\nsecond line\r\n')
             helpers.run({ 'git', 'add', 'crlf.txt' }, repo)
             helpers.run({ 'git', 'commit', '-m', 'add CRLF file' }, repo)
             base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
@@ -453,7 +412,7 @@ describe('base revision git API', function()
             local entries, err = git.base_entries(base, repo)
 
             assert.is_nil(err)
-            local entry = entry_by_path(entries, 'crlf.txt')
+            local entry = helpers.entry_by_path(entries, 'crlf.txt')
             assert.are.same(
                 { staged = ' ', unstaged = 'M', path = 'crlf.txt' },
                 entry
@@ -464,7 +423,7 @@ describe('base revision git API', function()
             assert.is_nil(patch_err)
             assert.are.same({}, patch)
 
-            write_raw(path, 'first line\r\nchanged line\r\n')
+            helpers.write_raw(path, 'first line\r\nchanged line\r\n')
 
             patch, patch_err = git.base_diff(entry, base, repo)
 
@@ -479,17 +438,17 @@ describe('base revision git API', function()
         function()
             local name = 'new\nline.txt'
             local path = repo .. '/' .. name
-            write_raw(path, 'path content')
+            helpers.write_raw(path, 'path content')
             helpers.run({ 'git', 'add', '--', name }, repo)
             helpers.run({ 'git', 'commit', '-m', 'add newline path' }, repo)
             base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
             helpers.run({ 'git', 'rm', '--cached', '--', name }, repo)
-            write_raw(path, 'edited content')
+            helpers.write_raw(path, 'edited content')
 
             local entries, err = git.base_entries(base, repo)
 
             assert.is_nil(err)
-            local entry = entry_by_path(entries, name)
+            local entry = helpers.entry_by_path(entries, name)
             assert.are.same(
                 { staged = ' ', unstaged = 'M', path = name },
                 entry
@@ -516,7 +475,7 @@ describe('base revision git API', function()
         'keeps a cached deletion of an executable file unchanged',
         function()
             local path = repo .. '/script.sh'
-            write_raw(path, '#!/bin/sh\necho hi\n')
+            helpers.write_raw(path, '#!/bin/sh\necho hi\n')
             assert.is_true(vim.uv.fs_chmod(path, 493))
             helpers.run({ 'git', 'add', 'script.sh' }, repo)
             helpers.run({ 'git', 'commit', '-m', 'add script' }, repo)
@@ -526,7 +485,7 @@ describe('base revision git API', function()
             local entries, err = git.base_entries(base, repo)
 
             assert.is_nil(err)
-            local entry = entry_by_path(entries, 'script.sh')
+            local entry = helpers.entry_by_path(entries, 'script.sh')
             assert.are.same(
                 { staged = ' ', unstaged = 'M', path = 'script.sh' },
                 entry
@@ -603,10 +562,7 @@ describe('base revision git API', function()
         'previews a submodule from the base commit id to its checked-out HEAD',
         function()
             local sub_repo, first, second = create_sub_repo()
-            add_submodule('sub', sub_repo)
-            helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', first }, repo)
-            helpers.run({ 'git', 'add', '.' }, repo)
-            helpers.run({ 'git', 'commit', '-m', 'add submodule' }, repo)
+            helpers.record_submodule(repo, 'sub', sub_repo, first)
             base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
             helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', second }, repo)
 
@@ -630,10 +586,7 @@ describe('base revision git API', function()
 
     it('reads the submodule HEAD after the parent root is pinned', function()
         local sub_repo, first, second = create_sub_repo()
-        add_submodule('sub', sub_repo)
-        helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', first }, repo)
-        helpers.run({ 'git', 'add', '.' }, repo)
-        helpers.run({ 'git', 'commit', '-m', 'add submodule' }, repo)
+        helpers.record_submodule(repo, 'sub', sub_repo, first)
         base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
         helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', second }, repo)
 
@@ -643,7 +596,7 @@ describe('base revision git API', function()
         local entries, err = git.base_entries(base, root)
 
         assert.is_nil(err)
-        local entry = entry_by_path(entries, 'sub')
+        local entry = helpers.entry_by_path(entries, 'sub')
         assert.are.same({ staged = ' ', unstaged = 'M', path = 'sub' }, entry)
 
         local diff, split_err = git.base_split_diff(entry, base, root)
@@ -657,10 +610,7 @@ describe('base revision git API', function()
         'shows a placeholder for an unchecked-out submodule worktree side',
         function()
             local sub_repo, first, second = create_sub_repo()
-            add_submodule('sub', sub_repo)
-            helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', first }, repo)
-            helpers.run({ 'git', 'add', '.' }, repo)
-            helpers.run({ 'git', 'commit', '-m', 'add submodule' }, repo)
+            helpers.record_submodule(repo, 'sub', sub_repo, first)
             base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
             helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', second }, repo)
             helpers.run({ 'git', 'add', 'sub' }, repo)
@@ -692,19 +642,12 @@ describe('base revision git API', function()
         'previews a submodule added since the base from its worktree HEAD',
         function()
             local sub_repo, _, second = create_sub_repo()
-            add_submodule('sub', sub_repo)
-            helpers.run({ 'git', 'add', '.' }, repo)
-            helpers.run({ 'git', 'commit', '-m', 'add submodule' }, repo)
+            helpers.record_submodule(repo, 'sub', sub_repo, second)
 
             local entries, err = git.base_entries(base, repo)
 
             assert.is_nil(err)
-            local entry
-            for _, candidate in ipairs(entries) do
-                if candidate.path == 'sub' then
-                    entry = candidate
-                end
-            end
+            local entry = helpers.entry_by_path(entries, 'sub')
             assert.are.same(
                 { staged = ' ', unstaged = 'A', path = 'sub' },
                 entry
