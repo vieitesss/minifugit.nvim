@@ -160,6 +160,14 @@ or tabs. An unknown, empty, or option-like (starting with `-`) `base` returns
 otherwise the error is `Not inside a git repository: <cwd>`.
 Invalid option types raise validation errors.
 
+The window's Git environment follows the same split. An explicit `cwd` names
+the repository, so the window ignores the editor's `GIT_DIR` and
+`GIT_WORK_TREE`. An omitted `cwd` uses them like Git does, which keeps
+environment-only repositories (for example `GIT_DIR=~/.dotfiles
+GIT_WORK_TREE=~`) working. Either way the window pins the root's absolute Git
+directory and work tree, so no later Git call of that window can be redirected
+by the environment.
+
 An explicit `cwd` for another root replaces the visible status instance. An
 explicit `base` resolving to a different commit or root also replaces it; an
 equivalent revision in the same root focuses and refreshes it. Omitting `base`

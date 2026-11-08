@@ -164,15 +164,33 @@ function M.current_file_change_counts()
     return require('minifugit.git').current_file_change_counts()
 end
 
----@param cwd string?
+---Resolve the root to pin. An explicit `cwd` names the repository, so the
+---editor's `GIT_DIR` and `GIT_WORK_TREE` are ignored; without one the window
+---uses them for discovery, like Git does.
+---@param cwd string? Explicit cwd; nil resolves the editor's Git context.
+---@param require_root boolean Whether a missing repository is an error.
 ---@return string? root
 ---@return string? error
-local function resolve_open_root(cwd)
+local function resolve_open_root(cwd, require_root)
+    local git = require('minifugit.git')
+
     if cwd == nil then
-        return nil
+        -- Omitted cwd: the registry keeps a visible pin, and a new window
+        -- resolves the editor's Git context when it is created.
+        if not require_root then
+            return nil
+        end
+
+        local root = git.root()
+
+        if root ~= '' then
+            return root
+        end
+
+        local cwd_now = vim.fs.normalize(vim.fn.getcwd())
+        return nil, 'Not inside a git repository: ' .. cwd_now
     end
 
-    local git = require('minifugit.git')
     cwd = vim.fs.normalize(vim.fn.fnamemodify(cwd, ':p'))
     if vim.fn.isdirectory(cwd) == 0 then
         return nil, 'Not an existing directory: ' .. cwd
@@ -203,9 +221,7 @@ function M.open(opts)
         M.options = resolve_options()
     end
 
-    local root, err = resolve_open_root(
-        opts.cwd or (opts.base ~= nil and vim.fn.getcwd() or nil)
-    )
+    local root, err = resolve_open_root(opts.cwd, opts.base ~= nil)
     if err ~= nil then
         return nil, err
     end

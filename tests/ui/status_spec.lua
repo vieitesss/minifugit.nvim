@@ -209,6 +209,10 @@ describe('minifugit status UI', function()
     local other_repo
     ---@type string?
     local third_repo
+    ---@type string?
+    local original_git_dir
+    ---@type string?
+    local original_git_work_tree
     ---@type Minifugit
     local minifugit
     local status_window
@@ -227,6 +231,8 @@ describe('minifugit status UI', function()
         end
         helpers.reload_minifugit()
         original_cwd = vim.fn.getcwd()
+        original_git_dir = vim.env.GIT_DIR
+        original_git_work_tree = vim.env.GIT_WORK_TREE
         other_repo = nil
         third_repo = nil
         repo = vim.fn.tempname()
@@ -261,6 +267,8 @@ describe('minifugit status UI', function()
         vim.cmd.only({ mods = { emsg_silent = true } })
         vim.cmd('%bwipeout!')
         vim.cmd.cd(vim.fn.fnameescape(original_cwd))
+        vim.env.GIT_DIR = original_git_dir
+        vim.env.GIT_WORK_TREE = original_git_work_tree
 
         if repo ~= nil then
             vim.fn.delete(repo, 'rf')
@@ -578,6 +586,171 @@ describe('minifugit status UI', function()
         assert.are.equal('string', type(err))
         assert_editor_unchanged()
     end)
+
+    it(
+        'rejects an explicit non-git cwd while the environment names a repo',
+        function()
+            other_repo = vim.fn.tempname()
+            vim.fn.mkdir(other_repo, 'p')
+            vim.env.GIT_DIR = vim.fs.joinpath(repo, '.git')
+            vim.env.GIT_WORK_TREE = repo
+            local assert_editor_unchanged = helpers.snapshot_editor_state()
+
+            local ok, err =
+                minifugit.open({ cwd = other_repo, open_in_tab = true })
+
+            assert.is_nil(ok)
+            assert.are.equal('string', type(err))
+            assert.is_truthy(
+                err:find('^Not inside a git repository: ', 1) ~= nil
+            )
+            assert_editor_unchanged()
+        end
+    )
+
+    it('shows worktree entries for relative variables without a cwd', function()
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'one', 'two' }
+        )
+        vim.fn.mkdir(vim.fs.joinpath(repo, 'sub'), 'p')
+        vim.cmd.cd(vim.fn.fnameescape(vim.fs.joinpath(repo, 'sub')))
+        vim.env.GIT_DIR = '../.git'
+        vim.env.GIT_WORK_TREE = '..'
+
+        assert.is_true(minifugit.open({}))
+
+        local lines = buffer_lines(vim.api.nvim_get_current_buf())
+
+        assert_has_line(lines, 'Root: ' .. vim.fn.resolve(repo))
+        assert_has_line(lines, ' M tracked.txt')
+    end)
+
+    it('pins an explicit cwd over the inherited repository', function()
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'changed A' }
+        )
+        helpers.write_file(vim.fs.joinpath(repo, 'only-a.txt'), { 'A' })
+        other_repo = helpers.clone_repo_with_changed_file(
+            repo,
+            'tracked.txt',
+            { 'changed in B' }
+        )
+        helpers.write_file(vim.fs.joinpath(other_repo, 'only-b.txt'), { 'B' })
+        vim.env.GIT_DIR = vim.fs.joinpath(repo, '.git')
+        vim.env.GIT_WORK_TREE = repo
+
+        assert.is_true(minifugit.open({ cwd = other_repo }))
+
+        local buf = vim.api.nvim_get_current_buf()
+        local lines = buffer_lines(buf)
+
+        assert_has_line(lines, 'Root: ' .. vim.fn.resolve(other_repo))
+        assert_has_line(lines, ' M tracked.txt')
+        assert_has_line(lines, '?? only-b.txt')
+        for _, line in ipairs(lines) do
+            assert.is_nil(line:find('only-a.txt', 1, true))
+        end
+        vim.api.nvim_win_set_cursor(
+            vim.api.nvim_get_current_win(),
+            { helpers.row_containing(buf, 'tracked.txt'), 0 }
+        )
+        mapped_normal_keys('s')
+
+        assert.are.equal(
+            'tracked.txt\n',
+            helpers.run({
+                'git',
+                '--git-dir=' .. vim.fs.joinpath(other_repo, '.git'),
+                '--work-tree=' .. other_repo,
+                'diff',
+                '--cached',
+                '--name-only',
+            }, other_repo)
+        )
+        assert.are.equal(
+            '',
+            helpers.run({
+                'git',
+                '--git-dir=' .. vim.fs.joinpath(repo, '.git'),
+                '--work-tree=' .. repo,
+                'diff',
+                '--cached',
+                '--name-only',
+            }, repo)
+        )
+    end)
+
+    it('opens and stages an environment-only repository', function()
+        other_repo = vim.fn.tempname()
+        local git_dir = vim.fs.joinpath(other_repo, 'dotfiles.git')
+        local worktree = vim.fs.joinpath(other_repo, 'home')
+        vim.fn.mkdir(worktree, 'p')
+        helpers.run({ 'git', 'init', '--bare', git_dir }, other_repo)
+        helpers.write_file(vim.fs.joinpath(worktree, 'dotfile'), { 'dot' })
+        vim.env.GIT_DIR = git_dir
+        vim.env.GIT_WORK_TREE = worktree
+
+        assert.is_true(minifugit.open({}))
+
+        local buf = vim.api.nvim_get_current_buf()
+        assert_has_line(buffer_lines(buf), 'Root: ' .. vim.fn.resolve(worktree))
+        assert_has_line(buffer_lines(buf), '?? dotfile')
+        vim.api.nvim_win_set_cursor(
+            vim.api.nvim_get_current_win(),
+            { helpers.row_containing(buf, 'dotfile'), 0 }
+        )
+        mapped_normal_keys('s')
+
+        assert.are.equal(
+            'dotfile\n',
+            helpers.run({
+                'git',
+                '--git-dir=' .. git_dir,
+                '--work-tree=' .. worktree,
+                'diff',
+                '--cached',
+                '--name-only',
+            }, worktree)
+        )
+    end)
+
+    it(
+        'keeps the inherited variables for a base window without a cwd',
+        function()
+            other_repo = vim.fn.tempname()
+            local git_dir = vim.fs.joinpath(other_repo, 'dotfiles.git')
+            local worktree = vim.fs.joinpath(other_repo, 'home')
+            vim.fn.mkdir(worktree, 'p')
+            helpers.run({ 'git', 'init', '--bare', git_dir }, other_repo)
+            vim.env.GIT_DIR = git_dir
+            vim.env.GIT_WORK_TREE = worktree
+            helpers.run(
+                { 'git', 'config', 'user.name', 'Minifugit Test' },
+                worktree
+            )
+            helpers.run(
+                { 'git', 'config', 'user.email', 'test@example.test' },
+                worktree
+            )
+            helpers.write_file(vim.fs.joinpath(worktree, 'dotfile'), { 'dot' })
+            helpers.run({ 'git', 'add', 'dotfile' }, worktree)
+            helpers.run({ 'git', 'commit', '-m', 'dotfiles' }, worktree)
+            helpers.write_file(
+                vim.fs.joinpath(worktree, 'dotfile'),
+                { 'dot', 'more' }
+            )
+            vim.cmd.cd(vim.fn.fnameescape(worktree))
+
+            assert.is_true(minifugit.open({ base = 'HEAD' }))
+
+            assert_has_line(
+                buffer_lines(vim.api.nvim_get_current_buf()),
+                'Root: ' .. vim.fn.resolve(worktree)
+            )
+        end
+    )
 
     it('runs on_close once after q while keeping the hidden buffer', function()
         local calls = 0

@@ -183,10 +183,65 @@ local function null_device_path()
     return '/dev/null'
 end
 
+---Absolute Git environment pinned per repository root. Root-scoped calls set
+---it, so the editor's inherited `GIT_DIR` and `GIT_WORK_TREE` cannot redirect
+---a pinned root: relative values would resolve against the pinned root.
+---@type table<string, table<string, string>>
+local pinned_env_by_root = {}
+
+---@param cwd string
+---@return table<string, string>?
+local function pinned_env(cwd)
+    return pinned_env_by_root[vim.fs.normalize(cwd)]
+end
+
+---Environment for a child that must not see the editor's Git discovery
+---variables. `clear_env` removes them, so they must be absent instead of
+---overridden with another value.
+---@return table<string, string>
+local function environ_without_git_discovery()
+    local env = vim.fn.environ()
+    env.GIT_DIR = nil
+    env.GIT_WORK_TREE = nil
+
+    return env
+end
+
+---@param opts {text: boolean?, git_env: string?} `git_env` is `'ignored'`
+---  or `'inherited'`; nil uses the environment pinned for `cwd`.
+---@param cwd string
+---@param text boolean? Overrides `opts.text`.
+---@return table
+local function child_opts(opts, cwd, text)
+    if text == nil then
+        text = opts.text ~= false
+    end
+
+    if opts.git_env == 'ignored' then
+        -- `clear_env` removes the variables; a merged `env` could only replace
+        -- them, and GIT_DIR set to another value still redirects the call.
+        return {
+            text = text,
+            cwd = cwd,
+            env = environ_without_git_discovery(),
+            clear_env = true,
+        }
+    end
+
+    if opts.git_env == 'inherited' then
+        return { text = text, cwd = cwd }
+    end
+
+    return { text = text, cwd = cwd, env = pinned_env(cwd) }
+end
+
 ---Executes a git command and returns the result.
 ---Text mode defaults to true; disable it for NUL-separated path output.
+---`git_env` overrides the child environment for repository discovery:
+---`'ignored'` hides the editor's `GIT_DIR` and `GIT_WORK_TREE`, `'inherited'`
+---keeps them and skips the pinned environment of `cwd`.
 ---@param args string[] List of git arguments (e.g., {"status", "--porcelain"})
----@param opts? {cwd: string?, ignore_error: boolean?, text: boolean?}
+---@param opts? {cwd: string?, ignore_error: boolean?, text: boolean?, git_env: string?}
 ---@return GitResult
 function git.run(args, opts)
     opts = opts or {}
@@ -202,7 +257,7 @@ function git.run(args, opts)
     local cmd = git_command(args)
     local cwd = opts.cwd or vim.fn.getcwd()
 
-    local job = vim.system(cmd, { text = opts.text ~= false, cwd = cwd })
+    local job = vim.system(cmd, child_opts(opts, cwd))
     local res = normalize_result(job:wait())
 
     log_result(cmd, res, opts.ignore_error)
@@ -212,7 +267,7 @@ end
 
 ---Executes a git command asynchronously.
 ---@param args string[] List of git arguments (e.g., {"push"})
----@param opts? { cwd: string?, ignore_error: boolean? }
+---@param opts? { cwd: string?, ignore_error: boolean?, git_env: string? }
 ---@param callback GitAsyncCallback
 function git.run_async(args, opts, callback)
     opts = opts or {}
@@ -225,7 +280,7 @@ function git.run_async(args, opts, callback)
     local cmd = git_command(args)
     local cwd = opts.cwd or vim.fn.getcwd()
 
-    vim.system(cmd, { text = true, cwd = cwd }, function(result)
+    vim.system(cmd, child_opts(opts, cwd, true), function(result)
         vim.schedule(function()
             local res = normalize_result(result)
 
@@ -246,11 +301,57 @@ function return_result(res)
     return v
 end
 
----Repository roots by working directory and Git discovery environment.
+---Repository roots by working directory, discovery policy, and environment.
 ---Only found roots are cached; missing or nested `.git` entries trigger lookup.
 ---@type table<string, string>
 local roots_by_context = {}
 
+---Pin the absolute Git environment of `root` for its later calls.
+---@param root string
+---@param cwd string Directory the discovery ran in; relative values resolve
+---  against it, as they did during discovery.
+---@param ignore_env boolean
+local function pin_env(root, cwd, ignore_env)
+    local out = git.run({ 'rev-parse', '--absolute-git-dir' }, {
+        cwd = cwd,
+        ignore_error = true,
+        text = false,
+        git_env = ignore_env and 'ignored' or 'inherited',
+    })
+
+    if out.exit_code ~= 0 then
+        return
+    end
+
+    pinned_env_by_root[vim.fs.normalize(root)] = {
+        GIT_DIR = out.output:gsub('\n$', ''),
+        GIT_WORK_TREE = root,
+    }
+end
+
+---Read the toplevel byte for byte: text mode and `return_result()` would
+---rewrite or trim carriage returns that belong to the directory name.
+---@param cwd string
+---@param ignore_env boolean Ignore the editor's Git discovery variables.
+---@return string root '' when no repository is found
+local function discover_root(cwd, ignore_env)
+    local out = git.run({ 'rev-parse', '--show-toplevel' }, {
+        cwd = cwd,
+        ignore_error = true,
+        text = false,
+        git_env = ignore_env and 'ignored' or 'inherited',
+    })
+
+    if out.exit_code ~= 0 then
+        return ''
+    end
+
+    return out.output:gsub('\n$', '')
+end
+
+---Repository root of `cwd`, or of the current cwd when omitted.
+---An explicit `cwd` names the repository, so the editor's `GIT_DIR` and
+---`GIT_WORK_TREE` are ignored; without `cwd` they discover it like Git does.
 ---@param cwd string? Discovery directory; defaults to the current cwd.
 ---@return string
 function git.root(cwd)
@@ -258,14 +359,18 @@ function git.root(cwd)
         return ''
     end
 
+    local ignore_env = cwd ~= nil
     cwd = cwd or vim.fn.getcwd()
-    local git_dir = vim.env.GIT_DIR
-    local git_work_tree = vim.env.GIT_WORK_TREE
-    local key = table.concat({
-        cwd,
-        git_dir == nil and '0' or '1' .. git_dir,
-        git_work_tree == nil and '0' or '1' .. git_work_tree,
-    }, '\0')
+    local key = { ignore_env and 'explicit' or 'inherited', cwd }
+
+    if not ignore_env then
+        local git_dir = vim.env.GIT_DIR
+        local git_work_tree = vim.env.GIT_WORK_TREE
+        table.insert(key, git_dir == nil and '0' or '1' .. git_dir)
+        table.insert(key, git_work_tree == nil and '0' or '1' .. git_work_tree)
+    end
+
+    key = table.concat(key, '\0')
     local cached = roots_by_context[key]
 
     if cached ~= nil and vim.uv.fs_stat(cached .. '/.git') ~= nil then
@@ -295,19 +400,13 @@ function git.root(cwd)
 
     roots_by_context[key] = nil
 
-    -- Read the path byte for byte: text mode and `return_result()` would
-    -- rewrite or trim carriage returns that belong to the directory name.
-    local out = git.run(
-        { 'rev-parse', '--show-toplevel' },
-        { cwd = cwd, ignore_error = true, text = false }
-    )
-
-    if out.exit_code ~= 0 then
+    local root = discover_root(cwd, ignore_env)
+    if root == '' then
         return ''
     end
 
-    local root = out.output:gsub('\n$', '')
     roots_by_context[key] = root
+    pin_env(root, cwd, ignore_env)
 
     return root
 end

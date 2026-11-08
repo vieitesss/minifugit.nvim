@@ -870,3 +870,173 @@ describe('minifugit.git', function()
         assert.are.equal('Cannot push from detached HEAD', message)
     end)
 end)
+
+describe('minifugit.git Git discovery environment', function()
+    ---@type string
+    local original_cwd
+    ---@type string?
+    local original_git_dir
+    ---@type string?
+    local original_git_work_tree
+    ---@type string[]
+    local temp_dirs
+
+    before_each(function()
+        original_cwd = vim.fn.getcwd()
+        original_git_dir = vim.env.GIT_DIR
+        original_git_work_tree = vim.env.GIT_WORK_TREE
+        temp_dirs = {}
+    end)
+
+    after_each(function()
+        vim.env.GIT_DIR = original_git_dir
+        vim.env.GIT_WORK_TREE = original_git_work_tree
+        vim.cmd.cd(vim.fn.fnameescape(original_cwd))
+        for _, dir in ipairs(temp_dirs) do
+            vim.fn.delete(dir, 'rf')
+        end
+    end)
+
+    ---@return string
+    local function temp_dir()
+        local dir = vim.fn.tempname()
+        vim.fn.mkdir(dir, 'p')
+        table.insert(temp_dirs, dir)
+        return dir
+    end
+
+    ---@param path string Relative path in the repository.
+    ---@return string repo
+    local function temp_repo(path)
+        local repo = helpers.create_repo({ [path] = { 'one' } })
+        table.insert(temp_dirs, repo)
+        return repo
+    end
+
+    ---Paths staged in `repo` according to Git, ignoring the editor's
+    ---environment on purpose: assertions must not depend on the values under
+    ---test.
+    ---@param repo string
+    ---@return string
+    local function staged_paths(repo)
+        return helpers.run({
+            'git',
+            '--git-dir=' .. vim.fs.joinpath(repo, '.git'),
+            '--work-tree=' .. repo,
+            'diff',
+            '--cached',
+            '--name-only',
+        }, repo)
+    end
+
+    it('ignores inherited variables for an explicit directory', function()
+        local repo = temp_repo('tracked-a.txt')
+        local plain = temp_dir()
+
+        vim.env.GIT_DIR = vim.fs.joinpath(repo, '.git')
+        vim.env.GIT_WORK_TREE = repo
+
+        assert.are.equal(vim.fn.resolve(repo), vim.fn.resolve(git.root(repo)))
+        assert.are.equal('', git.root(plain))
+    end)
+
+    it(
+        'pins an explicit root so later calls ignore inherited variables',
+        function()
+            local environment = temp_repo('tracked-a.txt')
+            local repo = temp_repo('tracked-b.txt')
+            helpers.write_file(
+                vim.fs.joinpath(environment, 'tracked-a.txt'),
+                { 'one', 'two' }
+            )
+            helpers.write_file(
+                vim.fs.joinpath(repo, 'tracked-b.txt'),
+                { 'one', 'two' }
+            )
+            vim.env.GIT_DIR = vim.fs.joinpath(environment, '.git')
+            vim.env.GIT_WORK_TREE = environment
+            local root = git.root(repo)
+            local entry
+
+            for _, candidate in ipairs(git.status_snapshot(root).entries) do
+                if candidate.path == 'tracked-b.txt' then
+                    entry = candidate
+                end
+            end
+
+            assert.is_not_nil(entry)
+            assert.is_true(git.stage(entry, root))
+            assert.are.equal('tracked-b.txt\n', staged_paths(repo))
+            assert.are.equal('', staged_paths(environment))
+        end
+    )
+
+    it('resolves relative variables from the discovery directory', function()
+        local repo = temp_repo('tracked.txt')
+        local sub = vim.fs.joinpath(repo, 'sub')
+        vim.fn.mkdir(sub, 'p')
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'one', 'two' }
+        )
+        helpers.write_file(vim.fs.joinpath(repo, 'untracked.txt'), { 'new' })
+        vim.cmd.cd(vim.fn.fnameescape(sub))
+        vim.env.GIT_DIR = '../.git'
+        vim.env.GIT_WORK_TREE = '..'
+
+        local root = git.root()
+
+        assert.are.equal(vim.fn.resolve(repo), vim.fn.resolve(root))
+
+        local snapshot = git.status_snapshot(root)
+        local paths = {}
+
+        assert.is_nil(snapshot.error)
+        assert.are.equal('main', snapshot.branch)
+        for _, entry in ipairs(snapshot.entries) do
+            paths[entry.path] = entry.unstaged
+        end
+        assert.are.equal('M', paths['tracked.txt'])
+        assert.are.equal('?', paths['untracked.txt'])
+    end)
+
+    it('keeps an environment-only repository working', function()
+        local worktree = temp_dir()
+        local git_dir = temp_dir()
+        helpers.run({ 'git', 'init', '--bare' }, git_dir)
+        helpers.write_file(vim.fs.joinpath(worktree, 'dotfile'), { 'dot' })
+        vim.env.GIT_DIR = git_dir
+        vim.env.GIT_WORK_TREE = worktree
+
+        local root = git.root()
+
+        assert.are.equal(vim.fn.resolve(worktree), vim.fn.resolve(root))
+
+        local snapshot = git.status_snapshot()
+        local entry
+
+        assert.is_nil(snapshot.error)
+        assert.are.equal(
+            vim.fn.resolve(worktree),
+            vim.fn.resolve(snapshot.root)
+        )
+        for _, candidate in ipairs(snapshot.entries) do
+            if candidate.path == 'dotfile' then
+                entry = candidate
+            end
+        end
+        assert.is_not_nil(entry)
+        assert.is_true(git.stage(entry, root))
+        assert.are.equal(
+            'dotfile\n',
+            helpers.run({
+                'git',
+                '--git-dir=' .. git_dir,
+                '--work-tree=' .. worktree,
+                'diff',
+                '--cached',
+                '--name-only',
+            }, worktree)
+        )
+    end)
+end)
