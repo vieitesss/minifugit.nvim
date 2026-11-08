@@ -273,15 +273,6 @@ describe('minifugit status UI', function()
         end
     end)
 
-    local function change_to_other_repo()
-        other_repo = helpers.clone_repo_with_changed_file(
-            repo,
-            'tracked.txt',
-            { 'changed in B' }
-        )
-        vim.cmd.cd(vim.fn.fnameescape(other_repo))
-    end
-
     ---@class MinifugitTestStatusTab
     ---@field tabpage integer
     ---@field buffer integer
@@ -300,7 +291,7 @@ describe('minifugit status UI', function()
             buffer = vim.api.nvim_get_current_buf(),
         }
         vim.cmd.tabnew()
-        change_to_other_repo()
+        other_repo = helpers.change_to_other_repo(repo)
         helpers.write_file(vim.fs.joinpath(other_repo, 'only-b.txt'), { 'B' })
         minifugit.status()
         return status_a,
@@ -1035,7 +1026,7 @@ describe('minifugit status UI', function()
             end,
         })
         local buf = vim.api.nvim_get_current_buf()
-        change_to_other_repo()
+        other_repo = helpers.change_to_other_repo(repo)
         helpers.write_file(vim.fs.joinpath(other_repo, 'only-b.txt'), { 'B' })
 
         assert.is_true(minifugit.open({}))
@@ -1363,7 +1354,7 @@ describe('minifugit status UI', function()
         local buf_a = vim.api.nvim_get_current_buf()
 
         vim.cmd.tabnew()
-        change_to_other_repo()
+        other_repo = helpers.change_to_other_repo(repo)
         helpers.write_file(vim.fs.joinpath(other_repo, 'only-b.txt'), { 'B' })
         local tab_b = vim.api.nvim_get_current_tabpage()
 
@@ -2036,7 +2027,7 @@ describe('minifugit status UI', function()
                 return settled
             end))
             vim.api.nvim_win_close(status_win, true)
-            change_to_other_repo()
+            other_repo = helpers.change_to_other_repo(repo)
             local tabs_before = #vim.api.nvim_list_tabpages()
 
             minifugit.status()
@@ -2092,7 +2083,7 @@ describe('minifugit status UI', function()
         assert.are.equal(0, #vim.fn.win_findbuf(buf_a))
 
         vim.api.nvim_set_current_tabpage(caller_tab)
-        change_to_other_repo()
+        other_repo = helpers.change_to_other_repo(repo)
         minifugit.status()
         local tab_b = vim.api.nvim_get_current_tabpage()
         local buf_b = vim.api.nvim_get_current_buf()
@@ -2220,7 +2211,7 @@ describe('minifugit status UI', function()
             gsw.win,
             { helpers.row_containing(gsw.buf.id, 'tracked.txt'), 0 }
         )
-        change_to_other_repo()
+        other_repo = helpers.change_to_other_repo(repo)
 
         mapped_normal_keys('s')
 
@@ -2325,7 +2316,7 @@ describe('minifugit status UI', function()
             helpers.write_file(vim.fs.joinpath(repo, 'only-a.txt'), { 'A' })
             minifugit.status()
             mapped_normal_keys('q')
-            change_to_other_repo()
+            other_repo = helpers.change_to_other_repo(repo)
             helpers.write_file(
                 vim.fs.joinpath(other_repo, 'only-b.txt'),
                 { 'B' }
@@ -2367,7 +2358,7 @@ describe('minifugit status UI', function()
             end
 
             local test_ok, test_err = pcall(function()
-                change_to_other_repo()
+                other_repo = helpers.change_to_other_repo(repo)
 
                 for _, push_ok in ipairs({ true, false }) do
                     minifugit.reset()
@@ -2505,7 +2496,7 @@ describe('minifugit status UI', function()
             minifugit.status()
             local status_buf = status_window().buf.id
             local status_win = status_window().win
-            change_to_other_repo()
+            other_repo = helpers.change_to_other_repo(repo)
             helpers.write_file(
                 vim.fs.joinpath(other_repo, 'only-b.txt'),
                 { 'B' }
@@ -2528,7 +2519,7 @@ describe('minifugit status UI', function()
         helpers.write_file(vim.fs.joinpath(repo, 'only-a.txt'), { 'A' })
         minifugit.status()
         local gsw = status_window()
-        change_to_other_repo()
+        other_repo = helpers.change_to_other_repo(repo)
         helpers.write_file(vim.fs.joinpath(other_repo, 'only-b.txt'), { 'B' })
         helpers.write_file(vim.fs.joinpath(repo, 'added-in-a.txt'), { 'new A' })
 
@@ -2553,7 +2544,7 @@ describe('minifugit status UI', function()
             gsw.win,
             { helpers.row_containing(gsw.buf.id, 'tracked.txt'), 0 }
         )
-        change_to_other_repo()
+        other_repo = helpers.change_to_other_repo(repo)
 
         mapped_normal_keys('<CR>')
 
@@ -2569,7 +2560,7 @@ describe('minifugit status UI', function()
 
     it('shows the pinned repository root in the header', function()
         minifugit.status()
-        change_to_other_repo()
+        other_repo = helpers.change_to_other_repo(repo)
         mapped_normal_keys('r')
 
         local lines = buffer_lines(status_window().buf.id)
@@ -2607,7 +2598,7 @@ describe('minifugit status UI', function()
                 vim.fs.joinpath(repo, 'tracked.txt'),
                 { 'new A' }
             )
-            change_to_other_repo()
+            other_repo = helpers.change_to_other_repo(repo)
             mapped_normal_keys('r')
 
             assert.are.equal(status_win, vim.api.nvim_get_current_win())
@@ -3000,7 +2991,7 @@ describe('minifugit status UI', function()
                 gsw.win,
                 { helpers.row_containing(gsw.buf.id, name), 0 }
             )
-            change_to_other_repo()
+            other_repo = helpers.change_to_other_repo(repo)
             helpers.write_file(
                 vim.fs.joinpath(other_repo, name),
                 { 'changed in B' }

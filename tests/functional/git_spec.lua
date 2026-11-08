@@ -63,13 +63,8 @@ describe('minifugit.git', function()
     end)
 
     local function change_to_other_repo()
-        other_repo = helpers.clone_repo_with_changed_file(
-            repo,
-            'tracked.txt',
-            { 'changed in B' }
-        )
+        other_repo = helpers.change_to_other_repo(repo)
         helpers.run({ 'git', 'checkout', '-b', 'other' }, other_repo)
-        vim.cmd.cd(vim.fn.fnameescape(other_repo))
     end
 
     it('honours an explicit root for snapshots after cwd changes', function()

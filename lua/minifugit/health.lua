@@ -9,10 +9,10 @@ local check_git_installed = function()
 end
 
 local check_nvim_version = function()
-    if vim.version.ge(vim.version(), '0.10') then
-        vim.health.ok('Version v0.10+')
+    if vim.version.ge(vim.version(), '0.11') then
+        vim.health.ok('Version v0.11+')
     else
-        vim.health.error('Version should be v0.10+')
+        vim.health.error('Version should be v0.11+')
     end
 end
 
