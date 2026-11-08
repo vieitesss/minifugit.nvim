@@ -24,6 +24,11 @@ local render = require('minifugit.ui.render')
 ---@field base string? Pinned commit hash.
 ---@field loading_message string?
 ---@field loading_frame string?
+---@field reading boolean? A snapshot read is in flight.
+---@field pending boolean? No snapshot has been applied yet.
+
+---Placeholder row shown while a snapshot read is in flight.
+local READ_PLACEHOLDER = 'Loading git status...'
 
 ---@class GitStatusEntryItem
 ---@field kind 'entry'
@@ -312,6 +317,11 @@ end
 ---@return MiniFugitRenderLine[]
 local function render_lines(snapshot, groups, opts)
     local short_base = opts.base and opts.base:sub(1, 7)
+
+    if opts.pending then
+        return { message_line(READ_PLACEHOLDER, groups.loading) }
+    end
+
     local lines = {
         short_base ~= nil and message_line(
             'Base: ' .. short_base .. ' (read-only)',
@@ -327,6 +337,10 @@ local function render_lines(snapshot, groups, opts)
                 'Directory'
             )
         )
+    end
+
+    if opts.reading then
+        table.insert(lines, message_line(READ_PLACEHOLDER, groups.loading))
     end
 
     local entries = filtered_entries(snapshot.entries, opts.filter)
@@ -595,12 +609,13 @@ end
 local StatusDocument = {}
 StatusDocument.__index = StatusDocument
 
----@param snapshot GitStatusSnapshot
+---@param snapshot GitStatusSnapshot? Snapshot already rendered; nil while the
+---  first read is in flight.
 ---@param groups table<string, string>
 ---@param opts? StatusDocumentOptions
 ---@return StatusDocument
 function StatusDocument.new(snapshot, groups, opts)
-    vim.validate('snapshot', snapshot, 'table')
+    vim.validate('snapshot', snapshot, 'table', true)
     vim.validate('groups', groups, 'table')
     vim.validate('opts', opts, 'table', true)
     opts = opts or {}
@@ -608,6 +623,8 @@ function StatusDocument.new(snapshot, groups, opts)
     vim.validate('opts.base', opts.base, 'string', true)
     vim.validate('opts.loading_message', opts.loading_message, 'string', true)
     vim.validate('opts.loading_frame', opts.loading_frame, 'string', true)
+    vim.validate('opts.reading', opts.reading, 'boolean', true)
+    vim.validate('opts.pending', opts.pending, 'boolean', true)
 
     return setmetatable({
         lines = render_lines(snapshot, groups, opts),

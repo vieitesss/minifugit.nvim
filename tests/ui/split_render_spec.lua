@@ -29,9 +29,13 @@ describe('minifugit split render extmarks', function()
         vim.cmd.enew()
         helpers.reload_minifugit()
         status_window, restore_constructor = helpers.capture_status_windows()
-        minifugit = require('minifugit').setup({
-            preview = { diff_layout = 'split' },
-        })
+        -- Reads are async: settle them before the test asserts the render.
+        minifugit = helpers.awaiting_reads(
+            require('minifugit').setup({
+                preview = { diff_layout = 'split' },
+            }),
+            status_window
+        )
     end)
 
     after_each(function()
@@ -59,6 +63,7 @@ describe('minifugit split render extmarks', function()
             { helpers.row_containing(gsw.buf.id, 'tracked.txt'), 0 }
         )
         assert.is_true(gsw:diff_entry())
+        helpers.wait_idle(status_window)
 
         local _, left_buf = helpers.diff_win_named('Minifugit diff left')
         local _, right_buf = helpers.diff_win_named('Minifugit diff right')

@@ -34,7 +34,9 @@ local git = require('minifugit.git')
 ---@field highlights table<string, { ensure: fun() }>
 ---@field document StatusDocument Rendered status lines and row identities.
 ---@field lines MiniFugitRenderLine[]
----@field snapshot GitStatusSnapshot Snapshot rendered by the last full render.
+---@field snapshot GitStatusSnapshot? Snapshot rendered by the last full render.
+---@field read_generation integer Generation of the newest snapshot read.
+---@field reading boolean Whether a snapshot read is in flight.
 ---@field filter string
 ---@field loading_message string?
 ---@field loading_frame integer
@@ -571,9 +573,7 @@ end
 function GitStatusWindow:refresh(state)
     state = state or self:capture_cursor_state()
 
-    self:render()
-    restore_cursor(self, state)
-    self.preview:refresh(state)
+    self:read_snapshot(state)
 
     return true
 end
@@ -682,6 +682,9 @@ end
 
 ---@return boolean closed
 function GitStatusWindow:close()
+    -- Drop in-flight read results: a closed window must not render them.
+    self.read_generation = self.read_generation + 1
+    self.reading = false
     self:stop_loading()
     help.close(self)
 
@@ -802,6 +805,8 @@ function GitStatusWindow:render_cached()
         filter = self.filter,
         loading_message = self.loading_message,
         loading_frame = loading_frame,
+        reading = self.reading,
+        pending = self.snapshot == nil,
         base = self.base,
     })
     self.lines = self.document.lines
@@ -812,20 +817,55 @@ function GitStatusWindow:render_cached()
     render.apply(self.buf.id, self.lines)
 end
 
-function GitStatusWindow:render()
-    if self.base ~= nil then
-        local entries, err = git.base_entries(self.base, self.root)
-        self.snapshot = {
-            branch = '',
-            root = self.root,
-            entries = entries,
-            unpushed_commits = {},
-            error = err,
-        }
-    else
-        self.snapshot = git.status_snapshot(self.root)
+---@param root string
+---@param state GitStatusCursorState
+---@param snapshot GitStatusSnapshot
+local function apply_snapshot(self, state, snapshot)
+    if self.buf == nil or not self.buf:is_valid() then
+        return
     end
+
+    self.reading = false
+    self.snapshot = snapshot
     self:render_cached()
+    restore_cursor(self, state)
+    self.preview:refresh(state)
+end
+
+---Start an asynchronous snapshot read. Only the newest read is applied: an
+---older result for a superseded or destroyed window is dropped.
+---@param state GitStatusCursorState
+function GitStatusWindow:read_snapshot(state)
+    self.read_generation = self.read_generation + 1
+    local generation = self.read_generation
+
+    self.reading = true
+    self:render_cached()
+
+    ---@param snapshot GitStatusSnapshot
+    local function apply(snapshot)
+        if generation ~= self.read_generation then
+            return
+        end
+
+        apply_snapshot(self, state, snapshot)
+    end
+
+    if self.base ~= nil then
+        git.base_entries_async(self.base, self.root, function(entries, err)
+            apply({
+                branch = '',
+                root = self.root,
+                entries = entries,
+                unpushed_commits = {},
+                error = err,
+            })
+        end)
+
+        return
+    end
+
+    git.status_snapshot_async(self.root, apply)
 end
 
 ---@param message string
@@ -911,6 +951,8 @@ function GitStatusWindow.new(opts, root, base, reused_tab)
     self.lines = {}
     self.filter = ''
     self.loading_frame = 1
+    self.read_generation = 0
+    self.reading = false
     self.target_win = vim.api.nvim_get_current_win()
     status_tab.setup_state(self)
 
@@ -927,7 +969,9 @@ function GitStatusWindow.new(opts, root, base, reused_tab)
     self.preview = DiffPreview.new(self)
 
     keymaps.attach(self)
-    self:render()
+    -- The first read starts with no cursor state to preserve: the document is
+    -- still empty.
+    self:read_snapshot({})
     self.buf:set_option('filetype', 'minifugit')
 
     local target_win

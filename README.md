@@ -20,6 +20,8 @@ without leaving Neovim.
 - Stage and unstage hunks from the diff window.
 - Create commits.
 - Animated loading spinner while pushing your commits.
+- Non-blocking git reads: the status window and the diff preview load in the
+  background, so the editor keeps responding on large repositories.
 - View unpushed commits in the status window and preview the diffs.
 - Run `:checkhealth minifugit` to verify Neovim and Git requirements.
 

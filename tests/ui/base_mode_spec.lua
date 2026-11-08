@@ -5,12 +5,16 @@ local function lines(buf)
     return vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 end
 
+---@type fun(): GitStatusWindow?
+local status_window
+
 local function keys(value)
     vim.api.nvim_feedkeys(
         vim.api.nvim_replace_termcodes(value, true, false, true),
         'mx',
         false
     )
+    helpers.wait_idle(status_window)
 end
 
 local function select_entry(buf, path)
@@ -40,6 +44,7 @@ describe('read-only base mode UI', function()
     local original_cwd
     local original_notify
     local notifications
+    local restore_constructor
 
     local function run(args)
         return helpers.run(vim.list_extend({ 'git' }, args), repo)
@@ -65,13 +70,19 @@ describe('read-only base mode UI', function()
         vim.cmd.cd(repo)
         vim.cmd.enew()
         package.loaded.minifugit = nil
-        minifugit = require('minifugit').setup({
-            status = { width = 0.5 },
-            preview = { show_line_numbers = false },
-        })
+        status_window, restore_constructor = helpers.capture_status_windows()
+        -- Reads are async: settle them before the test asserts the render.
+        minifugit = helpers.awaiting_reads(
+            require('minifugit').setup({
+                status = { width = 0.5 },
+                preview = { show_line_numbers = false },
+            }),
+            status_window
+        )
     end)
 
     after_each(function()
+        restore_constructor()
         minifugit.reset()
         vim.cmd('silent! tabonly!')
         vim.cmd('silent! only!')

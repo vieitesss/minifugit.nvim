@@ -69,6 +69,7 @@ describe('minifugit', function()
         local original_cwd
         local repo
         local minifugit
+        local restore_constructor
 
         before_each(function()
             original_cwd = vim.fn.getcwd()
@@ -77,10 +78,18 @@ describe('minifugit', function()
             helpers.run({ 'git', 'init', '-b', 'main' }, repo)
             vim.cmd.cd(vim.fn.fnameescape(repo))
             vim.cmd.enew()
-            minifugit = require('minifugit').setup()
+            local status_window
+            status_window, restore_constructor =
+                helpers.capture_status_windows()
+            -- Reads are async: settle them before the test asserts the render.
+            minifugit = helpers.awaiting_reads(
+                require('minifugit').setup(),
+                status_window
+            )
         end)
 
         after_each(function()
+            restore_constructor()
             minifugit.reset()
             vim.cmd('silent! tabonly!')
             vim.cmd.only({ mods = { emsg_silent = true } })

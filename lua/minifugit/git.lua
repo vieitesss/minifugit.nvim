@@ -254,29 +254,59 @@ function git.run(args, opts)
     return res
 end
 
----Executes a git command asynchronously.
----@param args string[] List of git arguments (e.g., {"push"})
----@param opts? { cwd: string?, ignore_error: boolean?, git_env: string? }
----@param callback GitAsyncCallback
-function git.run_async(args, opts, callback)
+---Executes a git command asynchronously and returns the full result.
+---The callback runs on the main loop; `text` selects text mode exactly like
+---`git.run`, so NUL-separated output keeps its bytes.
+---@param args string[]
+---@param opts? { cwd: string?, ignore_error: boolean?, text: boolean?, git_env: string? }
+---@param callback fun(res: GitResult)
+local function run_async_result(args, opts, callback)
     opts = opts or {}
 
     if not ensure_git() then
-        callback(false, '`git` is not executable')
+        callback({
+            output = '',
+            exit_code = 127,
+            stderr = '`git` is not executable',
+        })
         return
     end
 
     local cmd = git_command(args)
     local cwd = opts.cwd or vim.fn.getcwd()
 
-    vim.system(cmd, child_opts(opts.git_env, cwd, true), function(result)
+    local function on_exit(result)
         vim.schedule(function()
             local res = normalize_result(result)
 
             log_result(cmd, res, opts.ignore_error)
 
-            callback(res.exit_code == 0, return_result(res))
+            callback(res)
         end)
+    end
+
+    -- A spawn failure (for example a cwd that vanished while the read was
+    -- queued) must surface as a read error instead of a crashed callback.
+    local ok, err = pcall(function()
+        vim.system(
+            cmd,
+            child_opts(opts.git_env, cwd, opts.text ~= false),
+            on_exit
+        )
+    end)
+
+    if not ok then
+        callback({ output = '', exit_code = 127, stderr = tostring(err) })
+    end
+end
+
+---Executes a git command asynchronously.
+---@param args string[] List of git arguments (e.g., {"push"})
+---@param opts? { cwd: string?, ignore_error: boolean?, text: boolean?, git_env: string? }
+---@param callback GitAsyncCallback
+function git.run_async(args, opts, callback)
+    run_async_result(args, opts, function(res)
+        callback(res.exit_code == 0, return_result(res))
     end)
 end
 
@@ -414,76 +444,7 @@ function git.status()
     return parse_status(out.output)
 end
 
----@param root string? Repository root; defaults to the current cwd's root.
----@return GitStatusSnapshot
-function git.status_snapshot(root)
-    if not ensure_git() then
-        return {
-            branch = '',
-            entries = {},
-            unpushed_commits = {},
-            root = '',
-            error = '`git` is not executable',
-        }
-    end
-
-    root = root or git.root()
-
-    if root == '' then
-        return {
-            branch = '',
-            entries = {},
-            unpushed_commits = {},
-            root = '',
-            error = 'Not inside a git repository',
-        }
-    end
-
-    local branch_out = git.run(
-        { 'branch', '--show-current' },
-        { cwd = root, ignore_error = true }
-    )
-    local branch = return_result(branch_out)
-
-    if branch == '' then
-        local head_out = git.run(
-            { 'rev-parse', '--short', 'HEAD' },
-            { cwd = root, ignore_error = true }
-        )
-
-        branch = head_out.exit_code == 0 and return_result(head_out)
-            or '(unknown)'
-    end
-
-    local status_out = git.run(
-        { 'status', '--porcelain=v1', '-z', '--untracked-files=all' },
-        { cwd = root, text = false }
-    )
-
-    if status_out.exit_code ~= 0 then
-        return {
-            branch = branch,
-            entries = {},
-            unpushed_commits = {},
-            root = root,
-            error = return_result(status_out),
-        }
-    end
-
-    return {
-        branch = branch,
-        entries = parse_status(status_out.output),
-        unpushed_commits = git.unpushed_commits(root),
-        root = root,
-    }
-end
-
 local COMMIT_FIELD_SEPARATOR = '\31'
-local NO_UPSTREAM_MESSAGE = function(root)
-    local branch_out = git.run({ 'branch', '--show-current' }, { cwd = root })
-    return 'No upstream configured. Run git push -u origin '
-        .. return_result(branch_out)
-end
 
 ---@param output string
 ---@return GitCommit[]
@@ -511,6 +472,205 @@ local function parse_commits(output)
     end
 
     return commits
+end
+
+---@param upstream string?
+---@return string[]
+local function unpushed_commits_args(upstream)
+    local range = upstream ~= nil and upstream .. '..HEAD' or 'HEAD'
+    local args = { 'log', '--format=%H%x1f%s', '-20', range }
+
+    if upstream == nil then
+        vim.list_extend(args, { '--not', '--remotes' })
+    end
+
+    return args
+end
+
+---@return string[]
+local function status_args()
+    return { 'status', '--porcelain=v1', '-z', '--untracked-files=all' }
+end
+
+---@param root string
+---@param branch string
+---@param error string
+---@return GitStatusSnapshot
+local function failed_snapshot(root, branch, error)
+    return {
+        branch = branch,
+        entries = {},
+        unpushed_commits = {},
+        root = root,
+        error = error,
+    }
+end
+
+---@param root string
+---@param branch string
+---@param entries GitStatusEntry[]
+---@param unpushed_commits GitCommit[]
+---@return GitStatusSnapshot
+local function snapshot(root, branch, entries, unpushed_commits)
+    return {
+        branch = branch,
+        entries = entries,
+        unpushed_commits = unpushed_commits,
+        root = root,
+    }
+end
+
+---@param head_out GitResult
+---@return string
+local function detached_branch(head_out)
+    return head_out.exit_code == 0 and return_result(head_out) or '(unknown)'
+end
+
+---@param root string
+---@return string
+local function branch_name(root)
+    local branch_out = git.run(
+        { 'branch', '--show-current' },
+        { cwd = root, ignore_error = true }
+    )
+    local branch = return_result(branch_out)
+
+    if branch ~= '' then
+        return branch
+    end
+
+    return detached_branch(
+        git.run(
+            { 'rev-parse', '--short', 'HEAD' },
+            { cwd = root, ignore_error = true }
+        )
+    )
+end
+
+---@param root string? Repository root; defaults to the current cwd's root.
+---@return GitStatusSnapshot
+function git.status_snapshot(root)
+    if not ensure_git() then
+        return failed_snapshot('', '', '`git` is not executable')
+    end
+
+    root = root or git.root()
+
+    if root == '' then
+        return failed_snapshot('', '', 'Not inside a git repository')
+    end
+
+    local branch = branch_name(root)
+    local status_out = git.run(status_args(), { cwd = root, text = false })
+
+    if status_out.exit_code ~= 0 then
+        return failed_snapshot(root, branch, return_result(status_out))
+    end
+
+    return snapshot(
+        root,
+        branch,
+        parse_status(status_out.output),
+        git.unpushed_commits(root)
+    )
+end
+
+---@param root string
+---@param callback fun(branch: string)
+local function branch_name_async(root, callback)
+    run_async_result(
+        { 'branch', '--show-current' },
+        { cwd = root, ignore_error = true },
+        function(branch_out)
+            local branch = return_result(branch_out)
+
+            if branch ~= '' then
+                callback(branch)
+                return
+            end
+
+            run_async_result(
+                { 'rev-parse', '--short', 'HEAD' },
+                { cwd = root, ignore_error = true },
+                function(head_out)
+                    callback(detached_branch(head_out))
+                end
+            )
+        end
+    )
+end
+
+---@param root string
+---@param callback fun(commits: GitCommit[])
+local function unpushed_commits_async(root, callback)
+    run_async_result(
+        { 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}' },
+        { cwd = root, ignore_error = true },
+        function(upstream_out)
+            local upstream = upstream_out.exit_code == 0
+                    and return_result(upstream_out)
+                or ''
+
+            if upstream == '' then
+                upstream = nil
+            end
+
+            run_async_result(
+                unpushed_commits_args(upstream),
+                { cwd = root, ignore_error = true },
+                function(out)
+                    if out.exit_code ~= 0 or out.output == '' then
+                        callback({})
+                        return
+                    end
+
+                    callback(parse_commits(out.output))
+                end
+            )
+        end
+    )
+end
+
+---Collect a status snapshot without blocking the main loop.
+---@param root string? Repository root; defaults to the current cwd's root.
+---@param callback fun(snapshot: GitStatusSnapshot)
+function git.status_snapshot_async(root, callback)
+    if not ensure_git() then
+        callback(failed_snapshot('', '', '`git` is not executable'))
+        return
+    end
+
+    root = root or git.root()
+
+    if root == '' then
+        callback(failed_snapshot('', '', 'Not inside a git repository'))
+        return
+    end
+
+    branch_name_async(root, function(branch)
+        run_async_result(
+            status_args(),
+            { cwd = root, text = false },
+            function(out)
+                if out.exit_code ~= 0 then
+                    callback(failed_snapshot(root, branch, return_result(out)))
+                    return
+                end
+
+                local entries = parse_status(out.output)
+
+                unpushed_commits_async(root, function(commits)
+                    callback(snapshot(root, branch, entries, commits))
+                end)
+            end
+        )
+    end)
+end
+
+local NO_UPSTREAM_MESSAGE = function(root)
+    local branch_out = git.run({ 'branch', '--show-current' }, { cwd = root })
+    return 'No upstream configured. Run git push -u origin '
+        .. return_result(branch_out)
 end
 
 ---@param root string
@@ -581,14 +741,10 @@ end
 ---@return GitCommit[]
 function git.unpushed_commits(root)
     local upstream = git.upstream(root)
-    local range = upstream ~= nil and upstream .. '..HEAD' or 'HEAD'
-    local args = { 'log', '--format=%H%x1f%s', '-20', range }
-
-    if upstream == nil then
-        vim.list_extend(args, { '--not', '--remotes' })
-    end
-
-    local out = git.run(args, { cwd = root, ignore_error = true })
+    local out = git.run(
+        unpushed_commits_args(upstream),
+        { cwd = root, ignore_error = true }
+    )
 
     if out.exit_code ~= 0 or out.output == '' then
         return {}
@@ -665,23 +821,14 @@ local function merge_cached_deletions(entries)
     return merged
 end
 
----Tracked changes from the pinned commit to the worktree, plus untracked files.
----@param base string Pinned commit hash.
----@param root string?
+---Translate `--name-status` and untracked records to porcelain records for
+---the shared parser.
+---@param diff_output string NUL-separated `diff --name-status` output.
+---@param untracked_output string NUL-separated `ls-files --others` output.
 ---@return GitStatusEntry[]
----@return string? error
-function git.base_entries(base, root)
-    local opts = root_opts(root)
-    opts.text = false
-    local out =
-        git.run({ 'diff', '--name-status', '-z', '-M', base, '--' }, opts)
-    if out.exit_code ~= 0 then
-        return {}, return_result(out)
-    end
-
-    -- Translate name-status records to porcelain records for the shared parser.
+local function parse_base_entries(diff_output, untracked_output)
     local records = {}
-    local fields = vim.split(out.output, '\0', { plain = true })
+    local fields = vim.split(diff_output, '\0', { plain = true })
     local index = 1
     while index < #fields do
         local marker = fields[index]:sub(1, 1)
@@ -698,18 +845,75 @@ function git.base_entries(base, root)
         end
     end
 
-    local untracked =
-        git.run({ 'ls-files', '--others', '--exclude-standard', '-z' }, opts)
-    if untracked.exit_code ~= 0 then
-        return {}, return_result(untracked)
-    end
-    for _, path in ipairs(vim.split(untracked.output, '\0', { plain = true })) do
+    for _, path in ipairs(vim.split(untracked_output, '\0', { plain = true })) do
         if path ~= '' then
             table.insert(records, '?? ' .. path .. '\0')
         end
     end
 
-    return merge_cached_deletions(parse_status(table.concat(records))), nil
+    return merge_cached_deletions(parse_status(table.concat(records)))
+end
+
+---Tracked changes from the pinned commit to the worktree, plus untracked files.
+---@param base string Pinned commit hash.
+---@param root string?
+---@return GitStatusEntry[]
+---@return string? error
+function git.base_entries(base, root)
+    local opts = root_opts(root)
+    opts.text = false
+    local out =
+        git.run({ 'diff', '--name-status', '-z', '-M', base, '--' }, opts)
+    if out.exit_code ~= 0 then
+        return {}, return_result(out)
+    end
+
+    local untracked =
+        git.run({ 'ls-files', '--others', '--exclude-standard', '-z' }, opts)
+    if untracked.exit_code ~= 0 then
+        return {}, return_result(untracked)
+    end
+
+    return parse_base_entries(out.output, untracked.output), nil
+end
+
+---Collect base-mode entries without blocking the main loop.
+---@param base string Pinned commit hash.
+---@param root string?
+---@param callback fun(entries: GitStatusEntry[], error: string?)
+function git.base_entries_async(base, root, callback)
+    local opts = root_opts(root)
+    opts.text = false
+
+    run_async_result(
+        { 'diff', '--name-status', '-z', '-M', base, '--' },
+        opts,
+        function(diff_out)
+            if diff_out.exit_code ~= 0 then
+                callback({}, return_result(diff_out))
+                return
+            end
+
+            run_async_result(
+                { 'ls-files', '--others', '--exclude-standard', '-z' },
+                opts,
+                function(untracked_out)
+                    if untracked_out.exit_code ~= 0 then
+                        callback({}, return_result(untracked_out))
+                        return
+                    end
+
+                    callback(
+                        parse_base_entries(
+                            diff_out.output,
+                            untracked_out.output
+                        ),
+                        nil
+                    )
+                end
+            )
+        end
+    )
 end
 
 ---@param entry GitStatusEntry
@@ -1452,6 +1656,25 @@ function git.show_commit(commit, root)
     return parse_diff(out.output), nil
 end
 
+---Collect a commit diff without blocking the main loop.
+---@param commit GitCommit
+---@param root string?
+---@param callback fun(lines: string[], error: string?)
+function git.show_commit_async(commit, root, callback)
+    run_async_result(
+        { 'show', '--stat', '--patch', commit.hash },
+        root_opts(root),
+        function(out)
+            if out.exit_code ~= 0 then
+                callback({}, return_result(out))
+                return
+            end
+
+            callback(parse_diff(out.output), nil)
+        end
+    )
+end
+
 ---@param path string?
 ---@return GitFileChangeCounts
 ---@return string?
@@ -1546,12 +1769,9 @@ end
 ---@param entry GitStatusEntry
 ---@param section string?
 ---@param root string?
----@return string[]
----@return string?
-function git.diff(entry, section, root)
-    ensure_git()
-
-    local args
+---@return string[]? args nil when the entry has no diff
+---@return string? error
+local function diff_args(entry, section, root)
     local opts = root_opts(root)
     local pathspecs = entry_pathspecs(entry)
     local full_path = opts.cwd ~= nil and vim.fs.joinpath(opts.cwd, entry.path)
@@ -1560,30 +1780,95 @@ function git.diff(entry, section, root)
 
     if is_worktree_new_file(entry, section) then
         if stat ~= nil and stat.type == 'directory' then
-            return {}, 'Diff preview is not available for untracked directories'
+            return nil,
+                'Diff preview is not available for untracked directories'
         end
 
-        args = { 'diff', '--no-index', '--', null_device_path(), entry.path }
-    elseif section == 'staged' then
-        args = { 'diff', '--cached', '--' }
+        return { 'diff', '--no-index', '--', null_device_path(), entry.path }
+    end
+
+    if section == 'staged' then
+        local args = { 'diff', '--cached', '--' }
         vim.list_extend(args, pathspecs)
-    elseif section == 'unstaged' or section == 'conflicts' then
-        args = { 'diff', '--' }
+        return args
+    end
+
+    if section == 'unstaged' or section == 'conflicts' then
+        local args = { 'diff', '--' }
         vim.list_extend(args, pathspecs)
-    elseif entry.staged ~= ' ' or entry.unstaged ~= ' ' then
-        args = { 'diff', 'HEAD', '--' }
+        return args
+    end
+
+    if entry.staged ~= ' ' or entry.unstaged ~= ' ' then
+        local args = { 'diff', 'HEAD', '--' }
         vim.list_extend(args, pathspecs)
-    else
+        return args
+    end
+
+    return nil
+end
+
+---`git diff --no-index` exits 1 when the files differ, so only higher exit
+---codes (or a failed call without output) are errors.
+---@param out GitResult
+---@return boolean
+local function diff_failed(out)
+    return out.exit_code > 1 or (out.exit_code ~= 0 and out.output == '')
+end
+
+---@param entry GitStatusEntry
+---@param section string?
+---@param root string?
+---@return string[]
+---@return string?
+function git.diff(entry, section, root)
+    ensure_git()
+
+    local args, err = diff_args(entry, section, root)
+
+    if err ~= nil then
+        return {}, err
+    end
+
+    if args == nil then
         return {}
     end
 
-    local out = git.run(args, opts)
+    local out = git.run(args, root_opts(root))
 
-    if out.exit_code > 1 or (out.exit_code ~= 0 and out.output == '') then
+    if diff_failed(out) then
         return {}, return_result(out)
     end
 
     return parse_diff(out.output)
+end
+
+---Collect an entry diff without blocking the main loop.
+---@param entry GitStatusEntry
+---@param section string?
+---@param root string?
+---@param callback fun(lines: string[], error: string?)
+function git.diff_async(entry, section, root, callback)
+    local args, err = diff_args(entry, section, root)
+
+    if err ~= nil then
+        callback({}, err)
+        return
+    end
+
+    if args == nil then
+        callback({})
+        return
+    end
+
+    run_async_result(args, root_opts(root), function(out)
+        if diff_failed(out) then
+            callback({}, return_result(out))
+            return
+        end
+
+        callback(parse_diff(out.output), nil)
+    end)
 end
 
 ---A path deleted from the index but still present in the worktree is
@@ -1603,6 +1888,52 @@ local function index_tracks(path, root)
     return out.exit_code == 0
 end
 
+---@param path string
+---@param root string
+---@param callback fun(tracked: boolean)
+local function index_tracks_async(path, root, callback)
+    local opts = root_opts(root)
+    opts.text = false
+
+    run_async_result(
+        { 'ls-files', '--error-unmatch', '-z', '--', ':(literal)' .. path },
+        opts,
+        function(out)
+            callback(out.exit_code == 0)
+        end
+    )
+end
+
+---@param entry GitStatusEntry
+---@param base string Pinned commit hash.
+---@param tracked boolean Whether the index still tracks the entry path.
+---@return string[]
+local function base_diff_args(entry, base, tracked)
+    if entry.unstaged == 'M' and not tracked then
+        -- The worktree file is untracked after a cached deletion, so
+        -- `git diff <base>` only reports a deletion. Compare the base blob
+        -- with the worktree file directly: Git reads its bytes and mode.
+        return {
+            'diff',
+            '--no-ext-diff',
+            base .. ':' .. (entry.orig_path or entry.path),
+            '--',
+            ':(literal)' .. entry.path,
+        }
+    end
+
+    local args = { 'diff', '--no-ext-diff', '-M', base, '--' }
+    vim.list_extend(args, entry_pathspecs(entry))
+
+    return args
+end
+
+---@param entry GitStatusEntry
+---@return boolean
+local function base_diff_needs_index(entry)
+    return entry.unstaged == 'M'
+end
+
 ---Unified preview from the pinned commit to the worktree.
 ---@param entry GitStatusEntry
 ---@param base string Pinned commit hash.
@@ -1616,30 +1947,52 @@ function git.base_diff(entry, base, root)
 
     root = root or git.root()
 
-    local args
+    local tracked = not base_diff_needs_index(entry)
+        or index_tracks(entry.path, root)
+    local out = git.run(base_diff_args(entry, base, tracked), root_opts(root))
 
-    if entry.unstaged == 'M' and not index_tracks(entry.path, root) then
-        -- The worktree file is untracked after a cached deletion, so
-        -- `git diff <base>` only reports a deletion. Compare the base blob
-        -- with the worktree file directly: Git reads its bytes and mode.
-        args = {
-            'diff',
-            '--no-ext-diff',
-            base .. ':' .. (entry.orig_path or entry.path),
-            '--',
-            ':(literal)' .. entry.path,
-        }
-    else
-        args = { 'diff', '--no-ext-diff', '-M', base, '--' }
-        vim.list_extend(args, entry_pathspecs(entry))
-    end
-
-    local out = git.run(args, root_opts(root))
     if out.exit_code ~= 0 then
         return {}, return_result(out)
     end
 
     return parse_diff(out.output), nil
+end
+
+---Collect a base-mode diff without blocking the main loop.
+---@param entry GitStatusEntry
+---@param base string Pinned commit hash.
+---@param root string?
+---@param callback fun(lines: string[], error: string?)
+function git.base_diff_async(entry, base, root, callback)
+    if entry.unstaged == '?' then
+        git.diff_async(entry, 'untracked', root, callback)
+        return
+    end
+
+    root = root or git.root()
+    local opts = root_opts(root)
+
+    local function run(tracked)
+        run_async_result(
+            base_diff_args(entry, base, tracked),
+            opts,
+            function(out)
+                if out.exit_code ~= 0 then
+                    callback({}, return_result(out))
+                    return
+                end
+
+                callback(parse_diff(out.output), nil)
+            end
+        )
+    end
+
+    if not base_diff_needs_index(entry) then
+        run(true)
+        return
+    end
+
+    index_tracks_async(entry.path, root, run)
 end
 
 ---@class GitPushRequest

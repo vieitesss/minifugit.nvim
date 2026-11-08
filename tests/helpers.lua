@@ -13,6 +13,8 @@
 ---@field capture_status_windows fun(): fun(): GitStatusWindow?, fun()
 ---@field snapshot_editor_state fun(): fun()
 ---@field settle_callbacks fun()
+---@field wait_idle fun(find: fun(): GitStatusWindow?)
+---@field awaiting_reads fun(minifugit: Minifugit, find: fun(): GitStatusWindow?): Minifugit
 ---@field row_containing fun(buf: integer, text: string): integer
 ---@field diff_win_named fun(name: string): integer, integer
 ---@field reload_minifugit fun()
@@ -205,6 +207,46 @@ function M.capture_status_windows()
     end, function()
         StatusWindow.new = original_new
     end
+end
+
+---Wait until the async reads of a status window have been applied.
+---Snapshot collection and diff preview reads run asynchronously; UI specs
+---assert the rendered result, so they settle the window first.
+---@param find fun(): GitStatusWindow? Finder for the window under test.
+function M.wait_idle(find)
+    local function idle()
+        local win = find()
+
+        if win == nil then
+            return true
+        end
+
+        return not win.reading and not win.preview.reading
+    end
+
+    assert.is_true(vim.wait(5000, idle, 10))
+end
+
+---Wrap the window entrypoints of a minifugit module in place so they settle
+---the async reads before returning. Specs written before reads were async
+---assert the rendered result immediately after opening or refreshing, and some
+---of them call `setup()` again mid-test.
+---@param minifugit Minifugit
+---@param find fun(): GitStatusWindow? Finder for the window under test.
+---@return Minifugit
+function M.awaiting_reads(minifugit, find)
+    local function settle(original)
+        return function(...)
+            local opened, err = original(...)
+            M.wait_idle(find)
+            return opened, err
+        end
+    end
+
+    minifugit.open = settle(minifugit.open)
+    minifugit.status = settle(minifugit.status)
+
+    return minifugit
 end
 
 ---Wait until the callbacks scheduled before this call have run.

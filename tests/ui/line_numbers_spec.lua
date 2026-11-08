@@ -64,10 +64,14 @@ describe('minifugit line numbers when opening code from a diff', function()
         vim.cmd.enew()
         helpers.reload_minifugit()
         status_window, restore_constructor = helpers.capture_status_windows()
-        minifugit = require('minifugit').setup({
-            status = { width = 0.4, min_width = 20 },
-            preview = { diff_layout = 'stacked' },
-        })
+        -- Reads are async: settle them before the test asserts the render.
+        minifugit = helpers.awaiting_reads(
+            require('minifugit').setup({
+                status = { width = 0.4, min_width = 20 },
+                preview = { diff_layout = 'stacked' },
+            }),
+            status_window
+        )
     end)
 
     after_each(function()
@@ -104,6 +108,7 @@ describe('minifugit line numbers when opening code from a diff', function()
         local gsw = status_window()
         select_tracked_entry()
         assert.is_true(gsw:diff_entry())
+        helpers.wait_idle(status_window)
 
         local pv = gsw.preview.stacked.win
             or gsw.preview.right.win
@@ -140,6 +145,7 @@ describe('minifugit line numbers when opening code from a diff', function()
         minifugit.status()
         select_tracked_entry()
         assert.is_true(status_window():diff_entry())
+        helpers.wait_idle(status_window)
 
         local preview_win = status_window().preview.stacked.win
             or status_window().preview.left.win

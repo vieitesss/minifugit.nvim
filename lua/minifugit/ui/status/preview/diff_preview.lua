@@ -36,6 +36,8 @@ local DiffWindow = require('minifugit.ui.status.preview.diff_window')
 ---@field layout 'stacked'|'split'|'auto'
 ---@field layout_override 'stacked'|'split'?
 ---@field follow_gen integer
+---@field read_generation integer Generation of the newest preview read.
+---@field reading boolean Whether a preview read is in flight.
 local DiffPreview = {}
 DiffPreview.__index = DiffPreview
 
@@ -95,6 +97,8 @@ function DiffPreview.new(host)
         show_numbers = preview_opts.show_line_numbers,
         layout = preview_opts.diff_layout,
         follow_gen = 0,
+        read_generation = 0,
+        reading = false,
     }, DiffPreview)
 
     obj.actions = {
@@ -579,6 +583,10 @@ end
 
 ---@return nil
 function DiffPreview:delete_owned_buffers()
+    -- Drop in-flight read results before their buffers go away.
+    self.read_generation = self.read_generation + 1
+    self.reading = false
+
     for _, dw in ipairs({ self.stacked, self.left, self.right }) do
         if dw.buf ~= nil and dw.buf.id ~= nil then
             pcall(vim.api.nvim_buf_delete, dw.buf.id, { force = true })
@@ -588,22 +596,11 @@ function DiffPreview:delete_owned_buffers()
 end
 
 ---@param commit GitCommit
----@param opts? { force: boolean? }
+---@param preview_key string
+---@param lines string[]
+---@param err string?
 ---@return boolean
-function DiffPreview:open_commit(commit, opts)
-    opts = opts or {}
-
-    local preview_key = 'commit:' .. commit.hash
-
-    if
-        not opts.force
-        and self:has_open()
-        and self.preview_key == preview_key
-    then
-        return true
-    end
-
-    local lines, err = git.show_commit(commit, self.host.root)
+local function show_commit(self, commit, preview_key, lines, err)
     local diff_lines
 
     if err ~= nil then
@@ -637,38 +634,58 @@ function DiffPreview:open_commit(commit, opts)
     return ok
 end
 
----@param item GitStatusEntryItem
----@param opts? { force: boolean?, notify: boolean?, focus: boolean? }
+---@param commit GitCommit
+---@param opts? { force: boolean? }
 ---@return boolean
-function DiffPreview:open(item, opts)
+function DiffPreview:open_commit(commit, opts)
     opts = opts or {}
 
-    local entry = item.entry
-    local section = item.section
-    local preview_key = item.key
-    local layout = resolved_layout(self)
-    local has_open_preview = (
-        layout == 'split' and window_state.has_open_split_diff(self)
-    )
-        or (layout ~= 'split' and window_state.has_open_stacked_diff(self))
+    local preview_key = 'commit:' .. commit.hash
 
-    if has_open_preview and self.preview_key == preview_key then
-        if opts.focus then
-            return display.focus_open_diff(self)
-        end
-
-        if not opts.force then
-            return true
-        end
+    if
+        not opts.force
+        and self:has_open()
+        and self.preview_key == preview_key
+    then
+        return true
     end
 
-    local lines, err
-    if self.host.base ~= nil then
-        lines, err = git.base_diff(entry, self.host.base, self.host.root)
-    else
-        lines, err = git.diff(entry, section, self.host.root)
-    end
+    self.read_generation = self.read_generation + 1
+    local generation = self.read_generation
+    self.reading = true
 
+    git.show_commit_async(commit, self.host.root, function(lines, err)
+        -- Drop the result when the preview closed or moved on meanwhile.
+        if generation ~= self.read_generation then
+            return
+        end
+
+        self.reading = false
+        show_commit(self, commit, preview_key, lines, err)
+    end)
+
+    return true
+end
+
+---@param item GitStatusEntryItem
+---@param entry GitStatusEntry
+---@param section GitStatusSectionName?
+---@param preview_key string
+---@param layout 'stacked'|'split'
+---@param opts { force: boolean?, notify: boolean?, focus: boolean? }
+---@param lines string[]
+---@param err string?
+---@return boolean
+local function show_entry(
+    self,
+    entry,
+    section,
+    preview_key,
+    layout,
+    opts,
+    lines,
+    err
+)
     if err ~= nil then
         common.notify_error(err, 'Cannot show diff')
         return false
@@ -778,8 +795,69 @@ function DiffPreview:open(item, opts)
     return ok
 end
 
+---@param item GitStatusEntryItem
+---@param opts? { force: boolean?, notify: boolean?, focus: boolean? }
+---@return boolean
+function DiffPreview:open(item, opts)
+    opts = opts or {}
+
+    local layout = resolved_layout(self)
+    local has_open_preview = (
+        layout == 'split' and window_state.has_open_split_diff(self)
+    )
+        or (layout ~= 'split' and window_state.has_open_stacked_diff(self))
+
+    if has_open_preview and self.preview_key == item.key then
+        if opts.focus then
+            return display.focus_open_diff(self)
+        end
+
+        if not opts.force then
+            return true
+        end
+    end
+
+    self.read_generation = self.read_generation + 1
+    local generation = self.read_generation
+    self.reading = true
+
+    ---@param lines string[]
+    ---@param err string?
+    local function apply(lines, err)
+        -- Drop the result when the preview closed or moved on meanwhile.
+        if generation ~= self.read_generation then
+            return
+        end
+
+        self.reading = false
+        show_entry(
+            self,
+            item.entry,
+            item.section,
+            item.key,
+            layout,
+            opts,
+            lines,
+            err
+        )
+    end
+
+    if self.host.base ~= nil then
+        git.base_diff_async(item.entry, self.host.base, self.host.root, apply)
+        return true
+    end
+
+    git.diff_async(item.entry, item.section, self.host.root, apply)
+
+    return true
+end
+
 function DiffPreview:close()
     local closed = false
+
+    -- A read that completes after this point must not reopen the preview.
+    self.read_generation = self.read_generation + 1
+    self.reading = false
 
     if window_state.has_any_split_diff(self) then
         closed = self.right:restore_or_close(false) or closed
