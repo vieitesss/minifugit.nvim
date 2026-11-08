@@ -622,14 +622,29 @@ local function entries_worktree_paths(entries)
     return pathspecs
 end
 
----@param entries GitStatusEntry[]
+---`git add` rejects the whole call when a pathspec matches nothing, and a
+---staged rename leaves the original path in neither the index nor the
+---worktree. Stage the new path only: the rename is already in the index.
+---@param entry GitStatusEntry
 ---@return string[]
-local function entries_pathspecs(entries)
+local function entry_stage_pathspecs(entry)
+    if entry.staged == 'R' then
+        return { ':(literal)' .. entry.path }
+    end
+
+    return entry_pathspecs(entry)
+end
+
+---@param entries GitStatusEntry[]
+---@param pathspecs_for? fun(entry: GitStatusEntry): string[]
+---@return string[]
+local function entries_pathspecs(entries, pathspecs_for)
+    pathspecs_for = pathspecs_for or entry_pathspecs
     local pathspecs = {}
     local seen = {}
 
     for _, entry in ipairs(entries) do
-        for _, path in ipairs(entry_pathspecs(entry)) do
+        for _, path in ipairs(pathspecs_for(entry)) do
             if not seen[path] then
                 table.insert(pathspecs, path)
                 seen[path] = true
@@ -706,7 +721,7 @@ end
 function git.stage_entries(entries, root)
     ensure_git()
 
-    local pathspecs = entries_pathspecs(entries)
+    local pathspecs = entries_pathspecs(entries, entry_stage_pathspecs)
 
     if #pathspecs == 0 then
         return true

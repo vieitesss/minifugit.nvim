@@ -2234,6 +2234,31 @@ describe('minifugit status UI', function()
         )
     end)
 
+    it('stages edits to an entry whose rename is already staged', function()
+        helpers.run({ 'git', 'mv', 'tracked.txt', 'renamed.txt' }, repo)
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'renamed.txt'),
+            { 'one', 'two' }
+        )
+        minifugit.status()
+        local gsw = status_window()
+        vim.api.nvim_win_set_cursor(gsw.win, {
+            helpers.row_containing(gsw.buf.id, 'RM tracked.txt -> renamed.txt'),
+            0,
+        })
+
+        mapped_normal_keys('s')
+
+        assert.are.equal(
+            'R  tracked.txt -> renamed.txt\n',
+            helpers.run({ 'git', 'status', '--short' }, repo)
+        )
+        assert_has_line(
+            buffer_lines(gsw.buf.id),
+            'R  tracked.txt -> renamed.txt'
+        )
+    end)
+
     it('stages and unstages every visible entry with S and U', function()
         helpers.write_file(vim.fs.joinpath(repo, 'tracked.txt'), { 'changed' })
         helpers.write_file(vim.fs.joinpath(repo, 'only-a.txt'), { 'new' })

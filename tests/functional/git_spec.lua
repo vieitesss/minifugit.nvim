@@ -627,6 +627,30 @@ describe('minifugit.git', function()
         end
     )
 
+    it('stages edits to a file whose rename is already staged', function()
+        helpers.run({ 'git', 'mv', 'tracked.txt', 'renamed.txt' }, repo)
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'renamed.txt'),
+            { 'one', 'two' }
+        )
+        local entry = entry_by_path(git.status(), 'renamed.txt')
+        assert.are.equal('R', entry.staged)
+        assert.are.equal('M', entry.unstaged)
+        assert.are.equal('tracked.txt', entry.orig_path)
+
+        local ok, err = git.stage(entry)
+
+        assert.is_true(ok, err)
+        assert.are.equal(
+            'R  tracked.txt -> renamed.txt\n',
+            helpers.run({ 'git', 'status', '--short' }, repo)
+        )
+        assert.are.equal(
+            'one\ntwo\n',
+            helpers.run({ 'git', 'show', ':renamed.txt' }, repo)
+        )
+    end)
+
     for _, paths in ipairs({
         { path = ':(literal)report.txt', unrelated = 'report.txt' },
         { path = 'star*.txt', unrelated = 'star-other.txt' },
