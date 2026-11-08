@@ -17,6 +17,8 @@
 ---@field left GitDiffSide
 ---@field right GitDiffSide
 ---@field filetype string
+---@field diff_lines string[]? Patch that aligns the sides when the caller's
+---                               own diff is not the one shown.
 
 ---@class GitCommit
 ---@field hash string
@@ -1540,6 +1542,250 @@ local function blob_to_worktree_diff(
         nil
 end
 
+---Refs holding the incoming side of an in-progress operation. `REBASE_HEAD`
+---outlives a finished rebase, so it is checked last.
+local INCOMING_CONFLICT_REFS = {
+    'MERGE_HEAD',
+    'CHERRY_PICK_HEAD',
+    'REVERT_HEAD',
+    'REBASE_HEAD',
+}
+
+---Merge stages an unmerged status code holds: stage 1 is the base, stage 2 is
+---HEAD and stage 3 is the incoming side.
+local CONFLICT_STAGES = {
+    UU = { base = true, left = true, right = true },
+    AA = { base = false, left = true, right = true },
+    DU = { base = true, left = false, right = true },
+    UD = { base = true, left = true, right = false },
+    AU = { base = false, left = true, right = false },
+    UA = { base = false, left = false, right = true },
+}
+
+---@param root string?
+---@return string
+local function head_side_label(root)
+    local out =
+        git.run({ 'rev-parse', '--abbrev-ref', 'HEAD' }, root_opts(root))
+    local branch = out.exit_code == 0 and return_result(out) or ''
+
+    -- A detached HEAD has no branch to name.
+    if branch == '' or branch == 'HEAD' then
+        return 'HEAD'
+    end
+
+    return 'HEAD (' .. branch .. ')'
+end
+
+---@param root string?
+---@return string
+local function incoming_side_label(root)
+    local opts = root_opts(root)
+
+    for _, ref in ipairs(INCOMING_CONFLICT_REFS) do
+        local out = git.run({ 'rev-parse', '--verify', '--quiet', ref }, opts)
+
+        if out.exit_code == 0 then
+            local named = git.run({
+                'name-rev',
+                '--name-only',
+                '--refs=refs/heads/*',
+                '--no-undefined',
+                ref,
+            }, opts)
+            local branch = named.exit_code == 0 and return_result(named) or ''
+            local name = branch ~= '' and branch or return_result(out):sub(1, 7)
+
+            return ref .. ' (' .. name .. ')'
+        end
+    end
+
+    return 'theirs'
+end
+
+---Pane titles for the two sides of a conflict. Only refs are read, never stage
+---blobs, so the stacked layout can name its sides cheaply.
+---@param entry GitStatusEntry
+---@param root string?
+---@return { left: string, right: string }
+function git.conflict_side_titles(entry, root)
+    local stages = CONFLICT_STAGES[entry.staged .. entry.unstaged]
+    local left = head_side_label(root)
+    local right = incoming_side_label(root)
+
+    if stages == nil then
+        return { left = left, right = right }
+    end
+
+    -- A side with no blob was either deleted (its base is still staged) or
+    -- never existed on that side.
+    local missing = stages.base and ' (deleted)' or ' (absent)'
+
+    return {
+        left = left .. (stages.left and '' or missing),
+        right = right .. (stages.right and '' or missing),
+    }
+end
+
+---Commit ids of the submodule stages of a conflict, by stage.
+---A gitlink stage has no file content: `git show :2:<path>` would print that
+---submodule commit's own diff, so the id is shown instead.
+---@param entry GitStatusEntry
+---@param root string?
+---@return table<integer, string>
+local function staged_gitlinks(entry, root)
+    local out = git.run(
+        { 'ls-files', '--stage', '-z', '--', ':(literal)' .. entry.path },
+        root_opts(root)
+    )
+
+    if out.exit_code ~= 0 then
+        return {}
+    end
+
+    local stagecommits = {}
+
+    for _, info in ipairs(vim.split(out.output, '\0', { plain = true })) do
+        local mode, hash, stage = info:match('^(%d+) (%x+) (%d+)\t')
+
+        if mode == '160000' then
+            stagecommits[tonumber(stage)] = hash
+        end
+    end
+
+    return stagecommits
+end
+
+---Read one merge stage of a conflict.
+---`read_blob_lines` builds `<rev>:<path>`, so `:2` reads `git show :2:<path>`.
+---@param entry GitStatusEntry
+---@param stage 2|3
+---@param root string?
+---@param gitlinks table<integer, string> Submodule commit ids by stage.
+---@return string[]? lines
+---@return string? error
+local function read_conflict_stage(entry, stage, root, gitlinks)
+    local commit = gitlinks[stage]
+
+    if commit ~= nil then
+        return { 'Subproject commit ' .. commit }, nil
+    end
+
+    return read_blob_lines({ rev = ':' .. stage, path = entry.path }, root)
+end
+
+---A missing stage has no blob to compare against, so describe the present side
+---as a whole-file addition or deletion in `git diff` shape. The split renderer
+---only needs the hunk ranges and line numbers.
+---@param path string
+---@param side 'left'|'right' Present side.
+---@param lines string[]
+---@return string[]
+local function one_sided_conflict_diff(path, side, lines)
+    local adding = side == 'right'
+    local diff = {
+        'diff --git a/' .. path .. ' b/' .. path,
+        '--- a/' .. path,
+        '+++ b/' .. path,
+        adding and ('@@ -0,0 +1,' .. #lines .. ' @@')
+            or ('@@ -1,' .. #lines .. ' +0,0 @@'),
+    }
+
+    for _, line in ipairs(lines) do
+        table.insert(diff, (adding and '+' or '-') .. line)
+    end
+
+    return diff
+end
+
+---A submodule conflict compares commit ids, never the commits' trees:
+---`git diff :2:<path> :3:<path>` would diff their contents.
+---@param path string
+---@param left string
+---@param right string
+---@return string[]
+local function submodule_conflict_diff(path, left, right)
+    return {
+        'diff --git a/' .. path .. ' b/' .. path,
+        '--- a/' .. path,
+        '+++ b/' .. path,
+        '@@ -1 +1 @@',
+        '-' .. left,
+        '+' .. right,
+    }
+end
+
+---Conflicts split into their two merge stages. The combined diff `git diff`
+---reports one column per parent against the worktree, so the panes diff stage 2
+---against stage 3 instead.
+---@param entry GitStatusEntry
+---@param root string?
+---@return GitSplitDiff?
+---@return string?
+local function conflict_split_diff(entry, root)
+    local stages = CONFLICT_STAGES[entry.staged .. entry.unstaged]
+
+    if stages == nil then
+        -- No stage holds content (a file deleted on both sides).
+        return nil, 'Conflict has no sides to diff'
+    end
+
+    local left, right = {}, {}
+    local err
+    local gitlinks = staged_gitlinks(entry, root)
+
+    if stages.left then
+        left, err = read_conflict_stage(entry, 2, root, gitlinks)
+
+        if err ~= nil then
+            return nil, err
+        end
+    end
+
+    if stages.right then
+        right, err = read_conflict_stage(entry, 3, root, gitlinks)
+
+        if err ~= nil then
+            return nil, err
+        end
+    end
+
+    local diff_lines
+
+    if stages.left and stages.right then
+        if gitlinks[2] ~= nil or gitlinks[3] ~= nil then
+            diff_lines = submodule_conflict_diff(entry.path, left[1], right[1])
+        else
+            local out = git.run(
+                { 'diff', ':2:' .. entry.path, ':3:' .. entry.path },
+                root_opts(root)
+            )
+
+            if out.exit_code ~= 0 then
+                return nil, return_result(out)
+            end
+
+            diff_lines = parse_diff(out.output)
+        end
+    else
+        diff_lines = one_sided_conflict_diff(
+            entry.path,
+            stages.left and 'left' or 'right',
+            stages.left and left or right
+        )
+    end
+
+    local titles = git.conflict_side_titles(entry, root)
+
+    return {
+        left = { title = titles.left, lines = left },
+        right = { title = titles.right, lines = right },
+        filetype = vim.filetype.match({ filename = entry.path }) or '',
+        diff_lines = diff_lines,
+    },
+        nil
+end
+
 ---@param entry GitStatusEntry
 ---@param section GitStatusSectionName?
 ---@param root string?
@@ -1549,7 +1795,7 @@ function git.split_diff(entry, section, root)
     ensure_git()
 
     if section == 'conflicts' then
-        return nil, 'Split diff preview is not available for conflicts'
+        return conflict_split_diff(entry, root)
     end
 
     local old_path = entry.orig_path or entry.path

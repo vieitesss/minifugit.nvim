@@ -47,6 +47,14 @@ local sections = {
             { '?', 'Toggle this mappings help' },
         },
     },
+    {
+        title = 'Conflicts',
+        rows = {
+            { '=', 'Preview HEAD against the incoming side' },
+            { 's', 'Stage the file once the conflict is resolved' },
+            { 'u / d', 'Refused: the merge stages would be lost' },
+        },
+    },
 }
 
 ---@param text string

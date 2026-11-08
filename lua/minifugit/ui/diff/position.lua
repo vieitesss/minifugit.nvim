@@ -139,18 +139,16 @@ function M.hunk_position_for_split_row(hunks, side, row)
     return { hunk_index = hunk.index, side = side, offset = offset }
 end
 
+---Worktree line of a row, whichever side highlights it: conflict rows count
+---too, while removed parents and headers hold no worktree line.
 ---@param line MiniFugitDiffLine?
 ---@return integer?
 local function surviving_new_number(line)
-    if line == nil then
+    if line == nil or line.kind == 'removed' then
         return nil
     end
 
-    if line.kind == 'context' or line.kind == 'added' then
-        return line.new_number
-    end
-
-    return nil
+    return line.new_number
 end
 
 ---@param raw_lines string[]?

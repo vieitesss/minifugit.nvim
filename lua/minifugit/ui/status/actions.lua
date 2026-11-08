@@ -4,17 +4,12 @@ local Buffer = require('minifugit.ui.buffer')
 
 local M = {}
 
--- Unstaging or discarding a conflict would drop its merge stages, so those
--- actions refuse and point at the only supported resolution path.
-local CONFLICT_REFUSAL =
-    'Resolve the conflict in the file, then stage it with `s`'
-
 ---@param items GitStatusEntryItem[]
 ---@return boolean
 local function refuse_conflicts(items)
     for _, item in ipairs(items) do
         if item.section == 'conflicts' then
-            common.notify_warn(CONFLICT_REFUSAL)
+            common.notify_warn(common.CONFLICT_RESOLVE_MESSAGE)
             return true
         end
     end

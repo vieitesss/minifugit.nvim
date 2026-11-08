@@ -1,9 +1,18 @@
 ---@class MiniFugitDiffLine
----@field kind 'header'|'hunk'|'context'|'added'|'removed'
+---@field kind MiniFugitDiffLineKind
 ---@field old_number integer?
 ---@field new_number integer?
+---@field prefix_width integer? Diff prefix columns; 2 inside a combined hunk.
 ---@field raw_row integer
 ---@field text string
+
+---A combined-diff row carries one prefix column per parent. `conflict_head`
+---rows belong to the first parent (HEAD), `conflict_incoming` rows to the
+---second one, and `conflict_marker` rows to neither (conflict markers).
+---A `-` column marks a line that parent still holds but the worktree dropped,
+---so those rows are removed lines: `conflict_head_removed` (first parent) or
+---`conflict_incoming_removed` (second parent), never context or additions.
+---@alias MiniFugitDiffLineKind 'header'|'hunk'|'context'|'added'|'removed'|'conflict_head'|'conflict_head_removed'|'conflict_incoming'|'conflict_incoming_removed'|'conflict_marker'
 
 ---@class MiniFugitDiffHunk
 ---@field index integer
@@ -37,6 +46,7 @@ local DIFF_HEADER_PREFIXES = {
     'copy to ',
     'Binary files ',
     'GIT binary patch',
+    '* Unmerged path ',
 }
 
 local DIFF_HEADER_EXACT = {
@@ -67,6 +77,14 @@ function M.parse_hunk_header(hunk_header)
     local old_start, old_count, new_start, new_count =
         hunk_header:match('^@@ %-(%d+),?(%d*) %+(%d+),?(%d*) @@')
 
+    if old_start == nil then
+        -- Combined diff (`@@@`): one column per parent, then the result. The
+        -- first parent is HEAD; the result is the worktree file.
+        old_start, old_count, new_start, new_count = hunk_header:match(
+            '^@@@ %-(%d+),?(%d*) %-%d+,?%d* %+(%d+),?(%d*) @@@'
+        )
+    end
+
     if old_start == nil or new_start == nil then
         return nil, nil, nil, nil
     end
@@ -77,12 +95,72 @@ function M.parse_hunk_header(hunk_header)
         new_count == '' and 1 or tonumber(new_count)
 end
 
+---Insert one row of a combined-diff hunk. Both prefix columns are parsed so a
+---row is attributed to the parent it survives in, never to a plain addition.
+---@param parsed MiniFugitDiffLine[]
+---@param text string
+---@param raw_row integer
+---@param old_number integer?
+---@param new_number integer?
+---@return integer? next_old_number
+---@return integer? next_new_number
+local function parse_combined_line(
+    parsed,
+    text,
+    raw_row,
+    old_number,
+    new_number
+)
+    local first = text:sub(1, 1)
+    local second = text:sub(2, 2)
+    -- Only rows without a `-` column made it into the result.
+    local in_result = first ~= '-' and second ~= '-'
+    -- A removal row belongs to one parent and consumes a line of it. The other
+    -- column just says the same line was there too, so it consumes nothing.
+    local counts_old = first == '-' or (first == ' ' and in_result)
+    local kind
+
+    if first == '-' then
+        kind = 'conflict_head_removed'
+    elseif second == '-' then
+        kind = 'conflict_incoming_removed'
+    elseif first == ' ' and second == ' ' then
+        kind = 'context'
+    elseif first == ' ' then
+        kind = 'conflict_head'
+    elseif second == ' ' then
+        kind = 'conflict_incoming'
+    else
+        kind = 'conflict_marker'
+    end
+
+    table.insert(parsed, {
+        kind = kind,
+        old_number = counts_old and old_number or nil,
+        new_number = in_result and new_number or nil,
+        prefix_width = 2,
+        raw_row = raw_row,
+        text = text,
+    })
+
+    if counts_old and old_number ~= nil then
+        old_number = old_number + 1
+    end
+
+    if in_result and new_number ~= nil then
+        new_number = new_number + 1
+    end
+
+    return old_number, new_number
+end
+
 ---@param lines string[]
 ---@return MiniFugitDiffLine[]
 function M.parse_lines(lines)
     local parsed = {}
     local old_number
     local new_number
+    local combined = false
 
     for raw_row, text in ipairs(lines) do
         if text == '' then
@@ -93,7 +171,19 @@ function M.parse_lines(lines)
             goto continue
         end
 
-        if vim.startswith(text, '@@') then
+        if vim.startswith(text, '@@@') then
+            combined = true
+            local old_start, _, new_start = M.parse_hunk_header(text)
+            old_number, new_number = old_start, new_start
+            table.insert(parsed, {
+                kind = 'hunk',
+                old_number = old_number,
+                new_number = new_number,
+                raw_row = raw_row,
+                text = text,
+            })
+        elseif vim.startswith(text, '@@') then
+            combined = false
             local old_start, _, new_start = M.parse_hunk_header(text)
             old_number, new_number = old_start, new_start
             table.insert(parsed, {
@@ -104,9 +194,18 @@ function M.parse_lines(lines)
                 text = text,
             })
         elseif is_diff_header(text) then
+            combined = false
             table.insert(
                 parsed,
                 { kind = 'header', raw_row = raw_row, text = text }
+            )
+        elseif combined then
+            old_number, new_number = parse_combined_line(
+                parsed,
+                text,
+                raw_row,
+                old_number,
+                new_number
             )
         elseif vim.startswith(text, '+') then
             table.insert(parsed, {

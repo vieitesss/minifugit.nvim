@@ -1,5 +1,11 @@
 local M = {}
 
+-- Unstaging or discarding a conflict would drop its merge stages, so the
+-- status actions and the hunk keys both refuse and point at the only
+-- supported resolution path.
+M.CONFLICT_RESOLVE_MESSAGE =
+    'Resolve the conflict in the file, then stage it with `s`'
+
 ---@param win number?
 ---@return boolean
 function M.is_valid_win(win)

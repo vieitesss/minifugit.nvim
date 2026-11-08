@@ -17,6 +17,7 @@ without leaving Neovim.
   default.
 - Stage and unstage files from the status window (visual mode as well).
 - Preview diffs for the entry under the cursor in stacked or split view.
+- Preview both sides of a conflict, even when one side deleted the file.
 - Stage and unstage hunks from the diff window.
 - Create commits.
 - Animated loading spinner while pushing your commits.
@@ -118,6 +119,20 @@ Open the status window:
 ```lua
 require('minifugit').status()
 ```
+
+### Conflicts
+
+A conflicted file stays in the status window until you resolve it. `=`
+previews both sides of the merge: the stacked layout shows Git's combined
+diff with each side highlighted, and the split layout puts stage 2 (`HEAD`
+with its branch) next to stage 3 (the incoming `MERGE_HEAD`, `REBASE_HEAD`,
+`CHERRY_PICK_HEAD` or `REVERT_HEAD` ref, or `theirs` when no ref is
+recorded). A side missing because the file was deleted shows an empty pane
+marked `(deleted)`; a file deleted on both sides says so instead of showing
+a diff.
+
+Stage the file with `s` once the markers are gone. Unstaging or discarding
+would drop the merge stages, so `u` and `d` refuse.
 
 ### Programmatic opening
 

@@ -29,9 +29,9 @@ local function format_diff_line(line, width, opts)
         return line.text
     end
 
-    -- Strip the diff prefix character ('+', '-', or ' ') to match split view
-    -- where content lines have no symbols.
-    local text = line.text:sub(2)
+    -- Strip the diff prefix columns to match split view, where content lines
+    -- have no symbols. Combined-diff rows carry one column per parent.
+    local text = line.text:sub((line.prefix_width or 1) + 1)
 
     if opts.show_numbers == false then
         return text
@@ -96,14 +96,26 @@ local function syntax_side_and_row(diff_line)
     return nil, nil
 end
 
+---Line background per diff row kind.
+local LINE_HIGHLIGHTS = {
+    added = 'diff_added',
+    removed = 'diff_removed',
+    -- Lines a parent still holds and the worktree dropped read as removals.
+    conflict_head_removed = 'diff_removed',
+    conflict_incoming_removed = 'diff_removed',
+    conflict_head = 'diff_conflict_head',
+    conflict_incoming = 'diff_conflict_incoming',
+    conflict_marker = 'diff_conflict_marker',
+}
+
 ---@param line MiniFugitRenderLine
 ---@param diff_line MiniFugitDiffLine
 ---@param groups table<string, string>
 local function add_diff_highlights(line, diff_line, groups)
-    if diff_line.kind == 'added' then
-        line.line_hl_group = groups.diff_added
-    elseif diff_line.kind == 'removed' then
-        line.line_hl_group = groups.diff_removed
+    local key = LINE_HIGHLIGHTS[diff_line.kind]
+
+    if key ~= nil then
+        line.line_hl_group = groups[key]
     elseif diff_line.kind == 'header' then
         render.add_highlight(line, groups.diff_header, 0, #line.text)
     elseif diff_line.kind == 'hunk' then

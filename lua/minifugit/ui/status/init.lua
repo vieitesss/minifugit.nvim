@@ -102,6 +102,21 @@ local HIGHLIGHT_SPECS = {
         sources = { 'DiffDelete', 'Removed', 'Error' },
         fallback_bg = 0x5A2D34,
     },
+    diff_conflict_head = {
+        name = 'MiniFugitDiffConflictHead',
+        sources = { 'DiffChange', 'Identifier' },
+        fallback_bg = 0x2E4159,
+    },
+    diff_conflict_incoming = {
+        name = 'MiniFugitDiffConflictIncoming',
+        sources = { 'DiffText', 'Special' },
+        fallback_bg = 0x4A3A5C,
+    },
+    diff_conflict_marker = {
+        name = 'MiniFugitDiffConflictMarker',
+        sources = { 'DiffDelete', 'Removed', 'Error' },
+        fallback_bg = 0x5A2D34,
+    },
     diff_added_text = {
         name = 'MiniFugitDiffAddedText',
         sources = { 'DiffAdd', 'Added', 'String' },

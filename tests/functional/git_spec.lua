@@ -1157,3 +1157,238 @@ describe('minifugit.git Git discovery environment', function()
         )
     end)
 end)
+
+describe('minifugit.git conflict split diffs', function()
+    ---@type string
+    local original_cwd
+    ---@type string
+    local repo
+
+    ---@param args string[]
+    ---@return string
+    local function run_git(args)
+        return helpers.run(vim.list_extend({ 'git' }, args), repo)
+    end
+
+    ---@param path string
+    ---@param lines string[]
+    local function write(path, lines)
+        helpers.write_file(vim.fs.joinpath(repo, path), lines)
+    end
+
+    ---Commit `theirs` on `feature` and `ours` on `main`, then merge `feature`.
+    ---@param ours string[]
+    ---@param theirs string[]
+    local function merge_conflict(ours, theirs)
+        run_git({ 'checkout', '-q', '-b', 'feature' })
+        write('a.txt', theirs)
+        run_git({ 'commit', '-qam', 'theirs' })
+        run_git({ 'checkout', '-q', 'main' })
+        write('a.txt', ours)
+        run_git({ 'commit', '-qam', 'ours' })
+        helpers.run({ 'sh', '-c', 'git merge feature || true' }, repo)
+    end
+
+    ---@return GitStatusEntry?
+    local function conflict_entry()
+        return helpers.entry_by_path(git.status(), 'a.txt')
+    end
+
+    before_each(function()
+        original_cwd = vim.fn.getcwd()
+        repo = helpers.create_repo({ ['a.txt'] = { 'one', 'two' } })
+        vim.cmd.cd(vim.fn.fnameescape(repo))
+    end)
+
+    after_each(function()
+        vim.cmd.cd(vim.fn.fnameescape(original_cwd))
+        vim.fn.delete(repo, 'rf')
+    end)
+
+    it('diffs stage 2 against stage 3 and titles both side refs', function()
+        merge_conflict({ 'ours' }, { 'theirs' })
+
+        local split, err = git.split_diff(conflict_entry(), 'conflicts', repo)
+
+        assert.is_nil(err)
+        assert.are.equal('HEAD (main)', split.left.title)
+        assert.are.equal('MERGE_HEAD (feature)', split.right.title)
+        assert.are.same({ 'ours' }, split.left.lines)
+        assert.are.same({ 'theirs' }, split.right.lines)
+        helpers.assert_has_line_containing(split.diff_lines, '-ours')
+        helpers.assert_has_line_containing(split.diff_lines, '+theirs')
+    end)
+
+    it('names the incoming side by short hash when no branch has it', function()
+        run_git({ 'checkout', '-q', '--detach', 'main' })
+        write('a.txt', { 'theirs' })
+        run_git({ 'commit', '-qam', 'theirs' })
+        local theirs = vim.trim(run_git({ 'rev-parse', 'HEAD' }))
+        run_git({ 'checkout', '-q', 'main' })
+        write('a.txt', { 'ours' })
+        run_git({ 'commit', '-qam', 'ours' })
+        helpers.run({ 'sh', '-c', 'git merge ' .. theirs .. ' || true' }, repo)
+
+        local split, err = git.split_diff(conflict_entry(), 'conflicts', repo)
+
+        assert.is_nil(err)
+        assert.are.equal(
+            'MERGE_HEAD (' .. theirs:sub(1, 7) .. ')',
+            split.right.title
+        )
+    end)
+
+    it('names the first side from a detached HEAD during a rebase', function()
+        run_git({ 'checkout', '-q', '-b', 'feature' })
+        write('a.txt', { 'theirs' })
+        run_git({ 'commit', '-qam', 'theirs' })
+        run_git({ 'checkout', '-q', 'main' })
+        write('a.txt', { 'ours' })
+        run_git({ 'commit', '-qam', 'ours' })
+        run_git({ 'checkout', '-q', 'feature' })
+        helpers.run({ 'sh', '-c', 'git rebase main || true' }, repo)
+
+        local split, err = git.split_diff(conflict_entry(), 'conflicts', repo)
+
+        assert.is_nil(err)
+        assert.are.equal('HEAD', split.left.title)
+        assert.are.equal('REBASE_HEAD (feature)', split.right.title)
+    end)
+
+    it('keeps the deleted side empty and says so in its title', function()
+        -- Deleted by us: stage 2 is missing, the worktree file is gone.
+        run_git({ 'checkout', '-q', '-b', 'feature' })
+        write('a.txt', { 'theirs' })
+        run_git({ 'commit', '-qam', 'theirs' })
+        run_git({ 'checkout', '-q', 'main' })
+        run_git({ 'rm', '-q', 'a.txt' })
+        run_git({ 'commit', '-qm', 'ours deletes' })
+        helpers.run({ 'sh', '-c', 'git merge feature || true' }, repo)
+
+        local entry = conflict_entry()
+        assert.are.same({ 'D', 'U' }, { entry.staged, entry.unstaged })
+
+        local split, err = git.split_diff(entry, 'conflicts', repo)
+
+        assert.is_nil(err)
+        assert.are.equal('HEAD (main) (deleted)', split.left.title)
+        assert.are.equal('MERGE_HEAD (feature)', split.right.title)
+        assert.are.same({}, split.left.lines)
+        assert.are.same({ 'theirs' }, split.right.lines)
+        helpers.assert_has_line_containing(split.diff_lines, '+theirs')
+    end)
+
+    it('reads both stages of an add/add conflict', function()
+        run_git({ 'checkout', '-q', '-b', 'feature' })
+        write('c.txt', { 'theirs' })
+        run_git({ 'add', 'c.txt' })
+        run_git({ 'commit', '-qm', 'theirs adds' })
+        run_git({ 'checkout', '-q', 'main' })
+        write('c.txt', { 'ours' })
+        run_git({ 'add', 'c.txt' })
+        run_git({ 'commit', '-qm', 'ours adds' })
+        helpers.run({ 'sh', '-c', 'git merge feature || true' }, repo)
+
+        local split, err = git.split_diff(
+            helpers.entry_by_path(git.status(), 'c.txt'),
+            'conflicts',
+            repo
+        )
+
+        assert.is_nil(err)
+        assert.are.same({ 'ours' }, split.left.lines)
+        assert.are.same({ 'theirs' }, split.right.lines)
+    end)
+
+    it('shows submodule stages as commit ids, not their trees', function()
+        local tree = vim.trim(run_git({ 'rev-parse', 'HEAD^{tree}' }))
+        local commits = {}
+
+        for index = 1, 3 do
+            commits[index] = vim.trim(run_git({
+                'commit-tree',
+                tree,
+                '-m',
+                'submodule ' .. index,
+            }))
+        end
+
+        local info = vim.fn.tempname()
+        helpers.write_file(info, {
+            '160000 ' .. commits[1] .. ' 1\tsub',
+            '160000 ' .. commits[2] .. ' 2\tsub',
+            '160000 ' .. commits[3] .. ' 3\tsub',
+        })
+        helpers.run({
+            'sh',
+            '-c',
+            'git update-index --index-info < ' .. vim.fn.shellescape(info),
+        }, repo)
+
+        local split, err = git.split_diff(
+            helpers.entry_by_path(git.status(), 'sub'),
+            'conflicts',
+            repo
+        )
+
+        assert.is_nil(err)
+        assert.are.same(
+            { 'Subproject commit ' .. commits[2] },
+            split.left.lines
+        )
+        assert.are.same(
+            { 'Subproject commit ' .. commits[3] },
+            split.right.lines
+        )
+        helpers.assert_has_line_containing(
+            split.diff_lines,
+            '-Subproject commit ' .. commits[2]
+        )
+        helpers.assert_has_line_containing(
+            split.diff_lines,
+            '+Subproject commit ' .. commits[3]
+        )
+    end)
+
+    it('titles both merge sides from refs', function()
+        merge_conflict({ 'ours' }, { 'theirs' })
+
+        assert.are.same(
+            { left = 'HEAD (main)', right = 'MERGE_HEAD (feature)' },
+            git.conflict_side_titles(conflict_entry(), repo)
+        )
+    end)
+
+    it('suffixes a side that has no stage blob', function()
+        -- Deleted by us: stage 2 is missing, so the title says so.
+        run_git({ 'checkout', '-q', '-b', 'feature' })
+        write('a.txt', { 'theirs' })
+        run_git({ 'commit', '-qam', 'theirs' })
+        run_git({ 'checkout', '-q', 'main' })
+        run_git({ 'rm', '-q', 'a.txt' })
+        run_git({ 'commit', '-qm', 'ours deletes' })
+        helpers.run({ 'sh', '-c', 'git merge feature || true' }, repo)
+
+        assert.are.same(
+            { left = 'HEAD (main) (deleted)', right = 'MERGE_HEAD (feature)' },
+            git.conflict_side_titles(conflict_entry(), repo)
+        )
+    end)
+
+    it('has nothing to show for a conflict deleted on both sides', function()
+        local hash = vim.trim(run_git({ 'rev-parse', 'HEAD:a.txt' }))
+        run_git({ 'rm', '-q', 'a.txt' })
+        local info = vim.fn.tempname()
+        helpers.write_file(info, { '100644 ' .. hash .. ' 1\ta.txt' })
+        helpers.run({
+            'sh',
+            '-c',
+            'git update-index --index-info < ' .. vim.fn.shellescape(info),
+        }, repo)
+
+        local split, err = git.split_diff(conflict_entry(), 'conflicts', repo)
+
+        assert.is_nil(split)
+        assert.are.equal('Conflict has no sides to diff', err)
+    end)
+end)

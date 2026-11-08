@@ -84,6 +84,13 @@ function M.apply_current_hunk(self, kind, callbacks)
         return false
     end
 
+    -- A conflict's hunks are the merge stages, not file content to stage or
+    -- discard: resolution happens in the file.
+    if self.section == 'conflicts' then
+        common.notify_warn(common.CONFLICT_RESOLVE_MESSAGE)
+        return false
+    end
+
     local section = self.section
 
     if kind == 'stage' and section ~= 'unstaged' then

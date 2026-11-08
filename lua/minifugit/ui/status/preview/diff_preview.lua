@@ -715,27 +715,55 @@ local function show_entry(
 
     local parsed_hunks = diff_parser.parse_hunks(lines)
 
+    local conflict_message
+    local can_split = true
+
+    if section == 'conflicts' and self.host.base == nil then
+        -- `DD` deleted the file on both sides, so no merge stage holds content.
+        if entry.staged == 'D' and entry.unstaged == 'D' then
+            -- Neither side exists: there is nothing to diff or to compare.
+            conflict_message = 'Deleted on both sides'
+            can_split = false
+        end
+    end
+
     -- Split layout needs both file sides. Stacked only needs the unified
     -- patch; source syntax is overlaid asynchronously after the first paint
     -- (fetching full file contents synchronously made cursor-follow laggy).
     -- Base entries without content hunks show metadata in stacked view, but
     -- keep the chosen layout so the next content change can still use split.
-    if layout == 'split' and (self.host.base == nil or #parsed_hunks > 0) then
+    if
+        can_split
+        and layout == 'split'
+        and (self.host.base == nil or #parsed_hunks > 0)
+    then
+        -- Conflicts read both merge stages here; the stacked layout below
+        -- names its sides from refs only.
         local split_diff, split_err = load_split_diff(self, entry, section)
 
         if split_diff ~= nil then
+            local split_lines = lines
+            local split_hunks = parsed_hunks
+
+            if section == 'conflicts' then
+                -- Panes align on the stage 2 vs stage 3 patch, not on the
+                -- combined patch against the worktree.
+                split_lines = split_diff.diff_lines or {}
+                split_hunks = diff_parser.parse_hunks(split_lines)
+            end
+
             local ok = display.show_split(
                 self,
                 split_diff,
-                lines,
-                parsed_hunks,
+                split_lines,
+                split_hunks,
                 preview_key,
                 diff_title(entry, section),
                 self.actions
             )
 
             if ok then
-                set_context(self, lines, nil, parsed_hunks, section, entry)
+                set_context(self, split_lines, nil, split_hunks, section, entry)
 
                 if opts.focus then
                     display.focus_open_diff(self)
@@ -755,7 +783,9 @@ local function show_entry(
     local diff_lines
     local raw_rows
 
-    if #lines == 0 then
+    if conflict_message ~= nil then
+        diff_lines = { render.line(conflict_message) }
+    elseif #lines == 0 then
         diff_lines = {
             render.line('No diff for ' .. vim.fn.strtrans(entry.path)),
         }
@@ -764,6 +794,23 @@ local function show_entry(
             show_headers = self.show_headers,
             show_numbers = self.show_numbers,
         })
+    end
+
+    -- Name both sides above the patch. Shift the raw rows so hunks, cursor
+    -- mapping and syntax still point at the same patch row.
+    if
+        section == 'conflicts'
+        and self.host.base == nil
+        and conflict_message == nil
+    then
+        local titles = git.conflict_side_titles(entry, self.host.root)
+        local header = render.line(titles.left .. ' vs ' .. titles.right)
+        render.add_highlight(header, self.groups.diff_header, 0, #header.text)
+        table.insert(diff_lines, 1, header)
+
+        for index, row in ipairs(raw_rows or {}) do
+            raw_rows[index] = row + 1
+        end
     end
 
     diff_parser.assign_stacked_rows(parsed_hunks, raw_rows)
@@ -778,7 +825,12 @@ local function show_entry(
 
     if ok then
         set_context(self, lines, raw_rows, parsed_hunks, section, entry)
-        schedule_stacked_syntax(self, lines, entry, section, preview_key)
+
+        -- Combined rows mix two files, so indexing the worktree by stage-1
+        -- line numbers would paint the wrong rows.
+        if section ~= 'conflicts' then
+            schedule_stacked_syntax(self, lines, entry, section, preview_key)
+        end
 
         if opts.focus then
             display.focus_open_diff(self)
