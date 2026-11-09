@@ -943,7 +943,6 @@ function GitStatusWindow:render_cached()
     render.apply(self.buf.id, self.lines)
 end
 
----@param root string
 ---@param state GitStatusCursorState
 ---@param snapshot GitStatusSnapshot
 local function apply_snapshot(self, state, snapshot)

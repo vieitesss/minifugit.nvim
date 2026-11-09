@@ -1127,6 +1127,12 @@ describe('minifugit status UI', function()
     end)
 
     it('logs a failing callback and still runs later callbacks', function()
+        local log = require('minifugit.log')
+        local logged = {}
+        local original_error = log.error
+        log.error = function(message)
+            table.insert(logged, message)
+        end
         local calls = {}
         minifugit.open({
             on_close = function()
@@ -1143,15 +1149,12 @@ describe('minifugit status UI', function()
         assert.is_true(vim.wait(1000, function()
             return #calls == 2
         end))
+        log.error = original_error
+
         assert.are.same({ 'first', 'second' }, calls)
-        helpers.assert_has_line_containing(
-            vim.fn.readfile(require('minifugit.log').path()),
-            'on_close callback failed:'
-        )
-        helpers.assert_has_line_containing(
-            vim.fn.readfile(require('minifugit.log').path()),
-            'test on_close failure'
-        )
+        assert.are.equal(1, #logged)
+        assert.is_truthy(logged[1]:find('on_close callback failed:', 1, true))
+        assert.is_truthy(logged[1]:find('test on_close failure', 1, true))
     end)
 
     it(

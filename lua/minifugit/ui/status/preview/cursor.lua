@@ -79,10 +79,9 @@ end
 ---For split diff, find the buffer row for a hunk position using alignment row
 ---metadata.
 ---@param rows MiniFugitSplitRow[]
----@param side MiniFugitDiffSide
 ---@param position MiniFugitDiffHunkPosition
 ---@return integer?
-local function buffer_row_for_hunk_position(rows, side, position)
+local function buffer_row_for_hunk_position(rows, position)
     for buf_row, meta in ipairs(rows) do
         if
             meta.hunk_index == position.hunk_index
@@ -223,8 +222,7 @@ function M.restore_hunk_position(self, position)
 
     local rows = position.side == 'left' and self.left_rows or self.right_rows
 
-    local row = rows
-        and buffer_row_for_hunk_position(rows, position.side, position)
+    local row = rows and buffer_row_for_hunk_position(rows, position)
 
     if row == nil then
         return

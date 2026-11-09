@@ -24,7 +24,6 @@
 ---@field old_end integer
 ---@field new_start integer
 ---@field new_count integer
----@field new_end integer
 ---@field stacked_row integer?
 
 local M = {}
@@ -282,7 +281,6 @@ function M.parse_hunks(lines)
                     old_end = range_end(old_start, old_count),
                     new_start = new_start,
                     new_count = new_count,
-                    new_end = range_end(new_start, new_count),
                 }
                 table.insert(hunks, current)
             end

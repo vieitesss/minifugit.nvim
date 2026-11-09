@@ -47,7 +47,7 @@ describe('base revision git API', function()
             helpers.write_file(repo .. '/ignored.txt', { 'ignored' })
             helpers.write_file(repo .. '/staged.txt', { 'staged addition' })
             helpers.run({ 'git', 'add', 'staged.txt' }, repo)
-            local entries, err = git.base_entries(base, repo)
+            local entries, err = helpers.base_entries(base, repo)
             assert.is_nil(err)
             assert.are.same({
                 { staged = ' ', unstaged = 'A', path = '.gitignore' },
@@ -71,7 +71,7 @@ describe('base revision git API', function()
         helpers.write_file(repo .. '/' .. tracked, { 'changed' })
         helpers.write_file(repo .. '/' .. untracked, { 'new' })
 
-        local entries, err = git.base_entries(base, repo)
+        local entries, err = helpers.base_entries(base, repo)
 
         assert.is_nil(err)
         assert.are.same({
@@ -100,7 +100,7 @@ describe('base revision git API', function()
                     { 'git', 'config', 'status.renames', settings.status },
                     repo
                 )
-                local entries, err = git.base_entries(base, repo)
+                local entries, err = helpers.base_entries(base, repo)
                 assert.is_nil(err)
                 assert.are.same({
                     { staged = ' ', unstaged = 'A', path = 'copy.txt' },
@@ -120,7 +120,7 @@ describe('base revision git API', function()
                 repo .. '/tracked.txt',
                 { 'committed text', 'uncommitted text' }
             )
-            local patch, err = git.base_diff(
+            local patch, err = helpers.base_diff(
                 { path = 'tracked.txt', staged = ' ', unstaged = 'M' },
                 base,
                 repo
@@ -177,7 +177,7 @@ describe('base revision git API', function()
                     { 'unrelated change' }
                 )
 
-                local patch, err = git.base_diff(
+                local patch, err = helpers.base_diff(
                     { path = paths.path, staged = ' ', unstaged = 'M' },
                     base,
                     repo
@@ -201,7 +201,7 @@ describe('base revision git API', function()
                     )
                 end
 
-                local patch, err = git.base_diff({
+                local patch, err = helpers.base_diff({
                     path = paths.renamed,
                     orig_path = paths.path,
                     staged = ' ',
@@ -240,62 +240,55 @@ describe('base revision git API', function()
         end
     )
 
-    it('collects the same base entries without blocking', function()
+    it('collects base entries without blocking', function()
         helpers.write_file(repo .. '/tracked.txt', { 'working text' })
         helpers.write_file(repo .. '/untracked.txt', { 'untracked' })
 
-        local entries, err = git.base_entries(base, repo)
-        local async_entries, async_err = helpers.await_async(function(callback)
-            git.base_entries_async(base, repo, callback)
-        end)
+        local entries, err = helpers.base_entries(base, repo)
 
         assert.is_nil(err)
-        assert.is_nil(async_err)
-        assert.are.same(entries, async_entries)
+        assert.are.same({
+            { staged = ' ', unstaged = 'M', path = 'tracked.txt' },
+            { staged = '?', unstaged = '?', path = 'untracked.txt' },
+        }, entries)
     end)
 
-    it('builds the same base diff without blocking', function()
+    it('builds base diffs without blocking', function()
         helpers.write_file(repo .. '/tracked.txt', { 'working text' })
         helpers.write_file(repo .. '/untracked.txt', { 'untracked' })
-        local entries = git.base_entries(base, repo)
+        local entries = helpers.base_entries(base, repo)
 
-        for _, entry in ipairs(entries) do
-            local patch, err = git.base_diff(entry, base, repo)
-            local async_patch, async_err = helpers.await_async(
-                function(callback)
-                    git.base_diff_async(entry, base, repo, callback)
-                end
-            )
+        local tracked, tracked_err = helpers.base_diff(
+            helpers.entry_by_path(entries, 'tracked.txt'),
+            base,
+            repo
+        )
+        assert.is_nil(tracked_err)
+        assert.is_true(vim.tbl_contains(tracked, '-base text'))
+        assert.is_true(vim.tbl_contains(tracked, '+working text'))
 
-            assert.is_nil(err)
-            assert.is_nil(async_err)
-            assert.are.same(patch, async_patch)
-        end
+        local untracked, untracked_err = helpers.base_diff(
+            helpers.entry_by_path(entries, 'untracked.txt'),
+            base,
+            repo
+        )
+        assert.is_nil(untracked_err)
+        assert.is_true(vim.tbl_contains(untracked, '+untracked'))
     end)
 
-    it('reports the same base read errors without blocking', function()
+    it('reports base read errors without blocking', function()
         local bad_base = 'missing-revision'
         local entry = { path = 'tracked.txt', staged = ' ', unstaged = 'M' }
 
-        local entries, err = git.base_entries(bad_base, repo)
-        local async_entries, async_err = helpers.await_async(function(callback)
-            git.base_entries_async(bad_base, repo, callback)
-        end)
-        local patch, patch_err = git.base_diff(entry, bad_base, repo)
-        local async_patch, async_patch_err = helpers.await_async(
-            function(callback)
-                git.base_diff_async(entry, bad_base, repo, callback)
-            end
-        )
+        local entries, err = helpers.base_entries(bad_base, repo)
+        local patch, patch_err = helpers.base_diff(entry, bad_base, repo)
 
         assert.are.same({}, entries)
         assert.is_not_nil(err)
-        assert.are.same(entries, async_entries)
-        assert.are.equal(err, async_err)
+        assert.is_truthy(err:find('missing-revision', 1, true))
         assert.are.same({}, patch)
         assert.is_not_nil(patch_err)
-        assert.are.same(patch, async_patch)
-        assert.are.equal(patch_err, async_patch_err)
+        assert.are.equal(err, patch_err)
     end)
 
     it(
@@ -319,7 +312,7 @@ describe('base revision git API', function()
             helpers.write_file(repo .. '/tab\tname.txt', { 'untracked' })
             helpers.run({ 'git', 'commit', '-m', 'rename' }, repo)
             vim.cmd.cd(repo)
-            local entries, err = git.base_entries(base)
+            local entries, err = helpers.base_entries(base)
             assert.is_nil(err)
             assert.are.same({
                 {
@@ -330,7 +323,7 @@ describe('base revision git API', function()
                 },
                 { staged = '?', unstaged = '?', path = 'tab\tname.txt' },
             }, entries)
-            local patch = git.base_diff(entries[1], base)
+            local patch = helpers.base_diff(entries[1], base)
             assert.is_true(vim.tbl_contains(patch, 'rename from tracked.txt'))
             assert.is_true(
                 vim.tbl_contains(patch, 'rename to renamed name.txt')
@@ -352,7 +345,7 @@ describe('base revision git API', function()
                 repo .. '/untracked.txt',
                 { 'untracked content' }
             )
-            local entries = git.base_entries(base, repo)
+            local entries = helpers.base_entries(base, repo)
             local by_path = {}
             for _, entry in ipairs(entries) do
                 by_path[entry.path] = entry
@@ -374,7 +367,7 @@ describe('base revision git API', function()
             assert.are.same({ 'untracked content' }, untracked.right.lines)
             assert.is_true(
                 vim.tbl_contains(
-                    git.base_diff(by_path['untracked.txt'], base, repo),
+                    helpers.base_diff(by_path['untracked.txt'], base, repo),
                     '+untracked content'
                 )
             )
@@ -387,7 +380,7 @@ describe('base revision git API', function()
             helpers.run({ 'git', 'rm', '--cached', 'tracked.txt' }, repo)
             helpers.write_file(repo .. '/tracked.txt', { 'worktree text' })
 
-            local entries, err = git.base_entries(base, repo)
+            local entries, err = helpers.base_entries(base, repo)
 
             assert.is_nil(err)
             assert.are.same({
@@ -401,10 +394,10 @@ describe('base revision git API', function()
         function()
             helpers.run({ 'git', 'rm', '--cached', 'tracked.txt' }, repo)
             helpers.write_file(repo .. '/tracked.txt', { 'worktree text' })
-            local entries = select(1, git.base_entries(base, repo))
+            local entries = select(1, helpers.base_entries(base, repo))
             local entry = entries[1]
 
-            local patch, err = git.base_diff(entry, base, repo)
+            local patch, err = helpers.base_diff(entry, base, repo)
 
             assert.is_nil(err)
             helpers.assert_has_line_containing(patch, '-base text')
@@ -435,7 +428,7 @@ describe('base revision git API', function()
             base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
             helpers.run({ 'git', 'rm', '--cached', 'no-newline.txt' }, repo)
 
-            local entries, err = git.base_entries(base, repo)
+            local entries, err = helpers.base_entries(base, repo)
 
             assert.is_nil(err)
             local entry = helpers.entry_by_path(entries, 'no-newline.txt')
@@ -444,7 +437,7 @@ describe('base revision git API', function()
                 entry
             )
 
-            local patch, patch_err = git.base_diff(entry, base, repo)
+            local patch, patch_err = helpers.base_diff(entry, base, repo)
 
             assert.is_nil(patch_err)
             assert.are.same({}, patch)
@@ -467,7 +460,7 @@ describe('base revision git API', function()
             base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
             helpers.run({ 'git', 'rm', '--cached', 'crlf.txt' }, repo)
 
-            local entries, err = git.base_entries(base, repo)
+            local entries, err = helpers.base_entries(base, repo)
 
             assert.is_nil(err)
             local entry = helpers.entry_by_path(entries, 'crlf.txt')
@@ -476,14 +469,14 @@ describe('base revision git API', function()
                 entry
             )
 
-            local patch, patch_err = git.base_diff(entry, base, repo)
+            local patch, patch_err = helpers.base_diff(entry, base, repo)
 
             assert.is_nil(patch_err)
             assert.are.same({}, patch)
 
             helpers.write_raw(path, 'first line\r\nchanged line\r\n')
 
-            patch, patch_err = git.base_diff(entry, base, repo)
+            patch, patch_err = helpers.base_diff(entry, base, repo)
 
             assert.is_nil(patch_err)
             helpers.assert_has_line_containing(patch, '-second line')
@@ -503,7 +496,7 @@ describe('base revision git API', function()
             helpers.run({ 'git', 'rm', '--cached', '--', name }, repo)
             helpers.write_raw(path, 'edited content')
 
-            local entries, err = git.base_entries(base, repo)
+            local entries, err = helpers.base_entries(base, repo)
 
             assert.is_nil(err)
             local entry = helpers.entry_by_path(entries, name)
@@ -512,7 +505,7 @@ describe('base revision git API', function()
                 entry
             )
 
-            local patch, patch_err = git.base_diff(entry, base, repo)
+            local patch, patch_err = helpers.base_diff(entry, base, repo)
 
             assert.is_nil(patch_err)
             assert.is_true(
@@ -540,7 +533,7 @@ describe('base revision git API', function()
             base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
             helpers.run({ 'git', 'rm', '--cached', 'script.sh' }, repo)
 
-            local entries, err = git.base_entries(base, repo)
+            local entries, err = helpers.base_entries(base, repo)
 
             assert.is_nil(err)
             local entry = helpers.entry_by_path(entries, 'script.sh')
@@ -549,7 +542,7 @@ describe('base revision git API', function()
                 entry
             )
 
-            local patch, patch_err = git.base_diff(entry, base, repo)
+            local patch, patch_err = helpers.base_diff(entry, base, repo)
 
             assert.is_nil(patch_err)
             assert.are.same({}, patch)
@@ -574,7 +567,7 @@ describe('base revision git API', function()
                 vim.uv.fs_symlink('target.txt', repo .. '/tracked.txt')
             )
 
-            local entries, err = git.base_entries(base, repo)
+            local entries, err = helpers.base_entries(base, repo)
 
             assert.is_nil(err)
             assert.are.same({
@@ -601,7 +594,7 @@ describe('base revision git API', function()
                 vim.uv.fs_symlink('missing\ntarget.txt', repo .. '/tracked.txt')
             )
 
-            local entries, err = git.base_entries(base, repo)
+            local entries, err = helpers.base_entries(base, repo)
 
             assert.is_nil(err)
             assert.are.same({
@@ -624,7 +617,7 @@ describe('base revision git API', function()
             base = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
             helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', second }, repo)
 
-            local entries, err = git.base_entries(base, repo)
+            local entries, err = helpers.base_entries(base, repo)
 
             assert.is_nil(err)
             assert.are.same({
@@ -651,7 +644,7 @@ describe('base revision git API', function()
         local root = git.root(repo)
         assert.are.not_equal('', root)
 
-        local entries, err = git.base_entries(base, root)
+        local entries, err = helpers.base_entries(base, root)
 
         assert.is_nil(err)
         local entry = helpers.entry_by_path(entries, 'sub')
@@ -677,7 +670,7 @@ describe('base revision git API', function()
                 repo
             )
 
-            local entries, err = git.base_entries(base, repo)
+            local entries, err = helpers.base_entries(base, repo)
 
             assert.is_nil(err)
             assert.are.same(
@@ -702,7 +695,7 @@ describe('base revision git API', function()
             local sub_repo, _, second = create_sub_repo()
             helpers.record_submodule(repo, 'sub', sub_repo, second)
 
-            local entries, err = git.base_entries(base, repo)
+            local entries, err = helpers.base_entries(base, repo)
 
             assert.is_nil(err)
             local entry = helpers.entry_by_path(entries, 'sub')

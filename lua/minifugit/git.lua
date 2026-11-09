@@ -428,24 +428,6 @@ function git.root(cwd)
     return root
 end
 
----@return GitStatusEntry[]
-function git.status()
-    ensure_git()
-
-    local out = git.run({
-        'status',
-        '--porcelain=v1',
-        '-z',
-        '--untracked-files=all',
-    }, { text = false })
-
-    if out.exit_code ~= 0 then
-        return {}
-    end
-
-    return parse_status(out.output)
-end
-
 local COMMIT_FIELD_SEPARATOR = '\31'
 
 ---@param output string
@@ -526,55 +508,6 @@ end
 ---@return string
 local function detached_branch(head_out)
     return head_out.exit_code == 0 and return_result(head_out) or '(unknown)'
-end
-
----@param root string
----@return string
-local function branch_name(root)
-    local branch_out = git.run(
-        { 'branch', '--show-current' },
-        { cwd = root, ignore_error = true }
-    )
-    local branch = return_result(branch_out)
-
-    if branch ~= '' then
-        return branch
-    end
-
-    return detached_branch(
-        git.run(
-            { 'rev-parse', '--short', 'HEAD' },
-            { cwd = root, ignore_error = true }
-        )
-    )
-end
-
----@param root string? Repository root; defaults to the current cwd's root.
----@return GitStatusSnapshot
-function git.status_snapshot(root)
-    if not ensure_git() then
-        return failed_snapshot('', '', '`git` is not executable')
-    end
-
-    root = root or git.root()
-
-    if root == '' then
-        return failed_snapshot('', '', 'Not inside a git repository')
-    end
-
-    local branch = branch_name(root)
-    local status_out = git.run(status_args(), { cwd = root, text = false })
-
-    if status_out.exit_code ~= 0 then
-        return failed_snapshot(root, branch, return_result(status_out))
-    end
-
-    return snapshot(
-        root,
-        branch,
-        parse_status(status_out.output),
-        git.unpushed_commits(root)
-    )
 end
 
 ---@param root string
@@ -856,29 +789,6 @@ local function parse_base_entries(diff_output, untracked_output)
     return merge_cached_deletions(parse_status(table.concat(records)))
 end
 
----Tracked changes from the pinned commit to the worktree, plus untracked files.
----@param base string Pinned commit hash.
----@param root string?
----@return GitStatusEntry[]
----@return string? error
-function git.base_entries(base, root)
-    local opts = root_opts(root)
-    opts.text = false
-    local out =
-        git.run({ 'diff', '--name-status', '-z', '-M', base, '--' }, opts)
-    if out.exit_code ~= 0 then
-        return {}, return_result(out)
-    end
-
-    local untracked =
-        git.run({ 'ls-files', '--others', '--exclude-standard', '-z' }, opts)
-    if untracked.exit_code ~= 0 then
-        return {}, return_result(untracked)
-    end
-
-    return parse_base_entries(out.output, untracked.output), nil
-end
-
 ---Collect base-mode entries without blocking the main loop.
 ---@param base string Pinned commit hash.
 ---@param root string?
@@ -1030,14 +940,6 @@ local function run_pathspec_batches(base_args, pathspecs, opts)
     return flush() or { output = '', exit_code = 0, stderr = '' }
 end
 
----@param entry GitStatusEntry
----@param root string?
----@return boolean
----@return string?
-function git.stage(entry, root)
-    return git.stage_entries({ entry }, root)
-end
-
 ---@param entries GitStatusEntry[]
 ---@param root string?
 ---@return boolean
@@ -1055,14 +957,6 @@ function git.stage_entries(entries, root)
         run_pathspec_batches({ 'add', '--' }, pathspecs, root_opts(root))
 
     return out.exit_code == 0, return_result(out)
-end
-
----@param entry GitStatusEntry
----@param root string?
----@return boolean
----@return string?
-function git.unstage(entry, root)
-    return git.unstage_entries({ entry }, root)
 end
 
 ---@param entries GitStatusEntry[]
@@ -1983,23 +1877,6 @@ function git.base_split_diff(entry, base, root)
     return blob_to_worktree_diff(entry, left_ref, left_spec, root)
 end
 
----@param commit GitCommit
----@param root string?
----@return string[]
----@return string?
-function git.show_commit(commit, root)
-    ensure_git()
-
-    local out =
-        git.run({ 'show', '--stat', '--patch', commit.hash }, root_opts(root))
-
-    if out.exit_code ~= 0 then
-        return {}, return_result(out)
-    end
-
-    return parse_diff(out.output), nil
-end
-
 ---Collect a commit diff without blocking the main loop.
 ---@param commit GitCommit
 ---@param root string?
@@ -2215,23 +2092,6 @@ function git.diff_async(entry, section, root, callback)
     end)
 end
 
----A path deleted from the index but still present in the worktree is
----untracked again, so `git diff <base>` reports only its deletion.
----@param path string
----@param root string?
----@return boolean
-local function index_tracks(path, root)
-    local opts = root_opts(root)
-    opts.text = false
-
-    local out = git.run(
-        { 'ls-files', '--error-unmatch', '-z', '--', ':(literal)' .. path },
-        opts
-    )
-
-    return out.exit_code == 0
-end
-
 ---@param path string
 ---@param root string
 ---@param callback fun(tracked: boolean)
@@ -2276,30 +2136,6 @@ end
 ---@return boolean
 local function base_diff_needs_index(entry)
     return entry.unstaged == 'M'
-end
-
----Unified preview from the pinned commit to the worktree.
----@param entry GitStatusEntry
----@param base string Pinned commit hash.
----@param root string?
----@return string[]
----@return string? error
-function git.base_diff(entry, base, root)
-    if entry.unstaged == '?' then
-        return git.diff(entry, 'untracked', root)
-    end
-
-    root = root or git.root()
-
-    local tracked = not base_diff_needs_index(entry)
-        or index_tracks(entry.path, root)
-    local out = git.run(base_diff_args(entry, base, tracked), root_opts(root))
-
-    if out.exit_code ~= 0 then
-        return {}, return_result(out)
-    end
-
-    return parse_diff(out.output), nil
 end
 
 ---Collect a base-mode diff without blocking the main loop.
@@ -2368,23 +2204,6 @@ local function push_request(root)
         args = { 'push', destination.remote, 'HEAD:' .. destination.ref },
         opts = { cwd = root, ignore_error = true },
     }
-end
-
----@param root string?
----@return boolean
----@return string
-function git.push(root)
-    ensure_git()
-
-    local request, request_error = push_request(root)
-
-    if request == nil then
-        return false, request_error
-    end
-
-    local out = git.run(request.args, request.opts)
-
-    return out.exit_code == 0, return_result(out)
 end
 
 ---@param callback GitAsyncCallback

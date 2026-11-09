@@ -6,7 +6,6 @@
 ---@field entry_by_path fun(entries: GitStatusEntry[], path: string): GitStatusEntry?
 ---@field create_repo fun(files: table<string, string[]>): string, string
 ---@field create_sub_repo fun(): string, string, string
----@field add_submodule fun(repo: string, path: string, source: string)
 ---@field record_submodule fun(repo: string, path: string, source: string, commit: string)
 ---@field clone_repo_with_changed_file fun(repo: string, path: string, lines: string[]): string
 ---@field change_to_other_repo fun(repo: string): string
@@ -14,6 +13,11 @@
 ---@field snapshot_editor_state fun(): fun()
 ---@field settle_callbacks fun()
 ---@field await_async fun(start: fun(callback: fun(...))): any, any
+---@field snapshot fun(root: string?): GitStatusSnapshot
+---@field entries fun(root: string?): GitStatusEntry[]
+---@field base_entries fun(base: string, root: string?): GitStatusEntry[], string?
+---@field base_diff fun(entry: GitStatusEntry, base: string, root: string?): string[], string?
+---@field show_commit fun(commit: GitCommit, root: string?): string[], string?
 ---@field wait_idle fun(find: fun(): GitStatusWindow?)
 ---@field awaiting_reads fun(minifugit: Minifugit, find: fun(): GitStatusWindow?): Minifugit
 ---@field row_containing fun(buf: integer, text: string): integer
@@ -116,7 +120,7 @@ end
 ---@param repo string
 ---@param path string
 ---@param source string
-function M.add_submodule(repo, path, source)
+local function add_submodule(repo, path, source)
     M.run({
         'git',
         '-c',
@@ -134,7 +138,7 @@ end
 ---@param source string Submodule source repository.
 ---@param commit string Submodule commit the parent records.
 function M.record_submodule(repo, path, source, commit)
-    M.add_submodule(repo, path, source)
+    add_submodule(repo, path, source)
     M.run({ 'git', '-C', path, 'checkout', '-q', commit }, repo)
     M.run({ 'git', 'add', '.' }, repo)
     M.run({ 'git', 'commit', '-m', 'add submodule' }, repo)
@@ -293,6 +297,52 @@ function M.row_containing(buf, text)
     end
 
     error('Expected row containing not found: ' .. text)
+end
+
+---Read the status snapshot through the async reader the plugin uses.
+---@param root string?
+---@return GitStatusSnapshot
+function M.snapshot(root)
+    return M.await_async(function(callback)
+        require('minifugit.git').status_snapshot_async(root, callback)
+    end)
+end
+
+---@param root string?
+---@return GitStatusEntry[]
+function M.entries(root)
+    return M.snapshot(root).entries
+end
+
+---@param base string
+---@param root string?
+---@return GitStatusEntry[]
+---@return string?
+function M.base_entries(base, root)
+    return M.await_async(function(callback)
+        require('minifugit.git').base_entries_async(base, root, callback)
+    end)
+end
+
+---@param entry GitStatusEntry
+---@param base string
+---@param root string?
+---@return string[]
+---@return string?
+function M.base_diff(entry, base, root)
+    return M.await_async(function(callback)
+        require('minifugit.git').base_diff_async(entry, base, root, callback)
+    end)
+end
+
+---@param commit GitCommit
+---@param root string?
+---@return string[]
+---@return string?
+function M.show_commit(commit, root)
+    return M.await_async(function(callback)
+        require('minifugit.git').show_commit_async(commit, root, callback)
+    end)
 end
 
 ---@param name string Diff buffer name without the `[n/m]` suffix.

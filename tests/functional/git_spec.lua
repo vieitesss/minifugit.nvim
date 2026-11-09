@@ -66,7 +66,7 @@ describe('minifugit.git', function()
         helpers.write_file(vim.fs.joinpath(repo, 'only-a.txt'), { 'A' })
         change_to_other_repo()
 
-        local snapshot = git.status_snapshot(repo)
+        local snapshot = helpers.snapshot(repo)
 
         assert.are.equal('main', snapshot.branch)
         assert.are.equal(repo, snapshot.root)
@@ -76,35 +76,29 @@ describe('minifugit.git', function()
         assert.are.equal('initial commit', snapshot.unpushed_commits[1].message)
     end)
 
-    for _, methods in ipairs({
-        { stage = 'stage', unstage = 'unstage' },
-        { stage = 'stage_entries', unstage = 'unstage_entries' },
-    }) do
-        it('honours an explicit root for ' .. methods.unstage, function()
-            helpers.write_file(
-                vim.fs.joinpath(repo, 'tracked.txt'),
-                { 'changed in A' }
-            )
-            local entry = { staged = 'M', unstaged = ' ', path = 'tracked.txt' }
-            local selected = methods.stage == 'stage' and entry or { entry }
-            change_to_other_repo()
+    it('honours an explicit root for stage and unstage', function()
+        helpers.write_file(
+            vim.fs.joinpath(repo, 'tracked.txt'),
+            { 'changed in A' }
+        )
+        local entry = { staged = 'M', unstaged = ' ', path = 'tracked.txt' }
+        change_to_other_repo()
 
-            assert.is_true(git[methods.stage](selected, repo))
-            assert.are.equal(
-                'M  tracked.txt\n',
-                helpers.run({ 'git', 'status', '--short' }, repo)
-            )
-            assert.is_true(git[methods.unstage](selected, repo))
-            assert.are.equal(
-                ' M tracked.txt\n',
-                helpers.run({ 'git', 'status', '--short' }, repo)
-            )
-            assert.are.equal(
-                ' M tracked.txt\n',
-                helpers.run({ 'git', 'status', '--short' }, other_repo)
-            )
-        end)
-    end
+        assert.is_true(git.stage_entries({ entry }, repo))
+        assert.are.equal(
+            'M  tracked.txt\n',
+            helpers.run({ 'git', 'status', '--short' }, repo)
+        )
+        assert.is_true(git.unstage_entries({ entry }, repo))
+        assert.are.equal(
+            ' M tracked.txt\n',
+            helpers.run({ 'git', 'status', '--short' }, repo)
+        )
+        assert.are.equal(
+            ' M tracked.txt\n',
+            helpers.run({ 'git', 'status', '--short' }, other_repo)
+        )
+    end)
 
     for _, section in ipairs({ 'staged', 'unstaged', 'untracked' }) do
         it('reads ' .. section .. ' diffs from an explicit root', function()
@@ -113,7 +107,7 @@ describe('minifugit.git', function()
             if section == 'staged' then
                 helpers.run({ 'git', 'add', name }, repo)
             end
-            local entry = helpers.entry_by_path(git.status(), name)
+            local entry = helpers.entry_by_path(helpers.entries(), name)
             change_to_other_repo()
             helpers.write_file(
                 vim.fs.joinpath(other_repo, name),
@@ -148,7 +142,8 @@ describe('minifugit.git', function()
                     vim.fs.joinpath(repo, 'tracked.txt')
                 )
             )
-            local entry = helpers.entry_by_path(git.status(), 'tracked.txt')
+            local entry =
+                helpers.entry_by_path(helpers.entries(), 'tracked.txt')
 
             local split, err = git.split_diff(entry, 'unstaged', repo)
 
@@ -168,7 +163,8 @@ describe('minifugit.git', function()
                     vim.fs.joinpath(repo, 'tracked.txt')
                 )
             )
-            local entry = helpers.entry_by_path(git.status(), 'tracked.txt')
+            local entry =
+                helpers.entry_by_path(helpers.entries(), 'tracked.txt')
 
             local split, err = git.split_diff(entry, 'unstaged', repo)
 
@@ -193,7 +189,7 @@ describe('minifugit.git', function()
             local first, second = create_sub_repo()
             helpers.record_submodule(repo, 'sub', sub_repo, first)
             helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', second }, repo)
-            local entry = helpers.entry_by_path(git.status(), 'sub')
+            local entry = helpers.entry_by_path(helpers.entries(), 'sub')
 
             local split, err = git.split_diff(entry, 'unstaged', repo)
 
@@ -215,8 +211,7 @@ describe('minifugit.git', function()
 
             local root = git.root(repo)
             assert.are.not_equal('', root)
-            local entry =
-                helpers.entry_by_path(git.status_snapshot(root).entries, 'sub')
+            local entry = helpers.entry_by_path(helpers.entries(root), 'sub')
 
             local split, err = git.split_diff(entry, 'unstaged', root)
 
@@ -236,7 +231,7 @@ describe('minifugit.git', function()
             helpers.record_submodule(repo, 'sub', sub_repo, first)
             helpers.run({ 'git', '-C', 'sub', 'checkout', '-q', second }, repo)
             helpers.run({ 'git', 'add', 'sub' }, repo)
-            local entry = helpers.entry_by_path(git.status(), 'sub')
+            local entry = helpers.entry_by_path(helpers.entries(), 'sub')
 
             local split, err = git.split_diff(entry, 'staged', repo)
 
@@ -345,7 +340,7 @@ describe('minifugit.git', function()
         helpers.run({ 'git', 'commit', '-m', 'only in A' }, repo)
         local hash = vim.trim(helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo))
 
-        local lines, err = git.show_commit({ hash = hash }, repo)
+        local lines, err = helpers.show_commit({ hash = hash }, repo)
 
         assert.is_nil(err)
         helpers.assert_has_line_containing(lines, 'only in A')
@@ -365,64 +360,47 @@ describe('minifugit.git', function()
         assert.are.equal(expected, destination_err)
     end)
 
-    for _, async in ipairs({ false, true }) do
-        it(
-            'pushes from an explicit root'
-                .. (async and ' asynchronously' or ''),
-            function()
-                local remote = vim.fs.joinpath(repo, '.git', 'test-remote.git')
-                helpers.run({ 'git', 'init', '--bare', remote }, repo)
-                helpers.run({ 'git', 'remote', 'add', 'origin', remote }, repo)
-                helpers.run({ 'git', 'push', '-u', 'origin', 'main' }, repo)
-                change_to_other_repo()
-                helpers.write_file(vim.fs.joinpath(repo, 'only-a.txt'), { 'A' })
-                helpers.run({ 'git', 'add', 'only-a.txt' }, repo)
-                helpers.run({ 'git', 'commit', '-m', 'push from A' }, repo)
+    it('pushes from an explicit root', function()
+        local remote = vim.fs.joinpath(repo, '.git', 'test-remote.git')
+        helpers.run({ 'git', 'init', '--bare', remote }, repo)
+        helpers.run({ 'git', 'remote', 'add', 'origin', remote }, repo)
+        helpers.run({ 'git', 'push', '-u', 'origin', 'main' }, repo)
+        change_to_other_repo()
+        helpers.write_file(vim.fs.joinpath(repo, 'only-a.txt'), { 'A' })
+        helpers.run({ 'git', 'add', 'only-a.txt' }, repo)
+        helpers.run({ 'git', 'commit', '-m', 'push from A' }, repo)
 
-                local ok, output
-                if async then
-                    git.push_async(function(success, message)
-                        ok, output = success, message
-                    end, repo)
-                    assert.is_true(vim.wait(2000, function()
-                        return ok ~= nil
-                    end))
-                else
-                    ok, output = git.push(repo)
-                end
+        local ok, output = helpers.await_async(function(callback)
+            git.push_async(callback, repo)
+        end)
 
-                assert.is_true(ok, output)
-                assert.are.equal(
-                    'push from A\n',
-                    helpers.run({
-                        'git',
-                        '--git-dir=' .. remote,
-                        'log',
-                        'main',
-                        '-1',
-                        '--pretty=%s',
-                    }, repo)
-                )
-                assert.are.equal(
-                    ' M tracked.txt\n',
-                    helpers.run({ 'git', 'status', '--short' }, other_repo)
-                )
-                assert.are.equal(
-                    'initial commit\n',
-                    helpers.run(
-                        { 'git', 'log', '-1', '--pretty=%s' },
-                        other_repo
-                    )
-                )
-            end
+        assert.is_true(ok, output)
+        assert.are.equal(
+            'push from A\n',
+            helpers.run({
+                'git',
+                '--git-dir=' .. remote,
+                'log',
+                'main',
+                '-1',
+                '--pretty=%s',
+            }, repo)
         )
-    end
+        assert.are.equal(
+            ' M tracked.txt\n',
+            helpers.run({ 'git', 'status', '--short' }, other_repo)
+        )
+        assert.are.equal(
+            'initial commit\n',
+            helpers.run({ 'git', 'log', '-1', '--pretty=%s' }, other_repo)
+        )
+    end)
 
     for _, kind in ipairs({ 'unstaged', 'untracked' }) do
         it('discards ' .. kind .. ' files in an explicit root', function()
             local name = kind == 'untracked' and 'new.txt' or 'tracked.txt'
             helpers.write_file(vim.fs.joinpath(repo, name), { 'changed in A' })
-            local entries = git.status()
+            local entries = helpers.entries()
             change_to_other_repo()
             helpers.write_file(
                 vim.fs.joinpath(other_repo, name),
@@ -455,7 +433,7 @@ describe('minifugit.git', function()
         vim.cmd.cd(vim.fn.fnameescape(not_repo))
 
         ---@type GitStatusSnapshot
-        local snapshot = git.status_snapshot()
+        local snapshot = helpers.snapshot()
 
         assert.are.equal('', snapshot.root)
         assert.are.equal('', snapshot.branch)
@@ -569,7 +547,7 @@ describe('minifugit.git', function()
         helpers.run({ 'git', 'add', 'staged.txt' }, repo)
 
         ---@type GitStatusSnapshot
-        local snapshot = git.status_snapshot()
+        local snapshot = helpers.snapshot()
 
         assert.are.equal(vim.fn.resolve(repo), vim.fn.resolve(snapshot.root))
         assert.are.equal('main', snapshot.branch)
@@ -607,7 +585,7 @@ describe('minifugit.git', function()
         assert.are.same({
             { staged = '?', unstaged = '?', path = 'line\r\nbreak.txt' },
             { staged = '?', unstaged = '?', path = 'trailing\r' },
-        }, git.status())
+        }, helpers.entries())
     end)
 
     unix_it('finds roots whose paths contain carriage returns', function()
@@ -650,7 +628,7 @@ describe('minifugit.git', function()
             { 'nested' }
         )
 
-        local entries = git.status_snapshot().entries
+        local entries = helpers.snapshot().entries
 
         assert.are.same(
             { staged = '?', unstaged = '?', path = 'new-dir/file.txt' },
@@ -673,7 +651,8 @@ describe('minifugit.git', function()
             { 'new content' }
         )
 
-        local entry = helpers.entry_by_path(git.status(), 'new-dir/file.txt')
+        local entry =
+            helpers.entry_by_path(helpers.entries(), 'new-dir/file.txt')
         local lines, err = git.diff(entry, 'untracked')
 
         assert.is_nil(err)
@@ -687,7 +666,7 @@ describe('minifugit.git', function()
         })
         helpers.run({ 'git', 'add', '-N', 'intent.txt' }, repo)
 
-        local entry = helpers.entry_by_path(git.status(), 'intent.txt')
+        local entry = helpers.entry_by_path(helpers.entries(), 'intent.txt')
         local lines, err = git.diff(entry, 'unstaged')
 
         assert.is_nil(err)
@@ -696,7 +675,7 @@ describe('minifugit.git', function()
     end)
 
     describe('async readers', function()
-        it('matches the synchronous snapshot', function()
+        it('collects a snapshot without blocking', function()
             helpers.write_file(
                 vim.fs.joinpath(repo, 'tracked.txt'),
                 { 'changed' }
@@ -706,32 +685,22 @@ describe('minifugit.git', function()
                 { 'new' }
             )
 
-            local snapshot = git.status_snapshot(repo)
-            local async = helpers.await_async(function(callback)
-                git.status_snapshot_async(repo, callback)
-            end)
+            local snapshot = helpers.snapshot(repo)
 
-            assert.are.same(snapshot, async)
+            assert.are.equal('main', snapshot.branch)
+            assert.are.equal(repo, snapshot.root)
+            assert.is_nil(snapshot.error)
+            assert.are.same({
+                { staged = ' ', unstaged = 'M', path = 'tracked.txt' },
+                { staged = '?', unstaged = '?', path = 'untracked.txt' },
+            }, snapshot.entries)
+            assert.are.equal(
+                'initial commit',
+                snapshot.unpushed_commits[1].message
+            )
         end)
 
-        it('reports a snapshot error outside a repository', function()
-            local not_repo = vim.fn.tempname()
-            vim.fn.mkdir(not_repo, 'p')
-            vim.cmd.cd(vim.fn.fnameescape(not_repo))
-
-            local snapshot = git.status_snapshot()
-            local async = helpers.await_async(function(callback)
-                git.status_snapshot_async(nil, callback)
-            end)
-
-            assert.are.equal('Not inside a git repository', async.error)
-            assert.are.same(snapshot, async)
-
-            vim.cmd.cd(vim.fn.fnameescape(repo))
-            vim.fn.delete(not_repo, 'rf')
-        end)
-
-        it('shows the synchronous commit diff', function()
+        it('shows a commit diff', function()
             helpers.write_file(vim.fs.joinpath(repo, 'only.txt'), {
                 'commit A',
             })
@@ -743,32 +712,21 @@ describe('minifugit.git', function()
                 ),
             }
 
-            local lines, err = git.show_commit(commit, repo)
-            local async_lines, async_err = helpers.await_async(
-                function(callback)
-                    git.show_commit_async(commit, repo, callback)
-                end
-            )
+            local lines, err = helpers.show_commit(commit, repo)
 
             assert.is_nil(err)
-            assert.is_nil(async_err)
-            assert.are.same(lines, async_lines)
+            helpers.assert_has_line_containing(lines, 'only commit')
+            helpers.assert_has_line_containing(lines, '+commit A')
         end)
 
         it('reports a commit Git cannot show', function()
             local commit = { hash = 'missing-revision' }
 
-            local lines, err = git.show_commit(commit, repo)
-            local async_lines, async_err = helpers.await_async(
-                function(callback)
-                    git.show_commit_async(commit, repo, callback)
-                end
-            )
+            local lines, err = helpers.show_commit(commit, repo)
 
             assert.are.same({}, lines)
             assert.is_not_nil(err)
-            assert.are.same(lines, async_lines)
-            assert.are.equal(err, async_err)
+            assert.is_truthy(err:find('missing-revision', 1, true))
         end)
 
         for _, section in ipairs({ 'staged', 'unstaged', 'untracked' }) do
@@ -779,7 +737,7 @@ describe('minifugit.git', function()
                 if section == 'staged' then
                     helpers.run({ 'git', 'add', name }, repo)
                 end
-                local entry = helpers.entry_by_path(git.status(), name)
+                local entry = helpers.entry_by_path(helpers.entries(), name)
 
                 local lines, err = git.diff(entry, section, repo)
                 local async_lines, async_err = helpers.await_async(
@@ -828,32 +786,39 @@ describe('minifugit.git', function()
             )
 
             ---@type GitStatusEntry?
-            local tracked = helpers.entry_by_path(git.status(), 'tracked.txt')
-            local ok = git.stage(tracked)
+            local tracked =
+                helpers.entry_by_path(helpers.entries(), 'tracked.txt')
+            local ok = git.stage_entries({ tracked })
             assert.is_true(ok)
             assert.are.equal(
                 'M',
-                helpers.entry_by_path(git.status(), 'tracked.txt').staged
+                helpers.entry_by_path(helpers.entries(), 'tracked.txt').staged
             )
 
-            ok = git.unstage(helpers.entry_by_path(git.status(), 'tracked.txt'))
+            ok = git.unstage_entries({
+                helpers.entry_by_path(helpers.entries(), 'tracked.txt'),
+            })
             assert.is_true(ok)
             assert.are.equal(
                 ' ',
-                helpers.entry_by_path(git.status(), 'tracked.txt').staged
+                helpers.entry_by_path(helpers.entries(), 'tracked.txt').staged
             )
 
             ok = git.discard_unstaged_entries({
-                helpers.entry_by_path(git.status(), 'tracked.txt'),
+                helpers.entry_by_path(helpers.entries(), 'tracked.txt'),
             })
             assert.is_true(ok)
-            assert.is_nil(helpers.entry_by_path(git.status(), 'tracked.txt'))
+            assert.is_nil(
+                helpers.entry_by_path(helpers.entries(), 'tracked.txt')
+            )
 
             ok = git.discard_untracked_entries({
-                helpers.entry_by_path(git.status(), 'untracked.txt'),
+                helpers.entry_by_path(helpers.entries(), 'untracked.txt'),
             })
             assert.is_true(ok)
-            assert.is_nil(helpers.entry_by_path(git.status(), 'untracked.txt'))
+            assert.is_nil(
+                helpers.entry_by_path(helpers.entries(), 'untracked.txt')
+            )
         end
     )
 
@@ -863,12 +828,12 @@ describe('minifugit.git', function()
             vim.fs.joinpath(repo, 'renamed.txt'),
             { 'one', 'two' }
         )
-        local entry = helpers.entry_by_path(git.status(), 'renamed.txt')
+        local entry = helpers.entry_by_path(helpers.entries(), 'renamed.txt')
         assert.are.equal('R', entry.staged)
         assert.are.equal('M', entry.unstaged)
         assert.are.equal('tracked.txt', entry.orig_path)
 
-        local ok, err = git.stage(entry)
+        local ok, err = git.stage_entries({ entry })
 
         assert.is_true(ok, err)
         assert.are.equal(
@@ -899,11 +864,11 @@ describe('minifugit.git', function()
 
             it('stages only selected entries', function()
                 local entry =
-                    helpers.entry_by_path(git.status(repo), paths.path)
+                    helpers.entry_by_path(helpers.entries(repo), paths.path)
                 local ok, err = git.stage_entries({ entry }, repo)
 
                 assert.is_true(ok, err)
-                local entries = git.status(repo)
+                local entries = helpers.entries(repo)
                 assert.are.equal(
                     'A',
                     helpers.entry_by_path(entries, paths.path).staged
@@ -917,11 +882,11 @@ describe('minifugit.git', function()
             it('unstages only selected entries', function()
                 helpers.run({ 'git', 'add', '.' }, repo)
                 local entry =
-                    helpers.entry_by_path(git.status(repo), paths.path)
+                    helpers.entry_by_path(helpers.entries(repo), paths.path)
                 local ok, err = git.unstage_entries({ entry }, repo)
 
                 assert.is_true(ok, err)
-                local entries = git.status(repo)
+                local entries = helpers.entries(repo)
                 assert.are.equal(
                     '?',
                     helpers.entry_by_path(entries, paths.path).staged
@@ -934,7 +899,7 @@ describe('minifugit.git', function()
 
             it('discards only selected untracked entries', function()
                 local entry =
-                    helpers.entry_by_path(git.status(repo), paths.path)
+                    helpers.entry_by_path(helpers.entries(repo), paths.path)
                 local ok, err = git.discard_untracked_entries({ entry }, repo)
 
                 assert.is_true(ok, err)
@@ -964,7 +929,7 @@ describe('minifugit.git', function()
 
                 it('discards only selected unstaged entries', function()
                     local entry =
-                        helpers.entry_by_path(git.status(repo), paths.path)
+                        helpers.entry_by_path(helpers.entries(repo), paths.path)
                     local ok, err =
                         git.discard_unstaged_entries({ entry }, repo)
 
@@ -1035,7 +1000,7 @@ describe('minifugit.git', function()
             { 'one changed', 'two', 'three' }
         )
 
-        local snapshot = git.status_snapshot(repo)
+        local snapshot = helpers.snapshot(repo)
         assert.is_nil(snapshot.error)
         assert.are.equal(1, #snapshot.entries)
         local counts, err = git.file_change_counts(snapshot.entries[1].path)
@@ -1100,7 +1065,9 @@ describe('minifugit.git', function()
     end)
 
     it('reports useful push errors for edge cases', function()
-        local ok, message = git.push()
+        local ok, message = helpers.await_async(function(callback)
+            git.push_async(callback)
+        end)
 
         assert.is_false(ok)
         assert.are.equal(
@@ -1109,7 +1076,9 @@ describe('minifugit.git', function()
         )
 
         helpers.run({ 'git', 'checkout', '--detach' }, repo)
-        ok, message = git.push()
+        ok, message = helpers.await_async(function(callback)
+            git.push_async(callback)
+        end)
 
         assert.is_false(ok)
         assert.are.equal('Cannot push from detached HEAD', message)
@@ -1201,13 +1170,11 @@ describe('minifugit.git Git discovery environment', function()
             vim.env.GIT_DIR = vim.fs.joinpath(environment, '.git')
             vim.env.GIT_WORK_TREE = environment
             local root = git.root(repo)
-            local entry = helpers.entry_by_path(
-                git.status_snapshot(root).entries,
-                'tracked-b.txt'
-            )
+            local entry =
+                helpers.entry_by_path(helpers.entries(root), 'tracked-b.txt')
 
             assert.is_not_nil(entry)
-            assert.is_true(git.stage(entry, root))
+            assert.is_true(git.stage_entries({ entry }, root))
             assert.are.equal('tracked-b.txt\n', staged_paths(repo))
             assert.are.equal('', staged_paths(environment))
         end
@@ -1230,7 +1197,7 @@ describe('minifugit.git Git discovery environment', function()
 
         assert.are.equal(vim.fn.resolve(repo), vim.fn.resolve(root))
 
-        local snapshot = git.status_snapshot(root)
+        local snapshot = helpers.snapshot(root)
         local paths = {}
 
         assert.is_nil(snapshot.error)
@@ -1254,7 +1221,7 @@ describe('minifugit.git Git discovery environment', function()
 
         assert.are.equal(vim.fn.resolve(worktree), vim.fn.resolve(root))
 
-        local snapshot = git.status_snapshot()
+        local snapshot = helpers.snapshot()
 
         assert.is_nil(snapshot.error)
         assert.are.equal(
@@ -1263,7 +1230,7 @@ describe('minifugit.git Git discovery environment', function()
         )
         local entry = helpers.entry_by_path(snapshot.entries, 'dotfile')
         assert.is_not_nil(entry)
-        assert.is_true(git.stage(entry, root))
+        assert.is_true(git.stage_entries({ entry }, root))
         assert.are.equal(
             'dotfile\n',
             helpers.run({
@@ -1311,7 +1278,7 @@ describe('minifugit.git conflict split diffs', function()
 
     ---@return GitStatusEntry?
     local function conflict_entry()
-        return helpers.entry_by_path(git.status(), 'a.txt')
+        return helpers.entry_by_path(helpers.entries(), 'a.txt')
     end
 
     before_each(function()
@@ -1410,7 +1377,7 @@ describe('minifugit.git conflict split diffs', function()
         helpers.run({ 'sh', '-c', 'git merge feature || true' }, repo)
 
         local split, err = git.split_diff(
-            helpers.entry_by_path(git.status(), 'c.txt'),
+            helpers.entry_by_path(helpers.entries(), 'c.txt'),
             'conflicts',
             repo
         )
@@ -1446,7 +1413,7 @@ describe('minifugit.git conflict split diffs', function()
         }, repo)
 
         local split, err = git.split_diff(
-            helpers.entry_by_path(git.status(), 'sub'),
+            helpers.entry_by_path(helpers.entries(), 'sub'),
             'conflicts',
             repo
         )

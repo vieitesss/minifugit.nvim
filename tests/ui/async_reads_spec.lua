@@ -163,8 +163,7 @@ describe('minifugit async reads', function()
                 vim.fs.joinpath(repo, 'tracked.txt'),
                 { 'changed' }
             )
-            local git = require('minifugit.git')
-            local snapshot = git.status_snapshot(repo)
+            local snapshot = helpers.snapshot(repo)
             local pending = {}
 
             with_git_stub('status_snapshot_async', function(_, callback)
@@ -188,8 +187,14 @@ describe('minifugit async reads', function()
     it(
         'resolves to the newest entries when a read is superseded mid-flight',
         function()
-            local git = require('minifugit.git')
             local pending = {}
+            local before = helpers.snapshot(repo)
+
+            helpers.write_file(vim.fs.joinpath(repo, 'later.txt'), {
+                'added after the first read started',
+            })
+            local after = helpers.snapshot(repo)
+            assert.is_true(#before.entries < #after.entries)
 
             with_git_stub('status_snapshot_async', function(_, callback)
                 table.insert(pending, callback)
@@ -197,15 +202,9 @@ describe('minifugit async reads', function()
                 assert.is_true(minifugit.open({ cwd = repo }))
                 local win = assert(status_window())
                 local buf = win.buf.id
-                local before = git.status_snapshot(repo)
 
-                helpers.write_file(vim.fs.joinpath(repo, 'later.txt'), {
-                    'added after the first read started',
-                })
                 assert.is_true(win:refresh())
-                local after = git.status_snapshot(repo)
                 assert.are.equal(2, #pending)
-                assert.is_true(#before.entries < #after.entries)
 
                 -- The newer read lands first, then the superseded one.
                 pending[2](after)
@@ -221,8 +220,7 @@ describe('minifugit async reads', function()
     it(
         'closes during an in-flight read without error or a dangling buffer',
         function()
-            local git = require('minifugit.git')
-            local snapshot = git.status_snapshot(repo)
+            local snapshot = helpers.snapshot(repo)
             local pending = {}
 
             with_git_stub('status_snapshot_async', function(_, callback)
