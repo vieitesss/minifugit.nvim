@@ -13,6 +13,7 @@
 ---@field capture_status_windows fun(): fun(): GitStatusWindow?, fun()
 ---@field snapshot_editor_state fun(): fun()
 ---@field settle_callbacks fun()
+---@field await_async fun(start: fun(callback: fun(...))): any, any
 ---@field wait_idle fun(find: fun(): GitStatusWindow?)
 ---@field awaiting_reads fun(minifugit: Minifugit, find: fun(): GitStatusWindow?): Minifugit
 ---@field row_containing fun(buf: integer, text: string): integer
@@ -258,6 +259,27 @@ function M.settle_callbacks()
     assert.is_true(vim.wait(1000, function()
         return settled
     end))
+end
+
+---Wait for an async reader's callback and return its two arguments.
+---@param start fun(callback: fun(...))
+---@return any value First callback argument.
+---@return any error Second callback argument.
+function M.await_async(start)
+    local done = false
+    local value
+    local err
+
+    start(function(first, second)
+        value, err = first, second
+        done = true
+    end)
+
+    assert.is_true(vim.wait(5000, function()
+        return done
+    end))
+
+    return value, err
 end
 
 ---@param buf integer

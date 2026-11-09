@@ -699,24 +699,17 @@ function DiffPreview:open_commit(commit, opts)
 end
 
 ---@param self DiffPreview
----@param entry GitStatusEntry
----@param section GitStatusSectionName?
----@param preview_key string
+---@param item GitStatusEntryItem
 ---@param opts { force: boolean?, notify: boolean?, focus: boolean? }
 ---@param lines string[]
 ---@param err string?
 ---@param generation integer Read generation this completion belongs to.
 ---@return boolean
-local function show_entry(
-    self,
-    entry,
-    section,
-    preview_key,
-    opts,
-    lines,
-    err,
-    generation
-)
+local function show_entry(self, item, opts, lines, err, generation)
+    local entry = item.entry
+    local section = item.section
+    local preview_key = item.key
+
     if err ~= nil then
         common.notify_error(err, 'Cannot show diff')
         finish_read(self, generation)
@@ -956,16 +949,7 @@ function DiffPreview:open(item, opts)
             return
         end
 
-        show_entry(
-            self,
-            item.entry,
-            item.section,
-            item.key,
-            opts,
-            lines,
-            err,
-            generation
-        )
+        show_entry(self, item, opts, lines, err, generation)
     end
 
     if self.host.base ~= nil then

@@ -2603,8 +2603,8 @@ describe('minifugit status UI', function()
                 .. ' status',
             function()
                 local git = require('minifugit.git')
-                local original_status_snapshot = git.status_snapshot
-                local original_base_entries = git.base_entries
+                local original_status_snapshot_async = git.status_snapshot_async
+                local original_base_entries_async = git.base_entries_async
                 local status_snapshot_calls = 0
                 local base_entries_calls = 0
 
@@ -2620,13 +2620,13 @@ describe('minifugit status UI', function()
                 assert_has_line(buffer_lines(buf), root_line)
                 helpers.row_containing(buf, 'tracked.txt')
 
-                git.status_snapshot = function(...)
+                git.status_snapshot_async = function(...)
                     status_snapshot_calls = status_snapshot_calls + 1
-                    return original_status_snapshot(...)
+                    return original_status_snapshot_async(...)
                 end
-                git.base_entries = function(...)
+                git.base_entries_async = function(...)
                     base_entries_calls = base_entries_calls + 1
-                    return original_base_entries(...)
+                    return original_base_entries_async(...)
                 end
 
                 local function loading_line()
@@ -2661,8 +2661,8 @@ describe('minifugit status UI', function()
                 end)
 
                 gsw:stop_loading()
-                git.status_snapshot = original_status_snapshot
-                git.base_entries = original_base_entries
+                git.status_snapshot_async = original_status_snapshot_async
+                git.base_entries_async = original_base_entries_async
 
                 assert(test_ok, test_err)
                 assert.are.equal(0, status_snapshot_calls)

@@ -695,6 +695,126 @@ describe('minifugit.git', function()
         helpers.assert_has_line_containing(lines, '+new content')
     end)
 
+    describe('async readers', function()
+        it('matches the synchronous snapshot', function()
+            helpers.write_file(
+                vim.fs.joinpath(repo, 'tracked.txt'),
+                { 'changed' }
+            )
+            helpers.write_file(
+                vim.fs.joinpath(repo, 'untracked.txt'),
+                { 'new' }
+            )
+
+            local snapshot = git.status_snapshot(repo)
+            local async = helpers.await_async(function(callback)
+                git.status_snapshot_async(repo, callback)
+            end)
+
+            assert.are.same(snapshot, async)
+        end)
+
+        it('reports a snapshot error outside a repository', function()
+            local not_repo = vim.fn.tempname()
+            vim.fn.mkdir(not_repo, 'p')
+            vim.cmd.cd(vim.fn.fnameescape(not_repo))
+
+            local snapshot = git.status_snapshot()
+            local async = helpers.await_async(function(callback)
+                git.status_snapshot_async(nil, callback)
+            end)
+
+            assert.are.equal('Not inside a git repository', async.error)
+            assert.are.same(snapshot, async)
+
+            vim.cmd.cd(vim.fn.fnameescape(repo))
+            vim.fn.delete(not_repo, 'rf')
+        end)
+
+        it('shows the synchronous commit diff', function()
+            helpers.write_file(vim.fs.joinpath(repo, 'only.txt'), {
+                'commit A',
+            })
+            helpers.run({ 'git', 'add', 'only.txt' }, repo)
+            helpers.run({ 'git', 'commit', '-m', 'only commit' }, repo)
+            local commit = {
+                hash = vim.trim(
+                    helpers.run({ 'git', 'rev-parse', 'HEAD' }, repo)
+                ),
+            }
+
+            local lines, err = git.show_commit(commit, repo)
+            local async_lines, async_err = helpers.await_async(
+                function(callback)
+                    git.show_commit_async(commit, repo, callback)
+                end
+            )
+
+            assert.is_nil(err)
+            assert.is_nil(async_err)
+            assert.are.same(lines, async_lines)
+        end)
+
+        it('reports a commit Git cannot show', function()
+            local commit = { hash = 'missing-revision' }
+
+            local lines, err = git.show_commit(commit, repo)
+            local async_lines, async_err = helpers.await_async(
+                function(callback)
+                    git.show_commit_async(commit, repo, callback)
+                end
+            )
+
+            assert.are.same({}, lines)
+            assert.is_not_nil(err)
+            assert.are.same(lines, async_lines)
+            assert.are.equal(err, async_err)
+        end)
+
+        for _, section in ipairs({ 'staged', 'unstaged', 'untracked' }) do
+            it('reads the ' .. section .. ' diff', function()
+                local name = section == 'untracked' and 'new.txt'
+                    or 'tracked.txt'
+                helpers.write_file(vim.fs.joinpath(repo, name), { 'changed' })
+                if section == 'staged' then
+                    helpers.run({ 'git', 'add', name }, repo)
+                end
+                local entry = helpers.entry_by_path(git.status(), name)
+
+                local lines, err = git.diff(entry, section, repo)
+                local async_lines, async_err = helpers.await_async(
+                    function(callback)
+                        git.diff_async(entry, section, repo, callback)
+                    end
+                )
+
+                assert.is_nil(err)
+                assert.is_nil(async_err)
+                assert.are.same(lines, async_lines)
+            end)
+        end
+
+        it('reports an untracked directory Git cannot diff', function()
+            vim.fn.mkdir(vim.fs.joinpath(repo, 'new-dir'), 'p')
+            local entry = { staged = '?', unstaged = '?', path = 'new-dir' }
+
+            local lines, err = git.diff(entry, 'untracked', repo)
+            local async_lines, async_err = helpers.await_async(
+                function(callback)
+                    git.diff_async(entry, 'untracked', repo, callback)
+                end
+            )
+
+            assert.are.same({}, lines)
+            assert.are.equal(
+                'Diff preview is not available for untracked directories',
+                err
+            )
+            assert.are.same(lines, async_lines)
+            assert.are.equal(err, async_err)
+        end)
+    end)
+
     it(
         'stages, unstages, and discards files through public API calls',
         function()
@@ -1361,19 +1481,13 @@ describe('minifugit.git conflict split diffs', function()
 
     it('titles both merge sides from refs asynchronously', function()
         merge_conflict({ 'ours' }, { 'theirs' })
-        local titles
+        local expected = git.conflict_side_titles(conflict_entry(), repo)
 
-        git.conflict_side_titles_async(conflict_entry(), repo, function(result)
-            titles = result
+        local titles = helpers.await_async(function(callback)
+            git.conflict_side_titles_async(conflict_entry(), repo, callback)
         end)
 
-        assert.is_true(vim.wait(2000, function()
-            return titles ~= nil
-        end, 10))
-        assert.are.same(
-            { left = 'HEAD (main)', right = 'MERGE_HEAD (feature)' },
-            titles
-        )
+        assert.are.same(expected, titles)
     end)
 
     it('suffixes a side that has no stage blob', function()

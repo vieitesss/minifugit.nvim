@@ -171,19 +171,8 @@ function M.parse_lines(lines)
             goto continue
         end
 
-        if vim.startswith(text, '@@@') then
-            combined = true
-            local old_start, _, new_start = M.parse_hunk_header(text)
-            old_number, new_number = old_start, new_start
-            table.insert(parsed, {
-                kind = 'hunk',
-                old_number = old_number,
-                new_number = new_number,
-                raw_row = raw_row,
-                text = text,
-            })
-        elseif vim.startswith(text, '@@') then
-            combined = false
+        if vim.startswith(text, '@@') then
+            combined = vim.startswith(text, '@@@')
             local old_start, _, new_start = M.parse_hunk_header(text)
             old_number, new_number = old_start, new_start
             table.insert(parsed, {

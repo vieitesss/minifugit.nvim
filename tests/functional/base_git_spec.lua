@@ -240,6 +240,64 @@ describe('base revision git API', function()
         end
     )
 
+    it('collects the same base entries without blocking', function()
+        helpers.write_file(repo .. '/tracked.txt', { 'working text' })
+        helpers.write_file(repo .. '/untracked.txt', { 'untracked' })
+
+        local entries, err = git.base_entries(base, repo)
+        local async_entries, async_err = helpers.await_async(function(callback)
+            git.base_entries_async(base, repo, callback)
+        end)
+
+        assert.is_nil(err)
+        assert.is_nil(async_err)
+        assert.are.same(entries, async_entries)
+    end)
+
+    it('builds the same base diff without blocking', function()
+        helpers.write_file(repo .. '/tracked.txt', { 'working text' })
+        helpers.write_file(repo .. '/untracked.txt', { 'untracked' })
+        local entries = git.base_entries(base, repo)
+
+        for _, entry in ipairs(entries) do
+            local patch, err = git.base_diff(entry, base, repo)
+            local async_patch, async_err = helpers.await_async(
+                function(callback)
+                    git.base_diff_async(entry, base, repo, callback)
+                end
+            )
+
+            assert.is_nil(err)
+            assert.is_nil(async_err)
+            assert.are.same(patch, async_patch)
+        end
+    end)
+
+    it('reports the same base read errors without blocking', function()
+        local bad_base = 'missing-revision'
+        local entry = { path = 'tracked.txt', staged = ' ', unstaged = 'M' }
+
+        local entries, err = git.base_entries(bad_base, repo)
+        local async_entries, async_err = helpers.await_async(function(callback)
+            git.base_entries_async(bad_base, repo, callback)
+        end)
+        local patch, patch_err = git.base_diff(entry, bad_base, repo)
+        local async_patch, async_patch_err = helpers.await_async(
+            function(callback)
+                git.base_diff_async(entry, bad_base, repo, callback)
+            end
+        )
+
+        assert.are.same({}, entries)
+        assert.is_not_nil(err)
+        assert.are.same(entries, async_entries)
+        assert.are.equal(err, async_err)
+        assert.are.same({}, patch)
+        assert.is_not_nil(patch_err)
+        assert.are.same(patch, async_patch)
+        assert.are.equal(patch_err, async_patch_err)
+    end)
+
     it(
         'rejects unknown, empty and option-like revisions with string errors',
         function()
