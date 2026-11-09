@@ -8,6 +8,7 @@ local actions = require('minifugit.ui.status.actions')
 local common = require('minifugit.ui.status.common')
 local keymaps = require('minifugit.ui.status.keymaps')
 local DiffPreview = require('minifugit.ui.status.preview.diff_preview')
+local session = require('minifugit.ui.status.session')
 local status_tab = require('minifugit.ui.status.tab')
 local window = require('minifugit.ui.status.window')
 local git = require('minifugit.git')
@@ -1063,6 +1064,10 @@ function GitStatusWindow.new(opts, root, base, reused_tab)
             'boolean'
         )
     end
+
+    -- Before the target window is read: a restored leftover may be showing in
+    -- it, and its name would collide with the new status buffer's name.
+    session.drop_restored()
 
     local self = setmetatable({}, GitStatusWindow)
 
