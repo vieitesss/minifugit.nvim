@@ -325,6 +325,59 @@ describe('minifugit conflict preview', function()
         assert.are.equal('HEAD (main) vs MERGE_HEAD (feature)', header)
     end)
 
+    it('labels the stacked header without blocking the paint', function()
+        merge_conflict(
+            replacing(base_lines, 'l2', 'theirs-2'),
+            replacing(base_lines, 'l2', 'ours-2')
+        )
+        open()
+
+        -- `before_each` reloads the plugin, so require the live module here.
+        local plugin_git = require('minifugit.git')
+        local original_titles = plugin_git.conflict_side_titles
+        local original_async = plugin_git.conflict_side_titles_async
+        local pending = {}
+        local sync_calls = 0
+
+        -- Naming the sides off the refs must not run on the paint path.
+        plugin_git.conflict_side_titles = function()
+            sync_calls = sync_calls + 1
+            return { left = 'sync', right = 'sync' }
+        end
+        plugin_git.conflict_side_titles_async = function(_, _, callback)
+            table.insert(pending, callback)
+        end
+
+        local ok, err = pcall(function()
+            local win = assert(status_window())
+            vim.api.nvim_win_set_cursor(win.win, {
+                helpers.row_containing(win.buf.id, 'UU a.txt'),
+                0,
+            })
+            assert.is_true(win:diff_entry())
+
+            -- The patch read lands first; the labels are still in flight, so
+            -- nothing is painted yet and the editor stays free.
+            assert.is_true(vim.wait(2000, function()
+                return win.preview:has_open() or #pending == 1
+            end, 10))
+            assert.are.equal(0, sync_calls)
+            assert.is_false(win.preview:has_open())
+
+            pending[1]({ left = 'HEAD (main)', right = 'MERGE_HEAD (feature)' })
+
+            local _, buf = stacked_diff()
+            assert.are.equal(
+                'HEAD (main) vs MERGE_HEAD (feature)',
+                vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1]
+            )
+        end)
+
+        plugin_git.conflict_side_titles = original_titles
+        plugin_git.conflict_side_titles_async = original_async
+        assert.is_true(ok, err)
+    end)
+
     it('splits a conflict into the two merge stages by title', function()
         merge_conflict(
             replacing(

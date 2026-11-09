@@ -38,6 +38,16 @@ local function wait_for(condition)
     assert.is_true(vim.wait(3000, condition, 10))
 end
 
+---Visible diff preview windows.
+---@return integer[]
+local function diff_windows()
+    return vim.tbl_filter(function(win)
+        local name = vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win))
+
+        return vim.fs.basename(name):find('^Minifugit diff', 1) ~= nil
+    end, vim.api.nvim_tabpage_list_wins(0))
+end
+
 ---Fire the editor focus event the plugin listens to.
 local function gain_focus()
     vim.api.nvim_exec_autocmds('FocusGained', {})
@@ -181,6 +191,34 @@ describe('minifugit auto-refresh', function()
             buffer_lines(win.buf.id)[vim.api.nvim_win_get_cursor(win.win)[1]]
         )
         assert.is_false(has_line(win.buf.id, ' M other.txt'))
+    end)
+
+    it('closes a preview whose entry the refresh no longer has', function()
+        helpers.write_file(vim.fs.joinpath(repo, 'tracked.txt'), { 'changed' })
+        assert.is_true(minifugit.open({ cwd = repo }))
+        local win = assert(status_window())
+        helpers.wait_idle(status_window)
+        assert.is_true(has_line(win.buf.id, ' M tracked.txt'))
+
+        vim.api.nvim_win_set_cursor(win.win, {
+            helpers.row_containing(win.buf.id, ' M tracked.txt'),
+            0,
+        })
+        assert.is_true(win:diff_entry())
+        helpers.wait_idle(status_window)
+        helpers.diff_win_named('Minifugit diff')
+
+        -- Everything restored from the terminal: the entry is gone.
+        helpers.write_file(vim.fs.joinpath(repo, 'tracked.txt'), { 'one' })
+        gain_focus()
+
+        wait_for(function()
+            return not has_line(win.buf.id, ' M tracked.txt')
+                and not win.reading
+        end)
+
+        assert.are.same({}, diff_windows())
+        assert.is_false(win.preview:has_open())
     end)
 
     it('starts no read while a push spinner is active', function()

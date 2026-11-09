@@ -200,6 +200,63 @@ describe('minifugit conflicts', function()
         end
     )
 
+    it(
+        'warns about markers as wide as the configured conflict-marker-size',
+        function()
+            helpers.write_file(vim.fs.joinpath(repo, '.gitattributes'), {
+                'a.txt conflict-marker-size=9',
+            })
+            helpers.write_file(vim.fs.joinpath(repo, 'a.txt'), {
+                '<<<<<<<<< HEAD',
+                'ours',
+                '=========',
+                'theirs',
+                '>>>>>>>>> feature',
+            })
+            local win = cursor_on('UU a.txt')
+
+            local messages = capture_notifications(function()
+                assert.is_true(win:stage_entry())
+                helpers.wait_idle(status_window)
+            end)
+
+            assert.are.same({ MARKERS }, messages)
+            assert.are.same(
+                { '?? .gitattributes', 'M  a.txt', 'M  b.txt' },
+                porcelain(repo)
+            )
+        end
+    )
+
+    it(
+        'ignores markers narrower than the configured conflict-marker-size',
+        function()
+            helpers.write_file(vim.fs.joinpath(repo, '.gitattributes'), {
+                'a.txt conflict-marker-size=9',
+            })
+            -- A seven-wide marker is ordinary content here, not a marker.
+            helpers.write_file(vim.fs.joinpath(repo, 'a.txt'), {
+                '<<<<<<< HEAD',
+                'ours',
+                '=======',
+                'theirs',
+                '>>>>>>> feature',
+            })
+            local win = cursor_on('UU a.txt')
+
+            local messages = capture_notifications(function()
+                assert.is_true(win:stage_entry())
+                helpers.wait_idle(status_window)
+            end)
+
+            assert.are.same({}, messages)
+            assert.are.same(
+                { '?? .gitattributes', 'M  a.txt', 'M  b.txt' },
+                porcelain(repo)
+            )
+        end
+    )
+
     it('stages a resolved conflict without a warning', function()
         helpers.write_file(vim.fs.joinpath(repo, 'a.txt'), { 'resolved' })
         local win = cursor_on('UU a.txt')

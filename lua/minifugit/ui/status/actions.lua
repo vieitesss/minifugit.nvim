@@ -4,6 +4,8 @@ local Buffer = require('minifugit.ui.buffer')
 
 local M = {}
 
+local DEFAULT_CONFLICT_MARKER_SIZE = 7
+
 ---@param items GitStatusEntryItem[]
 ---@return boolean
 local function refuse_conflicts(items)
@@ -17,17 +19,61 @@ local function refuse_conflicts(items)
     return false
 end
 
----@param path string
+---Width of the conflict markers Git writes for a path. A `conflict-marker-size`
+---attribute sets it; unset or unreadable falls back to Git's default.
+---@param path string Relative to the repository root.
+---@param root string
+---@return integer
+local function conflict_marker_size(path, root)
+    local opts = { ignore_error = true, text = false }
+
+    if root ~= '' then
+        opts.cwd = root
+    end
+
+    local out = git.run(
+        { 'check-attr', '-z', 'conflict-marker-size', '--', path },
+        opts
+    )
+
+    if out.exit_code ~= 0 then
+        return DEFAULT_CONFLICT_MARKER_SIZE
+    end
+
+    -- NUL-separated: <path>\0<attribute>\0<value>\0. The value reads
+    -- `unspecified` when no attribute sets it.
+    local value = vim.split(out.output, '\0', { plain = true })[3]
+    local size = tonumber(value)
+
+    if size == nil or size < 1 then
+        return DEFAULT_CONFLICT_MARKER_SIZE
+    end
+
+    return math.floor(size)
+end
+
+---@param line string
+---@param marker string
 ---@return boolean
-local function has_conflict_markers(path)
+local function is_marker_line(line, marker)
+    return line == marker or vim.startswith(line, marker .. ' ')
+end
+
+---@param path string
+---@param markers integer Width of the conflict markers Git writes.
+---@return boolean
+local function has_conflict_markers(path, markers)
     local file = io.open(path, 'rb')
 
     if file == nil then
         return false
     end
 
+    local left = string.rep('<', markers)
+    local right = string.rep('>', markers)
+
     for line in file:lines() do
-        if line:match('^<<<<<<< ') or line:match('^>>>>>>> ') then
+        if is_marker_line(line, left) or is_marker_line(line, right) then
             file:close()
             return true
         end
@@ -44,11 +90,17 @@ local function warn_conflict_markers(items, root)
     local paths = {}
 
     for _, item in ipairs(items) do
-        if
-            item.section == 'conflicts'
-            and has_conflict_markers(vim.fs.joinpath(root, item.entry.path))
-        then
-            table.insert(paths, vim.fn.strtrans(item.entry.path))
+        if item.section == 'conflicts' then
+            local markers = conflict_marker_size(item.entry.path, root)
+
+            if
+                has_conflict_markers(
+                    vim.fs.joinpath(root, item.entry.path),
+                    markers
+                )
+            then
+                table.insert(paths, vim.fn.strtrans(item.entry.path))
+            end
         end
     end
 

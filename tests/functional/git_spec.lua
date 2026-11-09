@@ -1359,6 +1359,23 @@ describe('minifugit.git conflict split diffs', function()
         )
     end)
 
+    it('titles both merge sides from refs asynchronously', function()
+        merge_conflict({ 'ours' }, { 'theirs' })
+        local titles
+
+        git.conflict_side_titles_async(conflict_entry(), repo, function(result)
+            titles = result
+        end)
+
+        assert.is_true(vim.wait(2000, function()
+            return titles ~= nil
+        end, 10))
+        assert.are.same(
+            { left = 'HEAD (main)', right = 'MERGE_HEAD (feature)' },
+            titles
+        )
+    end)
+
     it('suffixes a side that has no stage blob', function()
         -- Deleted by us: stage 2 is missing, so the title says so.
         run_git({ 'checkout', '-q', '-b', 'feature' })

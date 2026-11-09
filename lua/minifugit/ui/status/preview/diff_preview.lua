@@ -38,6 +38,7 @@ local DiffWindow = require('minifugit.ui.status.preview.diff_window')
 ---@field follow_gen integer
 ---@field read_generation integer Generation of the newest preview read.
 ---@field reading boolean Whether a preview read is in flight.
+---@field pending_key string? Preview key of the in-flight read.
 local DiffPreview = {}
 DiffPreview.__index = DiffPreview
 
@@ -99,6 +100,7 @@ function DiffPreview.new(host)
         follow_gen = 0,
         read_generation = 0,
         reading = false,
+        pending_key = nil,
     }, DiffPreview)
 
     obj.actions = {
@@ -259,6 +261,30 @@ local function load_split_diff(self, entry, section)
     return git.split_diff(entry, section, self.host.root)
 end
 
+---@param self DiffPreview
+---@param key string? Target the preview moved to.
+local function supersede_pending_read(self, key)
+    if self.pending_key == nil or self.pending_key == key then
+        return
+    end
+
+    self.read_generation = self.read_generation + 1
+    self.reading = false
+    self.pending_key = nil
+end
+
+---Clear the in-flight marker once this read has painted or failed.
+---@param self DiffPreview
+---@param generation integer
+local function finish_read(self, generation)
+    if generation ~= self.read_generation then
+        return
+    end
+
+    self.reading = false
+    self.pending_key = nil
+end
+
 ---Overlay source syntax onto the stacked preview without replacing buffer
 ---text (avoids cursor jumps). Scheduled after the fast unified-patch paint
 ---so CursorMoved is never blocked by split_diff + treesitter.
@@ -327,7 +353,8 @@ end
 
 ---@return boolean
 function DiffPreview:toggle_wrap()
-    if not self:has_open() then
+    -- A read in flight has no window yet, but its paint applies the preference.
+    if not self:has_open() and not self.reading then
         common.notify_warn('Diff preview is not open')
         return false
     end
@@ -586,6 +613,7 @@ function DiffPreview:delete_owned_buffers()
     -- Drop in-flight read results before their buffers go away.
     self.read_generation = self.read_generation + 1
     self.reading = false
+    self.pending_key = nil
 
     for _, dw in ipairs({ self.stacked, self.left, self.right }) do
         if dw.buf ~= nil and dw.buf.id ~= nil then
@@ -642,6 +670,8 @@ function DiffPreview:open_commit(commit, opts)
 
     local preview_key = 'commit:' .. commit.hash
 
+    supersede_pending_read(self, preview_key)
+
     if
         not opts.force
         and self:has_open()
@@ -653,6 +683,7 @@ function DiffPreview:open_commit(commit, opts)
     self.read_generation = self.read_generation + 1
     local generation = self.read_generation
     self.reading = true
+    self.pending_key = preview_key
 
     git.show_commit_async(commit, self.host.root, function(lines, err)
         -- Drop the result when the preview closed or moved on meanwhile.
@@ -660,36 +691,40 @@ function DiffPreview:open_commit(commit, opts)
             return
         end
 
-        self.reading = false
+        finish_read(self, generation)
         show_commit(self, commit, preview_key, lines, err)
     end)
 
     return true
 end
 
----@param item GitStatusEntryItem
+---@param self DiffPreview
 ---@param entry GitStatusEntry
 ---@param section GitStatusSectionName?
 ---@param preview_key string
----@param layout 'stacked'|'split'
 ---@param opts { force: boolean?, notify: boolean?, focus: boolean? }
 ---@param lines string[]
 ---@param err string?
+---@param generation integer Read generation this completion belongs to.
 ---@return boolean
 local function show_entry(
     self,
     entry,
     section,
     preview_key,
-    layout,
     opts,
     lines,
-    err
+    err,
+    generation
 )
     if err ~= nil then
         common.notify_error(err, 'Cannot show diff')
+        finish_read(self, generation)
         return false
     end
+
+    -- Resolved on completion, so a layout toggled during the read wins.
+    local layout = resolved_layout(self)
 
     if self.host.base ~= nil then
         for _, line in ipairs(lines) do
@@ -708,6 +743,9 @@ local function show_entry(
                 if ok and opts.focus then
                     display.focus_open_diff(self)
                 end
+
+                finish_read(self, generation)
+
                 return ok
             end
         end
@@ -770,6 +808,8 @@ local function show_entry(
                 end
             end
 
+            finish_read(self, generation)
+
             return ok
         end
 
@@ -796,55 +836,87 @@ local function show_entry(
         })
     end
 
-    -- Name both sides above the patch. Shift the raw rows so hunks, cursor
-    -- mapping and syntax still point at the same patch row.
+    -- Conflicts name both sides above the patch. The labels come from refs, so
+    -- they are read off the main loop; the paint stays generation-checked.
+    local paint
+
+    ---@param titles { left: string, right: string }?
+    ---@return boolean
+    function paint(titles)
+        if generation ~= self.read_generation then
+            return false
+        end
+
+        finish_read(self, generation)
+
+        if titles ~= nil then
+            local header = render.line(titles.left .. ' vs ' .. titles.right)
+            render.add_highlight(
+                header,
+                self.groups.diff_header,
+                0,
+                #header.text
+            )
+            table.insert(diff_lines, 1, header)
+
+            -- Shift the raw rows so hunks, cursor mapping and syntax still
+            -- point at the same patch row.
+            for index, row in ipairs(raw_rows or {}) do
+                raw_rows[index] = row + 1
+            end
+        end
+
+        diff_parser.assign_stacked_rows(parsed_hunks, raw_rows)
+
+        local ok = display.show_stacked(
+            self,
+            diff_lines,
+            preview_key,
+            diff_title(entry, section),
+            self.actions
+        )
+
+        if ok then
+            set_context(self, lines, raw_rows, parsed_hunks, section, entry)
+
+            -- Combined rows mix two files, so indexing the worktree by stage-1
+            -- line numbers would paint the wrong rows.
+            if section ~= 'conflicts' then
+                schedule_stacked_syntax(
+                    self,
+                    lines,
+                    entry,
+                    section,
+                    preview_key
+                )
+            end
+
+            if opts.focus then
+                display.focus_open_diff(self)
+            end
+
+            if self.stacked.buf ~= nil then
+                preview_buffers.set_goto_code_keymap(
+                    self.stacked.buf.id,
+                    self.actions
+                )
+            end
+        end
+
+        return ok
+    end
+
     if
         section == 'conflicts'
         and self.host.base == nil
         and conflict_message == nil
     then
-        local titles = git.conflict_side_titles(entry, self.host.root)
-        local header = render.line(titles.left .. ' vs ' .. titles.right)
-        render.add_highlight(header, self.groups.diff_header, 0, #header.text)
-        table.insert(diff_lines, 1, header)
+        git.conflict_side_titles_async(entry, self.host.root, paint)
 
-        for index, row in ipairs(raw_rows or {}) do
-            raw_rows[index] = row + 1
-        end
+        return true
     end
 
-    diff_parser.assign_stacked_rows(parsed_hunks, raw_rows)
-
-    local ok = display.show_stacked(
-        self,
-        diff_lines,
-        preview_key,
-        diff_title(entry, section),
-        self.actions
-    )
-
-    if ok then
-        set_context(self, lines, raw_rows, parsed_hunks, section, entry)
-
-        -- Combined rows mix two files, so indexing the worktree by stage-1
-        -- line numbers would paint the wrong rows.
-        if section ~= 'conflicts' then
-            schedule_stacked_syntax(self, lines, entry, section, preview_key)
-        end
-
-        if opts.focus then
-            display.focus_open_diff(self)
-        end
-
-        if self.stacked.buf ~= nil then
-            preview_buffers.set_goto_code_keymap(
-                self.stacked.buf.id,
-                self.actions
-            )
-        end
-    end
-
-    return ok
+    return paint(nil)
 end
 
 ---@param item GitStatusEntryItem
@@ -852,6 +924,8 @@ end
 ---@return boolean
 function DiffPreview:open(item, opts)
     opts = opts or {}
+
+    supersede_pending_read(self, item.key)
 
     local layout = resolved_layout(self)
     local has_open_preview = (
@@ -872,6 +946,7 @@ function DiffPreview:open(item, opts)
     self.read_generation = self.read_generation + 1
     local generation = self.read_generation
     self.reading = true
+    self.pending_key = item.key
 
     ---@param lines string[]
     ---@param err string?
@@ -881,16 +956,15 @@ function DiffPreview:open(item, opts)
             return
         end
 
-        self.reading = false
         show_entry(
             self,
             item.entry,
             item.section,
             item.key,
-            layout,
             opts,
             lines,
-            err
+            err,
+            generation
         )
     end
 
@@ -910,6 +984,7 @@ function DiffPreview:close()
     -- A read that completes after this point must not reopen the preview.
     self.read_generation = self.read_generation + 1
     self.reading = false
+    self.pending_key = nil
 
     if window_state.has_any_split_diff(self) then
         closed = self.right:restore_or_close(false) or closed
@@ -947,6 +1022,8 @@ function DiffPreview:refresh(state)
         local item = self.host:current_item('commit', state)
 
         if item == nil then
+            -- Nothing the preview paints exists any more.
+            self:close()
             return
         end
 
@@ -956,6 +1033,8 @@ function DiffPreview:refresh(state)
     local item = self.host:current_item('entry', state)
 
     if item == nil then
+        -- Nothing the preview paints exists any more.
+        self:close()
         return
     end
 
@@ -1010,7 +1089,18 @@ function DiffPreview:follow_cursor()
 
     local key = cursor_preview_key(self)
 
-    if key == nil or key == self.preview_key then
+    if key == nil then
+        return
+    end
+
+    if key == self.preview_key then
+        -- Back on the painted entry: a read started for another one must not
+        -- repaint it when it lands.
+        supersede_pending_read(self, key)
+        return
+    end
+
+    if key == self.pending_key then
         return
     end
 

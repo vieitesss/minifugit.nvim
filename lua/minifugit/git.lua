@@ -1562,19 +1562,33 @@ local CONFLICT_STAGES = {
     UA = { base = false, left = false, right = true },
 }
 
----@param root string?
+---Name HEAD from its branch. A detached HEAD has no branch to name.
+---@param branch string `''` when Git could not name the branch.
 ---@return string
-local function head_side_label(root)
-    local out =
-        git.run({ 'rev-parse', '--abbrev-ref', 'HEAD' }, root_opts(root))
-    local branch = out.exit_code == 0 and return_result(out) or ''
-
-    -- A detached HEAD has no branch to name.
+local function head_label(branch)
     if branch == '' or branch == 'HEAD' then
         return 'HEAD'
     end
 
     return 'HEAD (' .. branch .. ')'
+end
+
+---Name the incoming side from its conflict ref and branch.
+---@param ref string
+---@param branch string `''` when no branch points at the ref.
+---@param short_hash string
+---@return string
+local function incoming_label(ref, branch, short_hash)
+    return ref .. ' (' .. (branch ~= '' and branch or short_hash) .. ')'
+end
+
+---@param root string?
+---@return string
+local function head_side_label(root)
+    local out =
+        git.run({ 'rev-parse', '--abbrev-ref', 'HEAD' }, root_opts(root))
+
+    return head_label(out.exit_code == 0 and return_result(out) or '')
 end
 
 ---@param root string?
@@ -1594,25 +1608,21 @@ local function incoming_side_label(root)
                 ref,
             }, opts)
             local branch = named.exit_code == 0 and return_result(named) or ''
-            local name = branch ~= '' and branch or return_result(out):sub(1, 7)
 
-            return ref .. ' (' .. name .. ')'
+            return incoming_label(ref, branch, return_result(out):sub(1, 7))
         end
     end
 
     return 'theirs'
 end
 
----Pane titles for the two sides of a conflict. Only refs are read, never stage
----blobs, so the stacked layout can name its sides cheaply.
----@param entry GitStatusEntry
----@param root string?
+---Titles for the two sides of a conflict from its side labels, marked absent
+---when a merge stage never held the file.
+---@param stages { base: boolean, left: boolean, right: boolean }?
+---@param left string
+---@param right string
 ---@return { left: string, right: string }
-function git.conflict_side_titles(entry, root)
-    local stages = CONFLICT_STAGES[entry.staged .. entry.unstaged]
-    local left = head_side_label(root)
-    local right = incoming_side_label(root)
-
+local function side_titles(stages, left, right)
     if stages == nil then
         return { left = left, right = right }
     end
@@ -1625,6 +1635,94 @@ function git.conflict_side_titles(entry, root)
         left = left .. (stages.left and '' or missing),
         right = right .. (stages.right and '' or missing),
     }
+end
+
+---Pane titles for the two sides of a conflict. Only refs are read, never stage
+---blobs, so the stacked layout can name its sides cheaply.
+---@param entry GitStatusEntry
+---@param root string?
+---@return { left: string, right: string }
+function git.conflict_side_titles(entry, root)
+    return side_titles(
+        CONFLICT_STAGES[entry.staged .. entry.unstaged],
+        head_side_label(root),
+        incoming_side_label(root)
+    )
+end
+
+---@param root string?
+---@param callback fun(branch: string)
+local function head_branch_async(root, callback)
+    run_async_result(
+        { 'rev-parse', '--abbrev-ref', 'HEAD' },
+        root_opts(root),
+        function(res)
+            callback(res.exit_code == 0 and return_result(res) or '')
+        end
+    )
+end
+
+---@param root string?
+---@param index integer Next incoming ref to try.
+---@param callback fun(right: string)
+local function incoming_side_label_async(root, index, callback)
+    local ref = INCOMING_CONFLICT_REFS[index]
+
+    if ref == nil then
+        callback('theirs')
+        return
+    end
+
+    local opts = root_opts(root)
+
+    run_async_result(
+        { 'rev-parse', '--verify', '--quiet', ref },
+        opts,
+        function(res)
+            if res.exit_code ~= 0 then
+                incoming_side_label_async(root, index + 1, callback)
+                return
+            end
+
+            run_async_result(
+                {
+                    'name-rev',
+                    '--name-only',
+                    '--refs=refs/heads/*',
+                    '--no-undefined',
+                    ref,
+                },
+                opts,
+                function(named)
+                    local branch = named.exit_code == 0 and return_result(named)
+                        or ''
+
+                    callback(
+                        incoming_label(
+                            ref,
+                            branch,
+                            return_result(res):sub(1, 7)
+                        )
+                    )
+                end
+            )
+        end
+    )
+end
+
+---Same titles as `conflict_side_titles`, read off the main loop so the
+---stacked preview names its sides without blocking on Git.
+---@param entry GitStatusEntry
+---@param root string?
+---@param callback fun(titles: { left: string, right: string })
+function git.conflict_side_titles_async(entry, root, callback)
+    local stages = CONFLICT_STAGES[entry.staged .. entry.unstaged]
+
+    head_branch_async(root, function(branch)
+        incoming_side_label_async(root, 1, function(right)
+            callback(side_titles(stages, head_label(branch), right))
+        end)
+    end)
 end
 
 ---Commit ids of the submodule stages of a conflict, by stage.

@@ -284,6 +284,117 @@ describe('minifugit async reads', function()
         end)
     end)
 
+    it(
+        'drops a read for another entry when the cursor returns to the painted one',
+        function()
+            local git = require('minifugit.git')
+            helpers.write_file(vim.fs.joinpath(repo, 'a.txt'), { 'a-unique' })
+            helpers.write_file(vim.fs.joinpath(repo, 'b.txt'), { 'b-unique' })
+            local captured = {}
+
+            with_git_stub('diff_async', function(entry, section, root, callback)
+                table.insert(captured, {
+                    lines = select(1, git.diff(entry, section, root)),
+                    callback = callback,
+                })
+            end, function()
+                assert.is_true(minifugit.open({ cwd = repo }))
+                local win = assert(status_window())
+                helpers.wait_idle(status_window)
+
+                ---Move the status cursor like a user moving through the rows.
+                ---@param path string
+                local function move_to(path)
+                    vim.api.nvim_win_set_cursor(win.win, {
+                        helpers.row_containing(win.buf.id, path),
+                        0,
+                    })
+                    vim.api.nvim_exec_autocmds('CursorMoved', {
+                        buffer = win.buf.id,
+                    })
+                    helpers.settle_callbacks()
+                end
+
+                ---@param index integer
+                local function settle(index)
+                    captured[index].callback(captured[index].lines)
+                end
+
+                move_to('a.txt')
+                assert.is_true(win:diff_entry())
+                settle(1)
+
+                local _, diff_buf = helpers.diff_win_named('Minifugit diff')
+                assert.is_true(
+                    wait_for_buf_line(diff_buf, line_has('a-unique'))
+                )
+
+                move_to('b.txt')
+                assert.are.equal(2, #captured)
+                move_to('a.txt')
+
+                settle(2)
+
+                assert.is_true(
+                    wait_for_buf_line(diff_buf, line_has('a-unique'))
+                )
+                refute_has_line(diff_buf, 'b-unique')
+            end)
+        end
+    )
+
+    it(
+        'applies wrap and layout toggles pressed while a preview read is pending',
+        function()
+            local git = require('minifugit.git')
+            helpers.write_file(
+                vim.fs.joinpath(repo, 'tracked.txt'),
+                { 'changed' }
+            )
+            local captured = {}
+
+            with_git_stub('diff_async', function(entry, section, root, callback)
+                table.insert(captured, {
+                    lines = select(1, git.diff(entry, section, root)),
+                    callback = callback,
+                })
+            end, function()
+                assert.is_true(minifugit.open({ cwd = repo }))
+                local win = assert(status_window())
+                helpers.wait_idle(status_window)
+
+                vim.api.nvim_win_set_cursor(win.win, {
+                    helpers.row_containing(win.buf.id, ' M tracked.txt'),
+                    0,
+                })
+                assert.is_true(win:diff_entry())
+                assert.are.equal(1, #captured)
+
+                ---Press a status keymap, letting each multi-key sequence resolve.
+                ---@param keys string
+                local function press(keys)
+                    vim.api.nvim_feedkeys(
+                        vim.api.nvim_replace_termcodes(keys, true, false, true),
+                        'mx',
+                        false
+                    )
+                    vim.wait(20)
+                end
+
+                -- No diff window exists yet; both toggles must still land.
+                press('aw')
+                press('al')
+
+                captured[1].callback(captured[1].lines)
+
+                local left_win = helpers.diff_win_named('Minifugit diff left')
+                local right_win = helpers.diff_win_named('Minifugit diff right')
+                assert.is_true(vim.wo[left_win].wrap)
+                assert.is_true(vim.wo[right_win].wrap)
+            end)
+        end
+    )
+
     it('drops a diff preview result for an entry it moved away from', function()
         local git = require('minifugit.git')
         helpers.write_file(vim.fs.joinpath(repo, 'a.txt'), { 'a' })
