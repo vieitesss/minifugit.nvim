@@ -21,6 +21,59 @@ local function restore_current_win(win)
     end
 end
 
+---Key of a remembered view. Stacked and split rows differ, so a file keeps one
+---view per layout.
+---@param layout 'stacked'|'split'
+---@param preview_key string
+---@return string
+local function view_key(layout, preview_key)
+    return layout .. ':' .. preview_key
+end
+
+---Remember the view of the file the preview shows, before a render replaces
+---the lines of its windows.
+---@param self DiffPreview
+---@return 'stacked'|'split'? layout The layout the view was read from.
+local function remember_view(self)
+    if self.preview_key == nil then
+        return nil
+    end
+
+    local layout, win
+
+    if window_state.has_open_split_diff(self) then
+        layout, win = 'split', self.left.win
+    elseif window_state.has_open_stacked_diff(self) then
+        layout, win = 'stacked', self.stacked.win
+    else
+        return nil
+    end
+
+    self.views[view_key(layout, self.preview_key)] =
+        vim.api.nvim_win_call(assert(win), vim.fn.winsaveview)
+
+    return layout
+end
+
+---Show a file with the view it had the last time the preview showed it, or
+---from its first row when the preview has not shown it yet. The windows are
+---reused across files, so without this a file opens where the previous file
+---was scrolled to.
+---@param self DiffPreview
+---@param layout 'stacked'|'split'
+---@param preview_key string
+---@param wins integer[]
+local function show_view(self, layout, preview_key, wins)
+    local view = self.views[view_key(layout, preview_key)]
+        or { lnum = 1, col = 0, topline = 1, leftcol = 0 }
+
+    for _, win in ipairs(wins) do
+        vim.api.nvim_win_call(win, function()
+            vim.fn.winrestview(view)
+        end)
+    end
+end
+
 ---@param win number?
 ---@param enabled boolean
 function M.set_split_line_numbers(win, enabled)
@@ -222,6 +275,8 @@ end
 ---@return boolean
 function M.show_stacked(self, diff_lines, preview_key, title, actions)
     local current_win = vim.api.nvim_get_current_win()
+    local previous_key = self.preview_key
+    local previous_layout = remember_view(self)
     local outgoing
 
     if window_state.has_any_split_diff(self) then
@@ -293,6 +348,12 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
     vim.wo[target_win].cursorbind = false
     vim.wo[target_win].wrap = self.wrap
     vim.wo[target_win].winbar = title
+
+    -- A layout toggle keeps the file and restores its hunk position itself.
+    if previous_key ~= preview_key or previous_layout == 'stacked' then
+        show_view(self, 'stacked', preview_key, { target_win })
+    end
+
     self.preview_key = preview_key
 
     restore_current_win(current_win)
@@ -337,6 +398,8 @@ function M.show_split(
     actions
 )
     local current_win = vim.api.nvim_get_current_win()
+    local previous_key = self.preview_key
+    local previous_layout = remember_view(self)
     local outgoing
 
     if
@@ -502,6 +565,11 @@ function M.show_split(
     vim.api.nvim_win_call(target_win, function()
         vim.cmd('syncbind')
     end)
+
+    -- A layout toggle keeps the file and restores its hunk position itself.
+    if previous_key ~= preview_key or previous_layout == 'split' then
+        show_view(self, 'split', preview_key, { target_win, right_win })
+    end
 
     self.preview_key = preview_key
 

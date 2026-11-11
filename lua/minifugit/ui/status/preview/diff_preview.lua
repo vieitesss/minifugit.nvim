@@ -25,6 +25,7 @@ local DiffWindow = require('minifugit.ui.status.preview.diff_window')
 ---@field right_rows MiniFugitSplitRow[]?
 ---@field anchors table<integer, integer>?
 ---@field preview_key string?
+---@field views table<string, table> View of each file shown while the preview is open, by layout and preview key.
 ---@field raw_lines string[]?
 ---@field raw_rows integer[]?
 ---@field hunks MiniFugitDiffHunk[]?
@@ -101,6 +102,7 @@ function DiffPreview.new(host)
         read_generation = 0,
         reading = false,
         pending_key = nil,
+        views = {},
     }, DiffPreview)
 
     obj.actions = {
@@ -986,6 +988,7 @@ function DiffPreview:close()
     window_state.clear_missing_diff_window_states(self)
     self.follow_gen = self.follow_gen + 1
     self.preview_key = nil
+    self.views = {}
     set_context(self, nil, nil, nil, nil, nil)
 
     if self.host.win ~= nil and common.is_valid_win(self.host.win) then
