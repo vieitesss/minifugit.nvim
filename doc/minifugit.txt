@@ -1,0 +1,349 @@
+*minifugit.txt*        Lightweight Git status UI for Neovim
+
+Author:  Daniel Vieites
+License: see LICENSE
+Repo:    https://github.com/vieitesss/minifugit.nvim
+
+==============================================================================
+CONTENTS                                                  *minifugit-contents*
+
+    1. Introduction ............................ |minifugit-introduction|
+    2. Requirements ............................ |minifugit-requirements|
+    3. Configuration ........................... |minifugit-configuration|
+    4. Commands ................................ |minifugit-commands|
+    5. Status window ........................... |minifugit-status|
+    6. Diff preview ............................ |minifugit-preview|
+    7. Conflicts ............................... |minifugit-conflicts|
+    8. Base comparison ......................... |minifugit-base|
+    9. Lua API ................................. |minifugit-api|
+   10. Highlights .............................. |minifugit-highlights|
+   11. Health .................................. |minifugit-health|
+
+==============================================================================
+1. INTRODUCTION                                       *minifugit-introduction*
+
+minifugit.nvim is a compact Git status window for everyday Git operations,
+inspired by vim-fugitive. From one window you can:
+
+- view the status of your files and your unpushed commits,
+- stage and unstage files, or hunks from the diff preview,
+- discard unstaged changes or delete untracked paths,
+- preview diffs in a stacked or split layout,
+- preview both sides of a merge conflict,
+- commit and push.
+
+Git reads run in the background, so the editor keeps responding on large
+repositories.
+
+==============================================================================
+2. REQUIREMENTS                                       *minifugit-requirements*
+
+- Neovim 0.11+
+- `git` executable on `PATH`
+
+==============================================================================
+3. CONFIGURATION                                     *minifugit-configuration*
+
+minifugit works without setup. Configure it with |g:minifugit| before the
+plugin loads, or call |minifugit.setup()|.
+
+                                                                 *g:minifugit*
+Defaults: >lua
+    vim.g.minifugit = {
+        preview = {
+            wrap = false,
+            show_line_numbers = true,
+            show_metadata = true,
+            diff_layout = 'stacked',
+            diff_auto_threshold = 120,
+        },
+        status = {
+            width = 0.4,
+            min_width = 20,
+            open_in_tab = false,
+            auto_refresh = true,
+        },
+    }
+<
+Options passed to |minifugit.setup()| take precedence over |g:minifugit|.
+Invalid values raise an error.
+
+                                                   *minifugit-preview.wrap*
+preview.wrap ~
+    boolean, default `false`. Start diff previews with line wrapping.
+
+                                      *minifugit-preview.show_line_numbers*
+preview.show_line_numbers ~
+    boolean, default `true`. Show old/new line numbers in diff previews.
+
+                                          *minifugit-preview.show_metadata*
+preview.show_metadata ~
+    boolean, default `true`. Show diff metadata rows such as `diff --git`,
+    `index`, `---` and `+++` in the stacked layout.
+
+                                            *minifugit-preview.diff_layout*
+preview.diff_layout ~
+    `'stacked'`, `'split'` or `'auto'`, default `'stacked'`. Layout of the
+    diff preview. `'auto'` uses split when the editor is at least
+    |minifugit-preview.diff_auto_threshold| columns wide, stacked otherwise.
+
+                                    *minifugit-preview.diff_auto_threshold*
+preview.diff_auto_threshold ~
+    integer >= 1, default `120`. Editor width where `'auto'` switches from
+    stacked to split.
+
+                                                   *minifugit-status.width*
+status.width ~
+    number in (0, 1], default `0.4`. Fraction of the editor width used by
+    the status window.
+
+                                               *minifugit-status.min_width*
+status.min_width ~
+    integer >= 1, default `20`. Minimum status window width in columns.
+
+                                             *minifugit-status.open_in_tab*
+status.open_in_tab ~
+    boolean, default `false`. Open the status window in a dedicated tab per
+    repository. Later calls for the same repository reuse that tab.
+
+                                            *minifugit-status.auto_refresh*
+status.auto_refresh ~
+    boolean, default `true`. Refresh the visible status window of the
+    current tabpage when Neovim regains focus. The refresh is debounced,
+    keeps the cursor, filter and preview, and is skipped while a push runs.
+    Hidden windows and windows in other tabpages are left alone.
+
+The preview mappings |minifugit-aw|, |minifugit-an|, |minifugit-am| and
+|minifugit-al| change the preview options at runtime for the current status
+session.
+
+==============================================================================
+4. COMMANDS                                               *minifugit-commands*
+
+                                                            *:MinifugitStatus*
+:MinifugitStatus
+    Open the status window for the repository of the current working
+    directory. Same as |minifugit.status()|.
+
+==============================================================================
+5. STATUS WINDOW                                            *minifugit-status*
+
+The status window shows the pinned repository root and branch, the staged,
+unstaged, untracked and conflicted entries, and the unpushed commits. Each
+tabpage has its own status window.
+
+The window keeps acting on the repository it was opened for. Changing the
+cwd does not redirect its actions: close it and reopen it in the other
+repository to switch.
+
+Mappings ~
+                                                   *minifugit-status-mappings*
+    Mode  Key         Action ~
+    n     <CR>, o     Open the file or commit under the cursor
+    n     =           Preview the diff of the entry under the cursor
+    n     q           Close the status window
+    n     /           Filter entries by path or summary
+    n     <BS>        Clear the active filter
+    n     r           Refresh Git status data
+    n     s           Stage the entry, or unstage it if already staged
+    x     s           Stage the selected entries
+    n, x  u           Unstage the entry or the selected entries
+    n     S           Stage all visible entries
+    n     U           Unstage all visible entries
+    n     d           Discard the entry, with confirmation
+    n     D           Discard the entry, without confirmation
+    n     c           Commit staged changes
+    n     p           Push unpushed commits
+    n     aw          Alternate diff preview line wrapping
+    n     an          Alternate diff preview line numbers
+    n     am          Alternate stacked diff preview metadata rows
+    n     al          Alternate diff preview stacked/split layout
+    n     ?           Toggle the mappings help
+
+Discarding an untracked entry deletes it from disk.
+
+==============================================================================
+6. DIFF PREVIEW                                            *minifugit-preview*
+
+Press `=` on an entry to preview its diff. The stacked layout shows one
+unified diff. The split layout shows the old and new versions side by side.
+Pressing `=` on an unpushed commit previews that commit.
+
+Mappings ~
+                                                  *minifugit-preview-mappings*
+    Mode  Key         Action ~
+    n     q           Close the diff preview
+    n     <CR>        Open the file at the diff line under the cursor
+                      (stacked layout only)
+    n     [h, ]h      Jump to the previous/next hunk
+    n     s           Stage the hunk under the cursor
+    n     u           Unstage the hunk under the cursor
+    n     d           Discard the hunk under the cursor, with confirmation
+    n     aw          Alternate line wrapping               *minifugit-aw*
+    n     an          Alternate line numbers                *minifugit-an*
+    n     am          Alternate metadata rows (stacked)     *minifugit-am*
+    n     al          Alternate stacked/split layout        *minifugit-al*
+    n     ?           Toggle the mappings help
+
+==============================================================================
+7. CONFLICTS                                             *minifugit-conflicts*
+
+A conflicted file stays in the status window until you resolve it. `=`
+previews both sides of the merge:
+
+- The stacked layout shows Git's combined diff with each side highlighted.
+- The split layout puts stage 2 (`HEAD` with its branch) next to stage 3:
+  the incoming `MERGE_HEAD`, `REBASE_HEAD`, `CHERRY_PICK_HEAD` or
+  `REVERT_HEAD` ref, or `theirs` when no ref is recorded.
+
+A side missing because the file was deleted shows an empty pane marked
+`(deleted)`. A file deleted on both sides says so instead of showing a diff.
+
+Stage the file with `s` once the markers are gone. Unstaging or discarding
+would drop the merge stages, so `u` and `d` refuse.
+
+==============================================================================
+8. BASE COMPARISON                                            *minifugit-base*
+
+`require('minifugit').open({ base = rev })` opens a read-only comparison of
+revision `rev` with the working tree. See |minifugit.open()|.
+
+- `rev` is resolved to a full commit hash when opening. Refresh keeps that
+  commit pinned even if `HEAD` or a branch moves.
+- The header shows the first seven characters of the hash and `read-only`.
+- One `Changes since <short rev>` section shows tracked `A`, `M`, `D`, `R`
+  and `T` changes, plus non-ignored untracked files marked `??`.
+- Renames show `old -> new`. `T` marks a type change, such as a file
+  replaced by a symlink or a submodule.
+- A path removed from the index with `git rm --cached` but still in the
+  working tree shows as one `M` change.
+- Previews show committed and uncommitted edits together.
+- No unpushed-commits section is shown.
+
+Stage, unstage, discard, commit, push and hunk actions only notify
+`read-only: changes since <short rev>`. Viewing, filtering, refreshing and
+opening working tree files still work. A clean comparison says
+`No changes since <short rev>`.
+
+==============================================================================
+9. LUA API                                                     *minifugit-api*
+
+                                                           *minifugit.setup()*
+require('minifugit').setup({opts})
+    Set the options. {opts} has the shape of |g:minifugit| and is merged
+    over it. Returns the module.
+
+                                                          *minifugit.status()*
+require('minifugit').status()
+    Open the status window. Calls |minifugit.open()| with no options and
+    ignores its return value.
+
+                                                            *minifugit.open()*
+require('minifugit').open({opts})
+    Open or focus the status window. Returns `true` on success, or `nil`
+    and an error string. All fields of {opts} are optional:
+
+    cwd ~
+        string. A directory inside a Git repository, including a linked
+        worktree. The resolved root is pinned without changing Neovim's
+        cwd. Defaults to the current cwd.
+
+    base ~
+        string. Open a read-only comparison of this revision with the
+        working tree. See |minifugit-base|.
+
+    open_in_tab ~
+        boolean. Override |minifugit-status.open_in_tab| for this call.
+
+    on_close ~
+        function. Called once, scheduled, after the status window stops
+        showing. Closing with `q` or |:close|, deleting or wiping the
+        buffer, closing the owned tab and replacing the instance all
+        count. Refresh and re-show do not. Several calls on the same
+        instance register several callbacks, run in order. Errors in a
+        callback are logged and do not stop the others.
+
+    Errors returned, without creating windows, buffers or tabs:
+    - `cwd` missing, not a directory, or not in a Git repository.
+    - `base` unknown, empty or starting with `-`:
+      `Invalid base revision: <base>`.
+    - `base` given without `cwd` while the cwd is not in Git:
+      `Not inside a git repository: <cwd>`.
+    Invalid option types raise errors.
+
+    Git environment: an explicit `cwd` names the repository, so the window
+    ignores `$GIT_DIR` and `$GIT_WORK_TREE`. Without `cwd` they are used
+    like Git does, so setups such as >sh
+        GIT_DIR=~/.dotfiles GIT_WORK_TREE=~
+<   keep working. Either way the window pins the absolute Git directory and
+    work tree of its root.
+
+    Reuse rules:
+    - A `cwd` for another root replaces the visible status window.
+    - A `base` resolving to another commit or root replaces it. An
+      equivalent revision in the same root focuses and refreshes it.
+    - Omitting `base` keeps the visible comparison. Omitting both `base`
+      and `cwd` also keeps its root.
+    - A hidden instance is recreated if its root, opening mode or base
+      differs.
+    - Replacing a status window never closes another tab's window.
+
+    Example: >lua
+        local ok, err = require('minifugit').open({
+            cwd = '/path/to/worktree',
+            open_in_tab = false,
+            on_close = function()
+                print('Minifugit closed')
+            end,
+        })
+<
+                                                           *minifugit.reset()*
+require('minifugit').reset()
+    Destroy every status instance.
+
+                                              *minifugit.file_change_counts()*
+require('minifugit').file_change_counts({path})
+    Count the unstaged changes of the file {path} against the index.
+    {path} defaults to the current buffer name. Returns a table
+    `{ added, modified, deleted }` of line counts and an error string, or
+    `nil` on success. On error the counts are all `0`. An untracked file
+    counts all its lines as added. Useful for statuslines.
+
+                                      *minifugit.current_file_change_counts()*
+require('minifugit').current_file_change_counts()
+    Same as |minifugit.file_change_counts()| for the current buffer.
+
+==============================================================================
+10. HIGHLIGHTS                                          *minifugit-highlights*
+
+minifugit derives its groups from the colorscheme, and falls back to fixed
+colors when the source groups are not defined.
+
+    Group                          Derived from ~
+    MiniFugitStage                 |hl-Added|, String
+    MiniFugitUnstage               |hl-Removed|, Error
+    MiniFugitUntracked             DiagnosticInfo, Directory, Identifier
+    MiniFugitIgnored               Comment
+    MiniFugitConflict              DiagnosticError, ErrorMsg, Error
+    MiniFugitHead                  Identifier, Keyword
+    MiniFugitUnpushed              Constant, Number
+    MiniFugitLoading               DiagnosticInfo, Identifier
+    MiniFugitDiffAdded             DiffAdd, Added, String
+    MiniFugitDiffRemoved           DiffDelete, Removed, Error
+    MiniFugitDiffAddedText         DiffAdd, Added, String
+    MiniFugitDiffRemovedText       DiffDelete, Removed, Error
+    MiniFugitDiffConflictHead      DiffChange, Identifier
+    MiniFugitDiffConflictIncoming  DiffText, Special
+    MiniFugitDiffConflictMarker    DiffDelete, Removed, Error
+    MiniFugitDiffLineNr            LineNr, Comment
+    MiniFugitDiffHeader            diff metadata rows
+    MiniFugitDiffHunkHeader        hunk header rows
+
+==============================================================================
+11. HEALTH                                                  *minifugit-health*
+
+Run |:checkhealth| to verify the Neovim version and the `git` executable: >vim
+    :checkhealth minifugit
+<
+
+ vim:tw=78:ts=8:noet:ft=help:norl:
