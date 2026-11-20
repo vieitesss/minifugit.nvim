@@ -173,12 +173,16 @@ local function validate_options(opts)
         )
 
         if opts.status.height ~= nil then
-            if opts.status.height <= 0 or opts.status.height > 1 then
+            if not (opts.status.height > 0 and opts.status.height <= 1) then
                 error('opts.status.height must be a number between 0 and 1')
             end
         end
 
         if opts.status.min_height ~= nil then
+            if opts.status.min_height ~= math.floor(opts.status.min_height) then
+                error('opts.status.min_height must be an integer')
+            end
+
             if opts.status.min_height < 1 then
                 error('opts.status.min_height must be >= 1')
             end

@@ -199,7 +199,15 @@ describe('minifugit', function()
         end, 'opts.status.height must be a number between 0 and 1')
 
         assert.has_error(function()
+            require('minifugit').setup({ status = { height = 0 / 0 } })
+        end, 'opts.status.height must be a number between 0 and 1')
+
+        assert.has_error(function()
             require('minifugit').setup({ status = { min_height = 0 } })
         end, 'opts.status.min_height must be >= 1')
+
+        assert.has_error(function()
+            require('minifugit').setup({ status = { min_height = 1.5 } })
+        end, 'opts.status.min_height must be an integer')
     end)
 end)
