@@ -11,6 +11,7 @@ local M = {}
 ---@field wrap boolean
 ---@field cursorline boolean
 ---@field winfixwidth boolean
+---@field winfixheight boolean
 ---@field winbar string
 ---@field diff boolean
 ---@field fillchars string
@@ -39,12 +40,61 @@ function M.is_side_position(position)
     return position == 'left' or position == 'right'
 end
 
+---@class MinifugitStatusAxis
+---@field winfix string Window-local option that pins the status window's size.
+---@field size fun(win: number): integer Current size on this axis.
+---@field set_size fun(win: number, size: integer) Resize the window on it.
+---@field configured_size fun(opts: MinifugitStatusOptions): integer
+---@field limit fun(): integer Largest size the axis can take in the editor.
+
+---@type MinifugitStatusAxis
+local SIDE_AXIS = {
+    winfix = 'winfixwidth',
+    size = function(win)
+        return vim.api.nvim_win_get_width(win)
+    end,
+    set_size = function(win, size)
+        vim.api.nvim_win_set_width(win, size)
+    end,
+    configured_size = M.status_win_width,
+    limit = function()
+        return math.max(1, vim.o.columns - 1)
+    end,
+}
+
+---@type MinifugitStatusAxis
+local STACK_AXIS = {
+    winfix = 'winfixheight',
+    size = function(win)
+        return vim.api.nvim_win_get_height(win)
+    end,
+    set_size = function(win, size)
+        vim.api.nvim_win_set_height(win, size)
+    end,
+    configured_size = M.status_win_height,
+    limit = function()
+        return math.max(1, vim.o.lines - 1)
+    end,
+}
+
+---The axis the status window keeps when the preview takes the rest of the
+---editor: width for `left`/`right`, height for `down`/`up`.
+---@param position MinifugitPreviewPosition
+---@return MinifugitStatusAxis
+function M.status_axis(position)
+    if M.is_side_position(position) then
+        return SIDE_AXIS
+    end
+
+    return STACK_AXIS
+end
+
 ---Command that creates the status window on the editor edge opposite the
 ---preview.
 ---@param position MinifugitPreviewPosition
 ---@param opts MinifugitStatusOptions
 ---@return string
-function M.status_split_command(position, opts)
+local function status_split_command(position, opts)
     if M.is_side_position(position) then
         local anchor = position == 'right' and 'topleft' or 'botright'
         return string.format('%s %dvsplit', anchor, M.status_win_width(opts))
@@ -55,10 +105,11 @@ function M.status_split_command(position, opts)
     return string.format('%s %dsplit', anchor, M.status_win_height(opts))
 end
 
----Command that creates a preview split on the side the position gives it.
+---Command that creates a preview or open-file split on the side the position
+---gives it.
 ---@param position MinifugitPreviewPosition
 ---@return string
-function M.preview_split_command(position)
+function M.target_split_command(position)
     if M.is_side_position(position) then
         return position == 'right' and 'rightbelow vsplit' or 'leftabove vsplit'
     end
@@ -103,7 +154,7 @@ local function set_win_local(win, name, value)
 end
 
 ---@param win number
----@param position MinifugitPreviewPosition?
+---@param position MinifugitPreviewPosition
 function M.configure_status_win(win, position)
     set_win_local(win, 'number', false)
     set_win_local(win, 'relativenumber', false)
@@ -113,11 +164,7 @@ function M.configure_status_win(win, position)
     set_win_local(win, 'cursorline', true)
     set_win_local(win, 'winbar', '')
 
-    if M.is_side_position(position or 'right') then
-        set_win_local(win, 'winfixwidth', true)
-    else
-        set_win_local(win, 'winfixheight', true)
-    end
+    set_win_local(win, M.status_axis(position).winfix, true)
 end
 
 ---@param buf Buffer
@@ -142,7 +189,7 @@ function M.create_status_win(buf, options, tabpage)
         end
     end
 
-    vim.cmd(M.status_split_command(position, options.status))
+    vim.cmd(status_split_command(position, options.status))
 
     local win = vim.api.nvim_get_current_win()
     local prev_winopts = M.capture_winopts(win)
@@ -294,7 +341,7 @@ function M.open_entry(self, entry)
     local target_win = M.find_target_win(self)
 
     if target_win == nil then
-        vim.cmd(M.preview_split_command(self.options.preview.position))
+        vim.cmd(M.target_split_command(self.options.preview.position))
         target_win = vim.api.nvim_get_current_win()
         self.target_win = target_win
     else
@@ -357,6 +404,7 @@ function M.capture_winopts(win)
         wrap = vim.wo[win].wrap,
         cursorline = vim.wo[win].cursorline,
         winfixwidth = vim.wo[win].winfixwidth,
+        winfixheight = vim.wo[win].winfixheight,
         winbar = vim.wo[win].winbar,
         diff = vim.wo[win].diff,
         fillchars = vim.wo[win].fillchars,
@@ -380,6 +428,7 @@ function M.restore_winopts(win, opts)
     set_win_local(win, 'wrap', opts.wrap)
     set_win_local(win, 'cursorline', opts.cursorline)
     set_win_local(win, 'winfixwidth', opts.winfixwidth)
+    set_win_local(win, 'winfixheight', opts.winfixheight)
     set_win_local(win, 'winbar', opts.winbar)
     set_win_local(win, 'diff', opts.diff)
     set_win_local(win, 'fillchars', opts.fillchars)

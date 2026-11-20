@@ -115,11 +115,9 @@ function M.toggle_split_numbers(self)
 end
 
 ---@class MiniFugitStatusWinState
----@field side boolean Whether the status window keeps its width (not height).
----@field winfixwidth boolean
----@field winfixheight boolean
----@field width integer
----@field height integer
+---@field axis MinifugitStatusAxis Axis the status window keeps.
+---@field size integer Size to give back on that axis.
+---@field fixed boolean Local value of the axis-fixing window option.
 
 ---@param self DiffPreview
 ---@return boolean
@@ -144,37 +142,28 @@ local function make_status_win_resizable(self)
         return nil
     end
 
-    local side = window.is_side_position(self.options.preview.position)
+    local axis = window.status_axis(self.options.preview.position)
 
     local state = {
-        side = side,
-        winfixwidth = vim.wo[status_win].winfixwidth,
-        winfixheight = vim.wo[status_win].winfixheight,
-        width = vim.api.nvim_win_get_width(status_win),
-        height = vim.api.nvim_win_get_height(status_win),
+        axis = axis,
+        size = axis.size(status_win),
+        fixed = vim.api.nvim_get_option_value(axis.winfix, {
+            scope = 'local',
+            win = status_win,
+        }),
     }
 
     -- A status window alone in its tab fills the editor. Give it back its
     -- configured size before the preview takes the rest.
     if has_only_status_window(self) then
-        if side then
-            state.width = math.min(
-                window.status_win_width(self.options.status),
-                math.max(1, vim.o.columns - 1)
-            )
-        else
-            state.height = math.min(
-                window.status_win_height(self.options.status),
-                math.max(1, vim.o.lines - 1)
-            )
-        end
+        state.size =
+            math.min(axis.configured_size(self.options.status), axis.limit())
     end
 
-    if side then
-        vim.wo[status_win].winfixwidth = false
-    else
-        vim.wo[status_win].winfixheight = false
-    end
+    vim.api.nvim_set_option_value(axis.winfix, false, {
+        scope = 'local',
+        win = status_win,
+    })
 
     return state
 end
@@ -188,14 +177,11 @@ local function restore_status_win_state(self, state)
         return
     end
 
-    if state.side then
-        pcall(vim.api.nvim_win_set_width, status_win, state.width)
-    else
-        pcall(vim.api.nvim_win_set_height, status_win, state.height)
-    end
-
-    vim.wo[status_win].winfixwidth = state.winfixwidth
-    vim.wo[status_win].winfixheight = state.winfixheight
+    pcall(state.axis.set_size, status_win, state.size)
+    vim.api.nvim_set_option_value(state.axis.winfix, state.fixed, {
+        scope = 'local',
+        win = status_win,
+    })
 end
 
 ---@param self DiffPreview
@@ -351,7 +337,7 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
             target_win = create_preview_split(
                 self,
                 status_win,
-                window.preview_split_command(self.options.preview.position),
+                window.target_split_command(self.options.preview.position),
                 status_state
             )
             created_win = target_win ~= nil
@@ -512,7 +498,7 @@ function M.show_split(
             target_win = create_preview_split(
                 self,
                 status_win,
-                window.preview_split_command(self.options.preview.position),
+                window.target_split_command(self.options.preview.position),
                 status_state
             )
             left_created = target_win ~= nil
