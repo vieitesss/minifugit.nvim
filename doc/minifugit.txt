@@ -194,8 +194,10 @@ Press `=` on an entry to preview its diff. The stacked layout shows one
 unified diff. The split layout shows the old and new versions side by side.
 Pressing `=` on an unpushed commit previews that commit.
 
-The preview opens to the right of the status window. Set
-|minifugit-preview.position| to put it on the left, below or above instead.
+The preview reuses the window of the file being edited when there is one.
+Otherwise it opens a new split to the right of the status window. Set
+|minifugit-preview.position| to put a newly created split on the left, below
+or above instead.
 
 Mappings ~
                                                   *minifugit-preview-mappings*
