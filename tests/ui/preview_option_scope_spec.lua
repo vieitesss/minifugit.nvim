@@ -81,6 +81,7 @@ describe('minifugit preview window options', function()
             -- releases the width fix there.
             local target = edit_win(status_win)
             vim.api.nvim_set_current_win(target)
+            local edit_buf = vim.api.nvim_win_get_buf(target)
             vim.go.winfixwidth = true
             assert.is_true(gsw:diff_entry())
             helpers.wait_idle(status_window)
@@ -88,14 +89,33 @@ describe('minifugit preview window options', function()
             assert.are.equal(target, gsw.preview.stacked.win)
             assert.is_false(vim.wo[target].winfixwidth)
             assert.is_true(vim.go.winfixwidth)
+            assert.are_not.equal(edit_buf, vim.api.nvim_win_get_buf(target))
 
             -- Closing gives the borrowed window its options back. Neovim syncs the
-            -- global default on the window switch that follows, so only the window
-            -- and its option are asserted here.
+            -- global default from the window the focus lands on, so the global is
+            -- read from the one-shot WinLeave the borrowed window leaves behind:
+            -- that runs after the restore and before the resync.
+            local aug = vim.api.nvim_create_augroup(
+                'MinifugitPreviewOptionScopeSpec',
+                { clear = true }
+            )
+            ---@type boolean?
+            local global_on_leave
+            vim.api.nvim_create_autocmd('WinLeave', {
+                group = aug,
+                once = true,
+                callback = function()
+                    global_on_leave = vim.go.winfixwidth
+                end,
+            })
+
             gsw.preview:close()
             helpers.wait_idle(status_window)
+            vim.api.nvim_del_augroup_by_id(aug)
 
+            assert.is_true(global_on_leave)
             assert.is_false(vim.wo[target].winfixwidth)
+            assert.are.equal(edit_buf, vim.api.nvim_win_get_buf(target))
         end
     )
 end)
