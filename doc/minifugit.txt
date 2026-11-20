@@ -56,10 +56,13 @@ Defaults: >lua
             show_metadata = true,
             diff_layout = 'stacked',
             diff_auto_threshold = 120,
+            position = 'right',
         },
         status = {
             width = 0.4,
             min_width = 20,
+            height = 0.3,
+            min_height = 5,
             open_in_tab = false,
             auto_refresh = true,
         },
@@ -92,14 +95,36 @@ preview.diff_auto_threshold ~
     integer >= 1, default `120`. Editor width where `'auto'` switches from
     stacked to split.
 
+                                                 *minifugit-preview.position*
+preview.position ~
+    `'right'`, `'left'`, `'down'` or `'up'`, default `'right'`. Where the
+    diff preview sits relative to the status window. The status window
+    anchors to the opposite editor edge: `'right'` and `'left'` put it
+    beside the preview using |minifugit-status.width| and
+    |minifugit-status.min_width|, `'down'` and `'up'` stack the preview on a
+    full-width status window sized by |minifugit-status.height| and
+    |minifugit-status.min_height|. The split diff layout keeps its two sides
+    side by side in the preview area for every position.
+
                                                    *minifugit-status.width*
 status.width ~
     number in (0, 1], default `0.4`. Fraction of the editor width used by
-    the status window.
+    the status window. Used by `'right'` and `'left'` previews.
 
                                                *minifugit-status.min_width*
 status.min_width ~
-    integer >= 1, default `20`. Minimum status window width in columns.
+    integer >= 1, default `20`. Minimum status window width in columns. Used
+    by `'right'` and `'left'` previews.
+
+                                                  *minifugit-status.height*
+status.height ~
+    number in (0, 1], default `0.3`. Fraction of the editor height used by
+    the status window. Used by `'down'` and `'up'` previews.
+
+                                              *minifugit-status.min_height*
+status.min_height ~
+    integer >= 1, default `5`. Minimum status window height in lines. Used
+    by `'down'` and `'up'` previews.
 
                                              *minifugit-status.open_in_tab*
 status.open_in_tab ~
@@ -168,6 +193,9 @@ Discarding an untracked entry deletes it from disk.
 Press `=` on an entry to preview its diff. The stacked layout shows one
 unified diff. The split layout shows the old and new versions side by side.
 Pressing `=` on an unpushed commit previews that commit.
+
+The preview opens to the right of the status window. Set
+|minifugit-preview.position| to put it on the left, below or above instead.
 
 Mappings ~
                                                   *minifugit-preview-mappings*

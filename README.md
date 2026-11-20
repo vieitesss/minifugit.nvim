@@ -77,6 +77,10 @@ vim.g.minifugit = {
 
         -- Editor width where 'auto' switches from stacked to split.
         diff_auto_threshold = 120,
+
+        -- Where the diff preview sits relative to the status window:
+        -- 'right', 'left', 'down', or 'up'.
+        position = 'right',
     },
     status = {
         -- Fraction of the editor width used by the status window.
@@ -84,6 +88,13 @@ vim.g.minifugit = {
 
         -- Minimum status window width in columns.
         min_width = 20,
+
+        -- Fraction of the editor height used by the status window when the
+        -- preview sits above or below it.
+        height = 0.3,
+
+        -- Minimum status window height in lines.
+        min_height = 5,
 
         -- Open the minifugit workflow in a dedicated tab.
         open_in_tab = false,
