@@ -1,16 +1,31 @@
+---@alias MinifugitTestEntryByPath
+---| fun(entries: GitStatusEntry[], path: string): GitStatusEntry?
+
+---@alias MinifugitTestRecordSubmodule
+---| fun(repo: string, path: string, source: string, commit: string)
+
+---@alias MinifugitTestCloneRepoWithChangedFile
+---| fun(repo: string, path: string, lines: string[]): string
+
+---@alias MinifugitTestBaseEntries
+---| fun(base: string, root: string?): GitStatusEntry[], string?
+
+---@alias MinifugitTestBaseDiff
+---| fun(entry: GitStatusEntry, base: string, root: string?): string[], string?
+
+---@alias MinifugitTestAwaitingReads
+---| fun(minifugit: Minifugit, find: fun(): GitStatusWindow?): Minifugit
+
 ---@class MinifugitTestHelpers
 ---@field assert_has_line_containing fun(lines: string[], expected: string)
 ---@field run fun(args: string[], cwd: string): string
 ---@field write_file fun(path: string, lines: string[])
 ---@field write_raw fun(path: string, contents: string)
----@field entry_by_path function
----  fun(entries: GitStatusEntry[], path: string): GitStatusEntry?
+---@field entry_by_path MinifugitTestEntryByPath
 ---@field create_repo fun(files: table<string, string[]>): string, string
 ---@field create_sub_repo fun(): string, string, string
----@field record_submodule function
----  fun(repo: string, path: string, source: string, commit: string)
----@field clone_repo_with_changed_file function
----  fun(repo: string, path: string, lines: string[]): string
+---@field record_submodule MinifugitTestRecordSubmodule
+---@field clone_repo_with_changed_file MinifugitTestCloneRepoWithChangedFile
 ---@field change_to_other_repo fun(repo: string): string
 ---@field capture_status_windows fun(): fun(): GitStatusWindow?, fun()
 ---@field snapshot_editor_state fun(): fun()
@@ -18,14 +33,11 @@
 ---@field await_async fun(start: fun(callback: fun(...))): any, any
 ---@field snapshot fun(root: string?): GitStatusSnapshot
 ---@field entries fun(root: string?): GitStatusEntry[]
----@field base_entries function
----  fun(base: string, root: string?): GitStatusEntry[], string?
----@field base_diff function
----  fun(entry: GitStatusEntry, base: string, root: string?): string[], string?
+---@field base_entries MinifugitTestBaseEntries
+---@field base_diff MinifugitTestBaseDiff
 ---@field show_commit fun(commit: GitCommit, root: string?): string[], string?
 ---@field wait_idle fun(find: fun(): GitStatusWindow?)
----@field awaiting_reads function
----  fun(minifugit: Minifugit, find: fun(): GitStatusWindow?): Minifugit
+---@field awaiting_reads MinifugitTestAwaitingReads
 ---@field row_containing fun(buf: integer, text: string): integer
 ---@field diff_win_named fun(name: string): integer, integer
 ---@field reload_minifugit fun()

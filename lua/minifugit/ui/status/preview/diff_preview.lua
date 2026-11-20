@@ -25,8 +25,9 @@ local DiffWindow = require('minifugit.ui.status.preview.diff_window')
 ---@field right_rows MiniFugitSplitRow[]?
 ---@field anchors table<integer, integer>?
 ---@field preview_key string?
----@field views table<string, table> View of each file shown while the
----  preview is open, by layout and preview key.
+--- View of each file shown while the preview is open, by layout and
+--- preview key.
+---@field views table<string, table>
 ---@field raw_lines string[]?
 ---@field raw_rows integer[]?
 ---@field hunks MiniFugitDiffHunk[]?

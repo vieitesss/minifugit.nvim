@@ -14,8 +14,8 @@ local window = require('minifugit.ui.status.window')
 local git = require('minifugit.git')
 
 ---@class GitStatusWindow
----@field root string Pinned repository root, captured when the window is
----  created.
+--- Pinned repository root, captured when the window is created.
+---@field root string
 ---@field base string? Pinned commit hash for read-only base mode.
 ---@field buf Buffer
 ---@field preview DiffPreview
@@ -1047,8 +1047,7 @@ end
 ---@field foreign_buffer boolean
 
 ---@param opts MinifugitOptions
----@param root string? Resolved repository root; defaults to the current
----  cwd's root.
+---@param root string? Resolved repository root; defaults to the cwd's root.
 ---@param base string? Pinned commit hash for read-only base mode.
 ---@param reused_tab MinifugitStatusReusedTab? Owned tabpage to reuse.
 ---@return GitStatusWindow

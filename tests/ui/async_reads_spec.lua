@@ -372,7 +372,7 @@ describe('minifugit async reads', function()
                 assert.are.equal(1, #captured)
 
                 ---Press a status keymap, letting each multi-key sequence
-                ---resolves.
+                ---resolve.
                 ---@param keys string
                 local function press(keys)
                     vim.api.nvim_feedkeys(
