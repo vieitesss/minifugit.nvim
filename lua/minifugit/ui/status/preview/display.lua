@@ -115,8 +115,11 @@ function M.toggle_split_numbers(self)
 end
 
 ---@class MiniFugitStatusWinState
+---@field side boolean Whether the status window keeps its width (not height).
 ---@field winfixwidth boolean
+---@field winfixheight boolean
 ---@field width integer
+---@field height integer
 
 ---@param self DiffPreview
 ---@return boolean
@@ -141,20 +144,37 @@ local function make_status_win_resizable(self)
         return nil
     end
 
-    local width = vim.api.nvim_win_get_width(status_win)
-
-    if has_only_status_window(self) then
-        width = math.min(
-            window.status_win_width(self.options.status),
-            math.max(1, vim.o.columns - 1)
-        )
-    end
+    local side = window.is_side_position(self.options.preview.position)
 
     local state = {
+        side = side,
         winfixwidth = vim.wo[status_win].winfixwidth,
-        width = width,
+        winfixheight = vim.wo[status_win].winfixheight,
+        width = vim.api.nvim_win_get_width(status_win),
+        height = vim.api.nvim_win_get_height(status_win),
     }
-    vim.wo[status_win].winfixwidth = false
+
+    -- A status window alone in its tab fills the editor. Give it back its
+    -- configured size before the preview takes the rest.
+    if has_only_status_window(self) then
+        if side then
+            state.width = math.min(
+                window.status_win_width(self.options.status),
+                math.max(1, vim.o.columns - 1)
+            )
+        else
+            state.height = math.min(
+                window.status_win_height(self.options.status),
+                math.max(1, vim.o.lines - 1)
+            )
+        end
+    end
+
+    if side then
+        vim.wo[status_win].winfixwidth = false
+    else
+        vim.wo[status_win].winfixheight = false
+    end
 
     return state
 end
@@ -168,8 +188,14 @@ local function restore_status_win_state(self, state)
         return
     end
 
-    pcall(vim.api.nvim_win_set_width, status_win, state.width)
+    if state.side then
+        pcall(vim.api.nvim_win_set_width, status_win, state.width)
+    else
+        pcall(vim.api.nvim_win_set_height, status_win, state.height)
+    end
+
     vim.wo[status_win].winfixwidth = state.winfixwidth
+    vim.wo[status_win].winfixheight = state.winfixheight
 end
 
 ---@param self DiffPreview
@@ -233,13 +259,25 @@ local function create_preview_split(self, anchor_win, command, status_win_state)
     return split_win
 end
 
+---Size the split preview sides inside the preview area. With the preview
+---beside the status window all three share the editor width; with the preview
+---stacked, the full-width status window keeps its width and the two sides
+---share the preview width.
 ---@param self DiffPreview
 local function resize_split_windows(self)
-    local width = math.max(1, math.floor((vim.o.columns - 2) / 3))
-
     local status_win = self.host.win
+    local wins
+    local width
 
-    for _, win in ipairs({ status_win, self.left.win, self.right.win }) do
+    if window.is_side_position(self.options.preview.position) then
+        wins = { status_win, self.left.win, self.right.win }
+        width = math.max(1, math.floor((vim.o.columns - 2) / 3))
+    else
+        wins = { self.left.win, self.right.win }
+        width = math.max(1, math.floor((vim.o.columns - 1) / 2))
+    end
+
+    for _, win in ipairs(wins) do
         if common.is_valid_win(win) then
             pcall(vim.api.nvim_win_set_width, win, width)
         end
@@ -297,7 +335,7 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
     buf:set_modifiable(false)
     render.apply(buf.id, diff_lines)
 
-    local status_winfixwidth = make_status_win_resizable(self)
+    local status_state = make_status_win_resizable(self)
     local target_win
     local created_win = false
 
@@ -313,8 +351,8 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
             target_win = create_preview_split(
                 self,
                 status_win,
-                'rightbelow vsplit',
-                status_winfixwidth
+                window.preview_split_command(self.options.preview.position),
+                status_state
             )
             created_win = target_win ~= nil
         end
@@ -332,7 +370,7 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
                 and outgoing
             or nil,
     })
-    restore_status_win_state(self, status_winfixwidth)
+    restore_status_win_state(self, status_state)
 
     if not ok then
         common.notify_error(
@@ -458,7 +496,7 @@ function M.show_split(
         right_buf:set_option('filetype', split_diff.filetype)
     end
 
-    local status_winfixwidth = make_status_win_resizable(self)
+    local status_state = make_status_win_resizable(self)
     local target_win
     local left_created = false
 
@@ -474,8 +512,8 @@ function M.show_split(
             target_win = create_preview_split(
                 self,
                 status_win,
-                'rightbelow vsplit',
-                status_winfixwidth
+                window.preview_split_command(self.options.preview.position),
+                status_state
             )
             left_created = target_win ~= nil
         end
@@ -493,7 +531,7 @@ function M.show_split(
                 and outgoing
             or nil,
     })
-    restore_status_win_state(self, status_winfixwidth)
+    restore_status_win_state(self, status_state)
 
     if not ok then
         common.notify_error(
@@ -512,7 +550,7 @@ function M.show_split(
         .. preview_util.winbar_text(vim.fn.strtrans(split_diff.left.title))
 
     local right_win = self.right.win
-    local right_status_winfixwidth = make_status_win_resizable(self)
+    local right_status_state = make_status_win_resizable(self)
     local right_created = false
 
     if not common.is_valid_win(right_win) then
@@ -520,7 +558,7 @@ function M.show_split(
             self,
             target_win,
             'rightbelow vsplit',
-            right_status_winfixwidth
+            right_status_state
         )
 
         if right_win == nil then
@@ -537,7 +575,7 @@ function M.show_split(
     right_win = assert(right_win)
     ok, err =
         self.right:open(right_win, right_buf.id, { created = right_created })
-    restore_status_win_state(self, right_status_winfixwidth)
+    restore_status_win_state(self, right_status_state)
 
     if not ok then
         common.notify_error(

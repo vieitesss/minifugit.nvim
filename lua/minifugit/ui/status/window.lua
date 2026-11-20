@@ -24,6 +24,48 @@ function M.status_win_width(opts)
     return math.max(math.floor(vim.o.columns * opts.width), opts.min_width)
 end
 
+---@param opts MinifugitStatusOptions
+---@return integer
+function M.status_win_height(opts)
+    return math.max(math.floor(vim.o.lines * opts.height), opts.min_height)
+end
+
+---Positions `left` and `right` keep the status window's width and put the
+---preview beside it; `up` and `down` stack the preview above or below a
+---full-width status window.
+---@param position MinifugitPreviewPosition
+---@return boolean
+function M.is_side_position(position)
+    return position == 'left' or position == 'right'
+end
+
+---Command that creates the status window on the editor edge opposite the
+---preview.
+---@param position MinifugitPreviewPosition
+---@param opts MinifugitStatusOptions
+---@return string
+function M.status_split_command(position, opts)
+    if M.is_side_position(position) then
+        local anchor = position == 'right' and 'topleft' or 'botright'
+        return string.format('%s %dvsplit', anchor, M.status_win_width(opts))
+    end
+
+    local anchor = position == 'down' and 'topleft' or 'botright'
+
+    return string.format('%s %dsplit', anchor, M.status_win_height(opts))
+end
+
+---Command that creates a preview split on the side the position gives it.
+---@param position MinifugitPreviewPosition
+---@return string
+function M.preview_split_command(position)
+    if M.is_side_position(position) then
+        return position == 'right' and 'rightbelow vsplit' or 'leftabove vsplit'
+    end
+
+    return position == 'down' and 'rightbelow split' or 'leftabove split'
+end
+
 ---@param tabpage number
 ---@return integer
 function M.normal_window_count(tabpage)
@@ -61,30 +103,36 @@ local function set_win_local(win, name, value)
 end
 
 ---@param win number
-function M.configure_status_win(win)
+---@param position MinifugitPreviewPosition?
+function M.configure_status_win(win, position)
     set_win_local(win, 'number', false)
     set_win_local(win, 'relativenumber', false)
     set_win_local(win, 'signcolumn', 'no')
     set_win_local(win, 'foldcolumn', '0')
     set_win_local(win, 'wrap', false)
     set_win_local(win, 'cursorline', true)
-    set_win_local(win, 'winfixwidth', true)
     set_win_local(win, 'winbar', '')
+
+    if M.is_side_position(position or 'right') then
+        set_win_local(win, 'winfixwidth', true)
+    else
+        set_win_local(win, 'winfixheight', true)
+    end
 end
 
 ---@param buf Buffer
----@param opts MinifugitStatusOptions
+---@param options MinifugitOptions
 ---@param tabpage number? Existing owned tabpage to reuse.
 ---@return number
 ---@return GitStatusWindowOptions
 ---@return number? target_win
 ---@return number? placeholder_buf
-function M.create_status_win(buf, opts, tabpage)
-    local width = M.status_win_width(opts)
+function M.create_status_win(buf, options, tabpage)
+    local position = options.preview.position
     local target_win
     local placeholder_buf
 
-    if opts.open_in_tab then
+    if options.status.open_in_tab then
         if tabpage ~= nil and vim.api.nvim_tabpage_is_valid(tabpage) then
             vim.api.nvim_set_current_tabpage(tabpage)
         else
@@ -94,14 +142,14 @@ function M.create_status_win(buf, opts, tabpage)
         end
     end
 
-    vim.cmd('topleft ' .. width .. 'vsplit')
+    vim.cmd(M.status_split_command(position, options.status))
 
     local win = vim.api.nvim_get_current_win()
     local prev_winopts = M.capture_winopts(win)
 
     vim.api.nvim_win_set_buf(win, buf.id)
     vim.api.nvim_set_current_win(win)
-    M.configure_status_win(win)
+    M.configure_status_win(win, position)
 
     log.info(string.format('created status window win=%d buf=%d', win, buf.id))
 
@@ -246,7 +294,7 @@ function M.open_entry(self, entry)
     local target_win = M.find_target_win(self)
 
     if target_win == nil then
-        vim.cmd('rightbelow vsplit')
+        vim.cmd(M.preview_split_command(self.options.preview.position))
         target_win = vim.api.nvim_get_current_win()
         self.target_win = target_win
     else

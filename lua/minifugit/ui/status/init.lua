@@ -541,7 +541,7 @@ local function ensure_autocmds(self)
                 self.win_prev_winopts = window.capture_winopts(win)
             end
 
-            window.configure_status_win(win)
+            window.configure_status_win(win, self.options.preview.position)
         end,
     })
 
@@ -643,7 +643,7 @@ function GitStatusWindow:show()
     local target_win
     local placeholder_buf
     self.win, self.win_prev_winopts, target_win, placeholder_buf =
-        window.create_status_win(self.buf, self.options.status, self.tabpage)
+        window.create_status_win(self.buf, self.options, self.tabpage)
     status_tab.attach(self, target_win, placeholder_buf)
     move_to_first_entry(self)
 end
@@ -1110,7 +1110,7 @@ function GitStatusWindow.new(opts, root, base, reused_tab)
     self.win, self.win_prev_winopts, target_win, placeholder_buf =
         window.create_status_win(
             self.buf,
-            self.options.status,
+            self.options,
             reused_tab and reused_tab.tabpage
         )
     self.on_close_windows[self.win] = true

@@ -1,13 +1,18 @@
+---@alias MinifugitPreviewPosition 'right'|'left'|'down'|'up'
+
 ---@class MinifugitPreviewOptions
 ---@field wrap boolean
 ---@field show_line_numbers boolean
 ---@field show_metadata boolean
 ---@field diff_layout 'stacked'|'split'|'auto'
 ---@field diff_auto_threshold integer
+---@field position MinifugitPreviewPosition
 
 ---@class MinifugitStatusOptions
 ---@field width number
 ---@field min_width integer
+---@field height number
+---@field min_height integer
 ---@field open_in_tab boolean
 ---@field auto_refresh boolean
 
@@ -22,10 +27,13 @@ local defaults = {
         show_metadata = true,
         diff_layout = 'stacked',
         diff_auto_threshold = 120,
+        position = 'right',
     },
     status = {
         width = 0.4,
         min_width = 20,
+        height = 0.3,
+        min_height = 5,
         open_in_tab = false,
         auto_refresh = true,
     },
@@ -102,6 +110,25 @@ local function validate_options(opts)
         then
             error('opts.preview.diff_auto_threshold must be >= 1')
         end
+
+        vim.validate(
+            'opts.preview.position',
+            opts.preview.position,
+            'string',
+            true
+        )
+
+        if
+            opts.preview.position ~= nil
+            and opts.preview.position ~= 'right'
+            and opts.preview.position ~= 'left'
+            and opts.preview.position ~= 'down'
+            and opts.preview.position ~= 'up'
+        then
+            error(
+                "opts.preview.position must be 'right', 'left', 'down', or 'up'"
+            )
+        end
     end
 
     if opts.status ~= nil then
@@ -134,6 +161,26 @@ local function validate_options(opts)
         if opts.status.min_width ~= nil then
             if opts.status.min_width < 1 then
                 error('opts.status.min_width must be >= 1')
+            end
+        end
+
+        vim.validate('opts.status.height', opts.status.height, 'number', true)
+        vim.validate(
+            'opts.status.min_height',
+            opts.status.min_height,
+            'number',
+            true
+        )
+
+        if opts.status.height ~= nil then
+            if opts.status.height <= 0 or opts.status.height > 1 then
+                error('opts.status.height must be a number between 0 and 1')
+            end
+        end
+
+        if opts.status.min_height ~= nil then
+            if opts.status.min_height < 1 then
+                error('opts.status.min_height must be >= 1')
             end
         end
     end
