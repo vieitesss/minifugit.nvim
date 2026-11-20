@@ -42,6 +42,11 @@ describe('minifugit preview window options', function()
 
     after_each(function()
         vim.go.winfixwidth = false
+        vim.go.wrap = true
+        vim.go.scrollbind = false
+        vim.go.cursorbind = false
+        vim.go.cursorline = false
+        vim.go.winbar = ''
         restore_constructor()
         if minifugit then
             minifugit.reset()
@@ -120,4 +125,99 @@ describe('minifugit preview window options', function()
             assert.are.equal(edit_buf, vim.api.nvim_win_get_buf(target))
         end
     )
+
+    it(
+        'keeps wrap, bind and winbar defaults on a borrowed focused window',
+        function()
+            local gsw = assert(status_window())
+            local status_win = assert(gsw.win)
+            vim.api.nvim_win_set_cursor(status_win, {
+                helpers.row_containing(gsw.buf.id, 'tracked.txt'),
+                0,
+            })
+
+            local target = edit_win(status_win)
+            vim.api.nvim_set_current_win(target)
+            vim.go.wrap = true
+            vim.go.scrollbind = true
+            vim.go.cursorbind = true
+            vim.go.winbar = 'global winbar'
+            assert.is_true(gsw:diff_entry())
+            helpers.wait_idle(status_window)
+
+            assert.are.equal(target, gsw.preview.stacked.win)
+            assert.are.equal('global winbar', vim.go.winbar)
+            assert.is_true(vim.go.wrap)
+            assert.is_true(vim.go.scrollbind)
+            assert.is_true(vim.go.cursorbind)
+            -- The preview still applies its own settings to that window only.
+            assert.is_false(vim.wo[target].wrap)
+            assert.is_false(vim.wo[target].scrollbind)
+            assert.is_false(vim.wo[target].cursorbind)
+            assert.is_truthy(vim.wo[target].winbar:find('tracked.txt', 1, true))
+        end
+    )
+
+    it('keeps the bind and wrap defaults with a split preview', function()
+        local gsw = assert(status_window())
+        assert.is_true(gsw.preview:toggle_layout())
+        local status_win = assert(gsw.win)
+        vim.api.nvim_win_set_cursor(status_win, {
+            helpers.row_containing(gsw.buf.id, 'tracked.txt'),
+            0,
+        })
+
+        vim.api.nvim_set_current_win(status_win)
+        vim.go.scrollbind = false
+        vim.go.cursorbind = false
+        vim.go.wrap = true
+        assert.is_true(gsw:diff_entry())
+        helpers.wait_idle(status_window)
+
+        local left_win = assert(gsw.preview.left.win)
+        local right_win = assert(gsw.preview.right.win)
+        assert.is_false(vim.go.scrollbind)
+        assert.is_false(vim.go.cursorbind)
+        assert.is_true(vim.go.wrap)
+
+        -- Both panes are bound and unwrapped, and nothing of that reaches the
+        -- editor defaults no matter which pane held the focus.
+        for _, win in ipairs({ left_win, right_win }) do
+            assert.is_true(vim.wo[win].scrollbind)
+            assert.is_true(vim.wo[win].cursorbind)
+            assert.is_false(vim.wo[win].wrap)
+        end
+
+        -- Repainting and toggling from inside a pane writes that pane's
+        -- options while it has the focus.
+        vim.api.nvim_set_current_win(right_win)
+        assert.is_true(gsw.preview:refresh())
+        helpers.wait_idle(status_window)
+        assert.is_true(gsw.preview:toggle_wrap())
+
+        assert.is_false(vim.go.scrollbind)
+        assert.is_false(vim.go.cursorbind)
+        assert.is_true(vim.go.wrap)
+
+        for _, win in ipairs({ left_win, right_win }) do
+            assert.is_true(vim.wo[win].scrollbind)
+            assert.is_true(vim.wo[win].cursorbind)
+            assert.is_true(vim.wo[win].wrap)
+        end
+    end)
+
+    it('keeps the wrap and cursorline defaults when the help opens', function()
+        local gsw = assert(status_window())
+        vim.go.wrap = true
+        vim.go.cursorline = true
+
+        gsw:toggle_help()
+
+        local help_win = assert(gsw.help_win)
+        assert.are.equal(help_win, vim.api.nvim_get_current_win())
+        assert.is_false(vim.wo[help_win].wrap)
+        assert.is_false(vim.wo[help_win].cursorline)
+        assert.is_true(vim.go.wrap)
+        assert.is_true(vim.go.cursorline)
+    end)
 end)
