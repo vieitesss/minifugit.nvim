@@ -33,6 +33,18 @@ local function case_title(case)
     return 'minifugit preview position ' .. case.position
 end
 
+---@param position MinifugitPreviewPosition
+---@return PreviewPositionCase
+local function position_case(position)
+    for _, case in ipairs(CASES) do
+        if case.position == position then
+            return case
+        end
+    end
+
+    error(string.format('unknown preview position: %s', position))
+end
+
 describe('minifugit preview positions', function()
     ---@type string
     local original_cwd
@@ -127,15 +139,57 @@ describe('minifugit preview positions', function()
         )
     end
 
-    ---Open the status window in a tab where it is the only window, so the
-    ---preview has no edit window to reuse and creates its own split.
+    ---The size of a window along one axis.
+    ---@param win integer
+    ---@param axis 'column'|'row'
+    ---@return integer
+    local function win_size(win, axis)
+        if axis == 'column' then
+            return vim.api.nvim_win_get_width(win)
+        end
+
+        return vim.api.nvim_win_get_height(win)
+    end
+
+    ---Open the status window and assert where it lands while the edit window
+    ---still exists: the edge opposite the preview, at its configured size.
+    ---Then close the edit window so the preview has nothing to reuse and
+    ---creates its own split.
+    ---@param case PreviewPositionCase
     ---@return GitStatusWindow
-    local function open_status_only()
+    local function open_status_only(case)
+        local edit_win = vim.api.nvim_get_current_win()
         minifugit.status()
         local gsw = assert(status_window())
         local status_win = assert(gsw.win)
 
-        for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        -- `nvim_win_get_position` is { row, col }: rows on the 'row' axis,
+        -- columns on the 'column' axis.
+        local index = case.axis == 'row' and 1 or 2
+        local status_pos = vim.api.nvim_win_get_position(status_win)
+        local edit_pos = vim.api.nvim_win_get_position(edit_win)
+        local status_size = win_size(status_win, case.axis)
+        local edit_size = win_size(edit_win, case.axis)
+
+        assert.are.equal(expected_status_size(case.axis), status_size)
+
+        -- The status window holds the editor edge opposite the preview and
+        -- the edit window keeps the rest of the axis.
+        if case.status_first then
+            assert.are.equal(0, status_pos[index])
+            assert.are.equal(status_size + 1, edit_pos[index])
+        else
+            assert.are.equal(0, edit_pos[index])
+            assert.are.equal(edit_size + 1, status_pos[index])
+        end
+
+        local wins = normal_wins()
+
+        assert.are.equal(2, #wins)
+        assert.is_true(vim.tbl_contains(wins, edit_win))
+        assert.is_true(vim.tbl_contains(wins, status_win))
+
+        for _, win in ipairs(wins) do
             if win ~= status_win then
                 vim.api.nvim_win_close(win, true)
             end
@@ -163,23 +217,11 @@ describe('minifugit preview positions', function()
         helpers.wait_idle(status_window)
     end
 
-    ---The size of a window along one axis.
-    ---@param win integer
-    ---@param axis 'column'|'row'
-    ---@return integer
-    local function win_size(win, axis)
-        if axis == 'column' then
-            return vim.api.nvim_win_get_width(win)
-        end
-
-        return vim.api.nvim_win_get_height(win)
-    end
-
     for _, case in ipairs(CASES) do
         it(case_title(case) .. ' anchors the status window', function()
             configure(case.position, 'stacked')
             local globals = editor_globals()
-            local gsw = open_status_only()
+            local gsw = open_status_only(case)
             local status_win = assert(gsw.win)
             local expected = expected_status_size(case.axis)
 
@@ -266,7 +308,7 @@ describe('minifugit preview positions', function()
 
     it('restores the height fix when a down status window closes', function()
         configure('down', 'stacked')
-        local gsw = open_status_only()
+        local gsw = open_status_only(position_case('down'))
         local status_win = assert(gsw.win)
         assert.is_true(vim.wo[status_win].winfixheight)
 
@@ -278,7 +320,7 @@ describe('minifugit preview positions', function()
 
     it('keeps both split sides side by side below a down status', function()
         configure('down', 'split')
-        local gsw = open_status_only()
+        local gsw = open_status_only(position_case('down'))
         local status_win = assert(gsw.win)
         local status_height = expected_status_size('row')
 
@@ -312,7 +354,7 @@ describe('minifugit preview positions', function()
 
     it('opens the file left of the status with no edit window', function()
         configure('left', 'stacked')
-        local gsw = open_status_only()
+        local gsw = open_status_only(position_case('left'))
         local status_win = assert(gsw.win)
 
         vim.api.nvim_set_current_win(status_win)
