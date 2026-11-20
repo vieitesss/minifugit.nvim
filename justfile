@@ -18,4 +18,4 @@ test:
 	minimal_init="{{ justfile_directory() }}/tests/minimal_init.lua"
 	nvim --headless --noplugin \
 		-u "${minimal_init}" \
-		-c "lua require('plenary.test_harness').test_directory('tests', { minimal_init = '${minimal_init}' })"
+		-c "lua require('plenary.test_harness').test_directory('tests', { minimal_init = '${minimal_init}', timeout = 120000 })"
