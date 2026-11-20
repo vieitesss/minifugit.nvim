@@ -30,6 +30,18 @@ jobs:
       - name: Set up just
         uses: extractions/setup-just@v4
 
+      - name: Check formatting
+        uses: JohnnyMorganz/stylua-action@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: 2.6.0
+          args: --check lua tests plugin
+
+      - name: Check line length
+        uses: lunarmodules/luacheck@v1
+        with:
+          args: lua tests plugin
+
       - name: Run tests
         shell: bash
         run: just test

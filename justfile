@@ -4,6 +4,11 @@ plenary_url := "https://github.com/nvim-lua/plenary.nvim"
 _default:
 	just -l
 
+# Check formatting and lint
+check:
+	stylua --check lua tests plugin
+	luacheck lua tests plugin
+
 test:
 	#!/usr/bin/env bash
 	# Some comment
