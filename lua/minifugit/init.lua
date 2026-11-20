@@ -179,11 +179,18 @@ local function validate_options(opts)
         end
 
         if opts.status.min_height ~= nil then
-            if opts.status.min_height ~= math.floor(opts.status.min_height) then
+            local min_height = opts.status.min_height
+
+            -- `math.floor(math.huge)` is `math.huge`, so finiteness needs its
+            -- own check; NaN already fails the floor comparison.
+            if
+                min_height ~= math.floor(min_height)
+                or min_height == math.huge
+            then
                 error('opts.status.min_height must be an integer')
             end
 
-            if opts.status.min_height < 1 then
+            if min_height < 1 then
                 error('opts.status.min_height must be >= 1')
             end
         end
