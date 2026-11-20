@@ -19,6 +19,13 @@ Run `just check` and `just test`. Both must pass. Commands are listed in `CONTEX
 
 - When creating a new release, do not create a new branch, do it from main.
 - If you are not in the main branch, ask the user for confirmation.
+- A release is a SemVer tag `vX.Y.Z` on a commit in `origin/main` history. Pushing the tag runs `.github/workflows/release.yml`, which validates the tag and writes the release notes from the commits since the previous tag. No version string in the code needs bumping.
+- Pick the version from the commits since the last tag:
+    - any `feat` bumps minor;
+    - only fixes and other types bump patch;
+    - a breaking change (`!` or `BREAKING CHANGE`) bumps minor while the version is 0.x, and major from 1.0.
+- Tag only when main is clean and pushed, and the Tests workflow passed on that commit (`gh run list --branch main`).
+- Release with `git tag vX.Y.Z && git push origin vX.Y.Z`, then confirm with `gh release view vX.Y.Z`.
 
 ## Formatting
 
