@@ -1,5 +1,6 @@
 local Buffer = require('minifugit.ui.buffer')
 local common = require('minifugit.ui.status.common')
+local window = require('minifugit.ui.status.window')
 
 local M = {}
 
@@ -191,8 +192,8 @@ function M.toggle(self)
         style = 'minimal',
     })
 
-    vim.wo[self.help_win].wrap = false
-    vim.wo[self.help_win].cursorline = false
+    window.set_win_local(self.help_win, 'wrap', false)
+    window.set_win_local(self.help_win, 'cursorline', false)
 
     for _, key in ipairs({ 'q', '?', '<Esc>' }) do
         vim.keymap.set('n', key, function()

@@ -12,6 +12,7 @@ local preview_buffers = require('minifugit.ui.status.preview.buffers')
 local display = require('minifugit.ui.status.preview.display')
 local window_state = require('minifugit.ui.status.preview.window_state')
 local preview_util = require('minifugit.ui.status.preview.util')
+local window = require('minifugit.ui.status.window')
 local DiffWindow = require('minifugit.ui.status.preview.diff_window')
 
 ---@class DiffPreview
@@ -366,15 +367,15 @@ function DiffPreview:toggle_wrap()
     self.wrap = not self.wrap
 
     if common.is_valid_win(self.stacked.win) then
-        vim.wo[self.stacked.win].wrap = self.wrap
+        window.set_win_local(self.stacked.win, 'wrap', self.wrap)
     end
 
     if common.is_valid_win(self.left.win) then
-        vim.wo[self.left.win].wrap = self.wrap
+        window.set_win_local(self.left.win, 'wrap', self.wrap)
     end
 
     if common.is_valid_win(self.right.win) then
-        vim.wo[self.right.win].wrap = self.wrap
+        window.set_win_local(self.right.win, 'wrap', self.wrap)
     end
 
     return true

@@ -1,6 +1,7 @@
 local git = require('minifugit.git')
 local common = require('minifugit.ui.status.common')
 local Buffer = require('minifugit.ui.buffer')
+local window = require('minifugit.ui.status.window')
 
 local M = {}
 
@@ -637,7 +638,7 @@ function M.commit(self)
     vim.fn.writefile(git.commit_template(self.root), path)
 
     vim.api.nvim_set_current_win(self.win)
-    vim.wo[self.win].winbar = ''
+    window.set_win_local(self.win, 'winbar', '')
 
     local finish_related_open = self:begin_related_buffer_open()
     local edit_ok, edit_err = pcall(function()

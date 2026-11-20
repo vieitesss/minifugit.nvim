@@ -368,10 +368,10 @@ function M.show_stacked(self, diff_lines, preview_key, title, actions)
     end
 
     window.configure_diff_win(target_win)
-    vim.wo[target_win].scrollbind = false
-    vim.wo[target_win].cursorbind = false
-    vim.wo[target_win].wrap = self.wrap
-    vim.wo[target_win].winbar = title
+    window.set_win_local(target_win, 'scrollbind', false)
+    window.set_win_local(target_win, 'cursorbind', false)
+    window.set_win_local(target_win, 'wrap', self.wrap)
+    window.set_win_local(target_win, 'winbar', title)
 
     -- A layout toggle keeps the file and restores its hunk position itself.
     if previous_key ~= preview_key or previous_layout == 'stacked' then
@@ -530,10 +530,14 @@ function M.show_split(
 
     window.configure_split_diff_win(target_win)
     M.set_split_line_numbers(target_win, self.show_numbers)
-    vim.wo[target_win].wrap = self.wrap
-    vim.wo[target_win].winbar = title
-        .. ' [1/2] '
-        .. preview_util.winbar_text(vim.fn.strtrans(split_diff.left.title))
+    window.set_win_local(target_win, 'wrap', self.wrap)
+    window.set_win_local(
+        target_win,
+        'winbar',
+        title
+            .. ' [1/2] '
+            .. preview_util.winbar_text(vim.fn.strtrans(split_diff.left.title))
+    )
 
     local right_win = self.right.win
     local right_status_state = make_status_win_resizable(self)
@@ -575,16 +579,19 @@ function M.show_split(
 
     window.configure_split_diff_win(right_win)
     M.set_split_line_numbers(right_win, self.show_numbers)
-    vim.wo[right_win].wrap = self.wrap
-    vim.wo[right_win].winbar = title
-        .. ' [2/2] '
-        .. preview_util.winbar_text(vim.fn.strtrans(split_diff.right.title))
+    window.set_win_local(right_win, 'wrap', self.wrap)
+    local right_title = vim.fn.strtrans(split_diff.right.title)
+    window.set_win_local(
+        right_win,
+        'winbar',
+        title .. ' [2/2] ' .. preview_util.winbar_text(right_title)
+    )
     resize_split_windows(self)
 
-    vim.wo[target_win].scrollbind = true
-    vim.wo[target_win].cursorbind = true
-    vim.wo[right_win].scrollbind = true
-    vim.wo[right_win].cursorbind = true
+    window.set_win_local(target_win, 'scrollbind', true)
+    window.set_win_local(target_win, 'cursorbind', true)
+    window.set_win_local(right_win, 'scrollbind', true)
+    window.set_win_local(right_win, 'cursorbind', true)
 
     vim.api.nvim_win_call(target_win, function()
         vim.cmd('syncbind')

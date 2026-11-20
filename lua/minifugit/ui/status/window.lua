@@ -149,22 +149,22 @@ end
 ---@param win number
 ---@param name string
 ---@param value any
-local function set_win_local(win, name, value)
+function M.set_win_local(win, name, value)
     vim.api.nvim_set_option_value(name, value, { scope = 'local', win = win })
 end
 
 ---@param win number
 ---@param position MinifugitPreviewPosition
 function M.configure_status_win(win, position)
-    set_win_local(win, 'number', false)
-    set_win_local(win, 'relativenumber', false)
-    set_win_local(win, 'signcolumn', 'no')
-    set_win_local(win, 'foldcolumn', '0')
-    set_win_local(win, 'wrap', false)
-    set_win_local(win, 'cursorline', true)
-    set_win_local(win, 'winbar', '')
+    M.set_win_local(win, 'number', false)
+    M.set_win_local(win, 'relativenumber', false)
+    M.set_win_local(win, 'signcolumn', 'no')
+    M.set_win_local(win, 'foldcolumn', '0')
+    M.set_win_local(win, 'wrap', false)
+    M.set_win_local(win, 'cursorline', true)
+    M.set_win_local(win, 'winbar', '')
 
-    set_win_local(win, M.status_axis(position).winfix, true)
+    M.set_win_local(win, M.status_axis(position).winfix, true)
 end
 
 ---@param buf Buffer
@@ -372,25 +372,25 @@ end
 
 ---@param win number
 function M.configure_diff_win(win)
-    set_win_local(win, 'number', false)
-    set_win_local(win, 'relativenumber', false)
-    set_win_local(win, 'signcolumn', 'no')
-    set_win_local(win, 'foldcolumn', '0')
-    set_win_local(win, 'wrap', false)
-    set_win_local(win, 'cursorline', false)
-    set_win_local(win, 'winfixwidth', false)
+    M.set_win_local(win, 'number', false)
+    M.set_win_local(win, 'relativenumber', false)
+    M.set_win_local(win, 'signcolumn', 'no')
+    M.set_win_local(win, 'foldcolumn', '0')
+    M.set_win_local(win, 'wrap', false)
+    M.set_win_local(win, 'cursorline', false)
+    M.set_win_local(win, 'winfixwidth', false)
 end
 
 ---@param win number
 function M.configure_split_diff_win(win)
-    set_win_local(win, 'number', true)
-    set_win_local(win, 'relativenumber', false)
-    set_win_local(win, 'signcolumn', 'yes:1')
-    set_win_local(win, 'foldcolumn', '0')
-    set_win_local(win, 'statuscolumn', '%l %s ')
-    set_win_local(win, 'wrap', false)
-    set_win_local(win, 'cursorline', false)
-    set_win_local(win, 'winfixwidth', false)
+    M.set_win_local(win, 'number', true)
+    M.set_win_local(win, 'relativenumber', false)
+    M.set_win_local(win, 'signcolumn', 'yes:1')
+    M.set_win_local(win, 'foldcolumn', '0')
+    M.set_win_local(win, 'statuscolumn', '%l %s ')
+    M.set_win_local(win, 'wrap', false)
+    M.set_win_local(win, 'cursorline', false)
+    M.set_win_local(win, 'winfixwidth', false)
 end
 
 ---@param win number
@@ -421,20 +421,20 @@ function M.restore_winopts(win, opts)
         return
     end
 
-    set_win_local(win, 'number', opts.number)
-    set_win_local(win, 'relativenumber', opts.relativenumber)
-    set_win_local(win, 'signcolumn', opts.signcolumn)
-    set_win_local(win, 'foldcolumn', opts.foldcolumn)
-    set_win_local(win, 'wrap', opts.wrap)
-    set_win_local(win, 'cursorline', opts.cursorline)
-    set_win_local(win, 'winfixwidth', opts.winfixwidth)
-    set_win_local(win, 'winfixheight', opts.winfixheight)
-    set_win_local(win, 'winbar', opts.winbar)
-    set_win_local(win, 'diff', opts.diff)
-    set_win_local(win, 'fillchars', opts.fillchars)
-    set_win_local(win, 'statuscolumn', opts.statuscolumn)
-    set_win_local(win, 'scrollbind', opts.scrollbind)
-    set_win_local(win, 'cursorbind', opts.cursorbind)
+    M.set_win_local(win, 'number', opts.number)
+    M.set_win_local(win, 'relativenumber', opts.relativenumber)
+    M.set_win_local(win, 'signcolumn', opts.signcolumn)
+    M.set_win_local(win, 'foldcolumn', opts.foldcolumn)
+    M.set_win_local(win, 'wrap', opts.wrap)
+    M.set_win_local(win, 'cursorline', opts.cursorline)
+    M.set_win_local(win, 'winfixwidth', opts.winfixwidth)
+    M.set_win_local(win, 'winfixheight', opts.winfixheight)
+    M.set_win_local(win, 'winbar', opts.winbar)
+    M.set_win_local(win, 'diff', opts.diff)
+    M.set_win_local(win, 'fillchars', opts.fillchars)
+    M.set_win_local(win, 'statuscolumn', opts.statuscolumn)
+    M.set_win_local(win, 'scrollbind', opts.scrollbind)
+    M.set_win_local(win, 'cursorbind', opts.cursorbind)
 end
 
 return M

@@ -46,19 +46,6 @@ function DiffWindow:clear()
     self.created = false
 end
 
----The preview releases the width fix on the window it borrows. Write it with
----local scope: the `vim.wo[win]` form also sets the global default when `win`
----is the current window, and the plugin does not own that default.
----@param win number
----@param value boolean
-local function set_winfixwidth(win, value)
-    vim.api.nvim_set_option_value(
-        'winfixwidth',
-        value,
-        { scope = 'local', win = win }
-    )
-end
-
 ---@param win number
 ---@param buf integer
 ---@param opts? { created: boolean?, inherit_from: DiffWindow? }
@@ -89,13 +76,13 @@ function DiffWindow:open(win, buf, opts)
 
     local prev_winfixwidth =
         vim.api.nvim_get_option_value('winfixwidth', { win = win })
-    set_winfixwidth(win, false)
+    window.set_win_local(win, 'winfixwidth', false)
 
     local ok, err = pcall(vim.api.nvim_win_set_buf, win, buf)
 
     if not ok then
         if common.is_valid_win(win) then
-            pcall(set_winfixwidth, win, prev_winfixwidth)
+            pcall(window.set_win_local, win, 'winfixwidth', prev_winfixwidth)
         end
 
         if self.created and #vim.api.nvim_tabpage_list_wins(0) > 1 then
