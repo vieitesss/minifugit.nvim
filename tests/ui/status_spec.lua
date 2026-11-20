@@ -1327,7 +1327,8 @@ describe('minifugit status UI', function()
 
     for _, open_in_tab in ipairs({ false, true }) do
         it(
-            'keeps an unrelated status window exposed by re-pinning an owned tab with open_in_tab='
+            'keeps an unrelated status window exposed by re-pinning an '
+                .. 'owned tab with open_in_tab='
                 .. tostring(open_in_tab),
             function()
                 other_repo = helpers.clone_repo_with_changed_file(
@@ -2458,7 +2459,8 @@ describe('minifugit status UI', function()
     end)
 
     it(
-        'moves the tracked cursor to the first entry when the current status view rests on a header',
+        'moves the tracked cursor to the first entry '
+            .. 'when the current status view rests on a header',
         function()
             helpers.write_file(vim.fs.joinpath(repo, 'a.txt'), { 'a' })
             helpers.write_file(vim.fs.joinpath(repo, 'b.txt'), { 'b' })
@@ -2675,7 +2677,8 @@ describe('minifugit status UI', function()
     end
 
     it(
-        'keeps a visible status session pinned when status is called from another cwd',
+        'keeps a visible status session pinned '
+            .. 'when status is called from another cwd',
         function()
             helpers.write_file(vim.fs.joinpath(repo, 'only-a.txt'), { 'A' })
             minifugit.status()
@@ -2995,7 +2998,8 @@ describe('minifugit status UI', function()
                 0,
                 { helpers.row_containing(buf, 'empty^@file^I^M^A^?%.txt'), 0 }
             )
-            -- The file can change after status collection but before previewing.
+            -- The file can change after status collection but before
+            -- previewing.
             helpers.write_file(path, { 'original' })
 
             assert.is_true(status_window():diff_entry())
@@ -3149,7 +3153,8 @@ describe('minifugit status UI', function()
                 assert.are.equal(buf, vim.api.nvim_get_current_buf())
                 assert.are.equal(win, vim.api.nvim_get_current_win())
                 assert.are.equal(
-                    '[minifugit] Cannot open a file name that contains a newline: '
+                    '[minifugit] Cannot open a file name that '
+                        .. 'contains a newline: '
                         .. vim.fn.resolve(repo)
                         .. '/line^@break.txt',
                     warning
@@ -3512,7 +3517,8 @@ describe('minifugit status UI', function()
     end)
 
     it(
-        'replaces the status buffer instead of closing Neovim when it is the last window',
+        'replaces the status buffer instead of '
+            .. 'closing Neovim when it is the last window',
         function()
             minifugit.status()
 
@@ -3966,7 +3972,8 @@ describe('minifugit status UI', function()
         assert(notify_call_ok, notify_err)
         assert.are.same({
             {
-                message = '[minifugit] No write since last change (add ! to override)',
+                message = '[minifugit] No write since last change '
+                    .. '(add ! to override)',
                 level = vim.log.levels.WARN,
             },
         }, notifications)

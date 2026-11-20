@@ -68,7 +68,8 @@ describe('minifugit preview window options', function()
     end
 
     it(
-        'keeps the winfixwidth default when the preview borrows a focused edit window',
+        'keeps the winfixwidth default when the '
+            .. 'preview borrows a focused edit window',
         function()
             local gsw = assert(status_window())
             local status_win = assert(gsw.win)
@@ -77,8 +78,8 @@ describe('minifugit preview window options', function()
                 0,
             })
 
-            -- The borrowed window keeps its own value, so the preview reuses it and
-            -- releases the width fix there.
+            -- The borrowed window keeps its own value, so the preview reuses
+            -- it and releases the width fix there.
             local target = edit_win(status_win)
             vim.api.nvim_set_current_win(target)
             local edit_buf = vim.api.nvim_win_get_buf(target)
@@ -91,10 +92,11 @@ describe('minifugit preview window options', function()
             assert.is_true(vim.go.winfixwidth)
             assert.are_not.equal(edit_buf, vim.api.nvim_win_get_buf(target))
 
-            -- Closing gives the borrowed window its options back. Neovim syncs the
-            -- global default from the window the focus lands on, so the global is
-            -- read from the one-shot WinLeave the borrowed window leaves behind:
-            -- that runs after the restore and before the resync.
+            -- Closing gives the borrowed window its options back. Neovim
+            -- syncs the global default from the window the focus lands on,
+            -- so the global is read from the one-shot WinLeave the borrowed
+            -- window leaves behind: that runs after the restore and before
+            -- the resync.
             local aug = vim.api.nvim_create_augroup(
                 'MinifugitPreviewOptionScopeSpec',
                 { clear = true }

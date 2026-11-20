@@ -50,8 +50,9 @@ describe('minifugit.ui.diff.position', function()
                 function()
                     local hunks = parser.parse_hunks(combined_diff)
 
-                    -- Removed parents hold no worktree line; the cursor goes to the
-                    -- nearest surviving row instead of the start of the file.
+                    -- Removed parents hold no worktree line; the cursor goes
+                    -- to the nearest surviving row instead of the start of
+                    -- the file.
                     assert.are.equal(
                         4,
                         position.source_line_for_stacked_row(

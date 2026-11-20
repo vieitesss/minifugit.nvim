@@ -127,7 +127,8 @@ describe('DiffPreview', function()
         it('sets layout_override without opening a diff', function()
             local dp = DiffPreview.new(make_host())
             dp:toggle_layout()
-            -- default layout is stacked, so toggling with no open diff sets split
+            -- default layout is stacked, so toggling with no open diff sets
+            -- split
             assert.are.equal('split', dp.layout_override)
         end)
 

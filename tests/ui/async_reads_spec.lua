@@ -157,7 +157,8 @@ describe('minifugit async reads', function()
     end)
 
     it(
-        'shows a loading placeholder and then the entries for an in-flight snapshot read',
+        'shows a loading placeholder and then the '
+            .. 'entries for an in-flight snapshot read',
         function()
             helpers.write_file(
                 vim.fs.joinpath(repo, 'tracked.txt'),
@@ -283,7 +284,8 @@ describe('minifugit async reads', function()
     end)
 
     it(
-        'drops a read for another entry when the cursor returns to the painted one',
+        'drops a read for another entry when '
+            .. 'the cursor returns to the painted one',
         function()
             local git = require('minifugit.git')
             helpers.write_file(vim.fs.joinpath(repo, 'a.txt'), { 'a-unique' })
@@ -342,7 +344,8 @@ describe('minifugit async reads', function()
     )
 
     it(
-        'applies wrap and layout toggles pressed while a preview read is pending',
+        'applies wrap and layout toggles '
+            .. 'pressed while a preview read is pending',
         function()
             local git = require('minifugit.git')
             helpers.write_file(
@@ -368,7 +371,8 @@ describe('minifugit async reads', function()
                 assert.is_true(win:diff_entry())
                 assert.are.equal(1, #captured)
 
-                ---Press a status keymap, letting each multi-key sequence resolve.
+                ---Press a status keymap, letting each multi-key sequence
+                ---resolves.
                 ---@param keys string
                 local function press(keys)
                     vim.api.nvim_feedkeys(

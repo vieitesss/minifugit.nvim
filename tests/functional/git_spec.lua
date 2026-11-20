@@ -184,7 +184,8 @@ describe('minifugit.git', function()
     end
 
     it(
-        'previews a submodule split from the index commit id to its checked-out HEAD',
+        'previews a submodule split from the '
+            .. 'index commit id to its checked-out HEAD',
         function()
             local first, second = create_sub_repo()
             helpers.record_submodule(repo, 'sub', sub_repo, first)

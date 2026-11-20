@@ -35,7 +35,8 @@ describe('base revision git API', function()
     end
 
     it(
-        'collects tracked changes and non-ignored untracked files without duplicating staged additions',
+        'collects tracked changes and non-ignored untracked '
+            .. 'files without duplicating staged additions',
         function()
             helpers.write_file(repo .. '/tracked.txt', { 'committed text' })
             helpers.write_file(repo .. '/added.txt', { 'added' })
@@ -111,7 +112,8 @@ describe('base revision git API', function()
     )
 
     it(
-        'builds one patch containing committed and uncommitted changes from the base',
+        'builds one patch containing committed '
+            .. 'and uncommitted changes from the base',
         function()
             helpers.write_file(repo .. '/tracked.txt', { 'committed text' })
             helpers.run({ 'git', 'add', '.' }, repo)
@@ -152,7 +154,10 @@ describe('base revision git API', function()
                     repo .. '/' .. paths.path,
                     { 'selected base' }
                 )
-                for _, path in ipairs({ paths.unrelated, paths.other_renamed }) do
+                for _, path in ipairs({
+                    paths.unrelated,
+                    paths.other_renamed,
+                }) do
                     helpers.write_file(
                         repo .. '/' .. path,
                         { 'unrelated base' }
@@ -194,7 +199,10 @@ describe('base revision git API', function()
                     { 'git', 'mv', '--', paths.path, paths.renamed },
                     repo
                 )
-                for _, path in ipairs({ paths.unrelated, paths.other_renamed }) do
+                for _, path in ipairs({
+                    paths.unrelated,
+                    paths.other_renamed,
+                }) do
                     helpers.write_file(
                         repo .. '/' .. path,
                         { 'unrelated change' }
@@ -221,7 +229,8 @@ describe('base revision git API', function()
     end
 
     it(
-        'builds split sides from the base blob and working tree, not HEAD or index',
+        'builds split sides from the base blob '
+            .. 'and working tree, not HEAD or index',
         function()
             helpers.write_file(repo .. '/tracked.txt', { 'committed text' })
             helpers.run({ 'git', 'add', '.' }, repo)
@@ -303,7 +312,8 @@ describe('base revision git API', function()
     )
 
     it(
-        'keeps rename origins and unusual filenames in the existing entry shape',
+        'keeps rename origins and unusual '
+            .. 'filenames in the existing entry shape',
         function()
             helpers.run(
                 { 'git', 'mv', 'tracked.txt', 'renamed name.txt' },
@@ -335,7 +345,8 @@ describe('base revision git API', function()
     )
 
     it(
-        'builds added, deleted and untracked preview sides without missing-blob errors',
+        'builds added, deleted and untracked '
+            .. 'preview sides without missing-blob errors',
         function()
             helpers.write_file(repo .. '/added.txt', { 'added content' })
             helpers.run({ 'git', 'rm', 'tracked.txt' }, repo)
@@ -375,7 +386,8 @@ describe('base revision git API', function()
     )
 
     it(
-        'merges a cached deletion and its untracked file into one modified entry',
+        'merges a cached deletion and its '
+            .. 'untracked file into one modified entry',
         function()
             helpers.run({ 'git', 'rm', '--cached', 'tracked.txt' }, repo)
             helpers.write_file(repo .. '/tracked.txt', { 'worktree text' })
@@ -390,7 +402,8 @@ describe('base revision git API', function()
     )
 
     it(
-        'previews a merged cached deletion from the base blob to the worktree file',
+        'previews a merged cached deletion from '
+            .. 'the base blob to the worktree file',
         function()
             helpers.run({ 'git', 'rm', '--cached', 'tracked.txt' }, repo)
             helpers.write_file(repo .. '/tracked.txt', { 'worktree text' })
@@ -451,7 +464,8 @@ describe('base revision git API', function()
     )
 
     it(
-        'keeps a cached deletion of a CRLF file unchanged and still diffs an edit',
+        'keeps a cached deletion of a CRLF '
+            .. 'file unchanged and still diffs an edit',
         function()
             local path = repo .. '/crlf.txt'
             helpers.write_raw(path, 'first line\r\nsecond line\r\n')

@@ -230,7 +230,8 @@ describe('minifugit conflict preview', function()
                 error('Expected row containing not found: ' .. text)
             end
 
-            ---Worktree line of `text`, the source of truth for new-side numbers.
+            ---Worktree line of `text`, the source of truth for new-side
+            ---numbers.
             ---@param text string
             ---@return integer
             local function worktree_line(text)

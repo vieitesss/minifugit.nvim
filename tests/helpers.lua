@@ -3,11 +3,14 @@
 ---@field run fun(args: string[], cwd: string): string
 ---@field write_file fun(path: string, lines: string[])
 ---@field write_raw fun(path: string, contents: string)
----@field entry_by_path fun(entries: GitStatusEntry[], path: string): GitStatusEntry?
+---@field entry_by_path function
+---  fun(entries: GitStatusEntry[], path: string): GitStatusEntry?
 ---@field create_repo fun(files: table<string, string[]>): string, string
 ---@field create_sub_repo fun(): string, string, string
----@field record_submodule fun(repo: string, path: string, source: string, commit: string)
----@field clone_repo_with_changed_file fun(repo: string, path: string, lines: string[]): string
+---@field record_submodule function
+---  fun(repo: string, path: string, source: string, commit: string)
+---@field clone_repo_with_changed_file function
+---  fun(repo: string, path: string, lines: string[]): string
 ---@field change_to_other_repo fun(repo: string): string
 ---@field capture_status_windows fun(): fun(): GitStatusWindow?, fun()
 ---@field snapshot_editor_state fun(): fun()
@@ -15,11 +18,14 @@
 ---@field await_async fun(start: fun(callback: fun(...))): any, any
 ---@field snapshot fun(root: string?): GitStatusSnapshot
 ---@field entries fun(root: string?): GitStatusEntry[]
----@field base_entries fun(base: string, root: string?): GitStatusEntry[], string?
----@field base_diff fun(entry: GitStatusEntry, base: string, root: string?): string[], string?
+---@field base_entries function
+---  fun(base: string, root: string?): GitStatusEntry[], string?
+---@field base_diff function
+---  fun(entry: GitStatusEntry, base: string, root: string?): string[], string?
 ---@field show_commit fun(commit: GitCommit, root: string?): string[], string?
 ---@field wait_idle fun(find: fun(): GitStatusWindow?)
----@field awaiting_reads fun(minifugit: Minifugit, find: fun(): GitStatusWindow?): Minifugit
+---@field awaiting_reads function
+---  fun(minifugit: Minifugit, find: fun(): GitStatusWindow?): Minifugit
 ---@field row_containing fun(buf: integer, text: string): integer
 ---@field diff_win_named fun(name: string): integer, integer
 ---@field reload_minifugit fun()

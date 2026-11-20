@@ -116,7 +116,8 @@ describe('read-only base mode UI', function()
     end
 
     it(
-        'lists the whole branch and worktree with markers and a read-only pinned header',
+        'lists the whole branch and worktree with '
+            .. 'markers and a read-only pinned header',
         function()
             changes_since_base()
             assert.is_true(minifugit.open({ cwd = repo, base = base }))
@@ -147,7 +148,8 @@ describe('read-only base mode UI', function()
     )
 
     it(
-        'lists one modified row and previews it from the base after a cached deletion',
+        'lists one modified row and previews it '
+            .. 'from the base after a cached deletion',
         function()
             run({ 'rm', '--cached', 'modified.txt' })
             write(
@@ -256,7 +258,8 @@ describe('read-only base mode UI', function()
     end)
 
     it(
-        'previews committed and uncommitted edits together in the stacked layout',
+        'previews committed and uncommitted '
+            .. 'edits together in the stacked layout',
         function()
             changes_since_base()
             minifugit.open({ base = base })
@@ -275,7 +278,8 @@ describe('read-only base mode UI', function()
     )
 
     it(
-        'previews committed and uncommitted edits together in split and restores the target after layout toggles',
+        'previews committed and uncommitted edits together in '
+            .. 'split and restores the target after layout toggles',
         function()
             changes_since_base()
             local target = vim.api.nvim_get_current_win()
@@ -302,7 +306,8 @@ describe('read-only base mode UI', function()
     )
 
     it(
-        'blocks all repository-changing status keymaps and preserves status, index and worktree',
+        'blocks all repository-changing status keymaps '
+            .. 'and preserves status, index and worktree',
         function()
             changes_since_base()
             write('staged.txt', { 'keep staged' })
@@ -351,7 +356,8 @@ describe('read-only base mode UI', function()
     )
 
     it(
-        'blocks hunk actions in stacked and both split buffers without changing the repository',
+        'blocks hunk actions in stacked and both '
+            .. 'split buffers without changing the repository',
         function()
             changes_since_base()
             minifugit.open({ base = base })
@@ -403,7 +409,8 @@ describe('read-only base mode UI', function()
     )
 
     it(
-        'replaces visible normal status with an explicit base and runs its close callback',
+        'replaces visible normal status with an '
+            .. 'explicit base and runs its close callback',
         function()
             changes_since_base()
             local closed = 0
@@ -427,7 +434,8 @@ describe('read-only base mode UI', function()
     )
 
     it(
-        'replaces a visible same-root owned-tab candidate with an explicit different base',
+        'replaces a visible same-root owned-tab '
+            .. 'candidate with an explicit different base',
         function()
             changes_since_base()
             local origin = vim.api.nvim_get_current_tabpage()
@@ -457,7 +465,8 @@ describe('read-only base mode UI', function()
     )
 
     it(
-        'shows a binary placeholder in either requested layout even with metadata hidden',
+        'shows a binary placeholder in either '
+            .. 'requested layout even with metadata hidden',
         function()
             changes_since_base()
             minifugit.open({ base = base })
@@ -476,7 +485,8 @@ describe('read-only base mode UI', function()
     )
 
     it(
-        'rejects empty and option-like base revisions without editor side effects',
+        'rejects empty and option-like base '
+            .. 'revisions without editor side effects',
         function()
             for _, revision in ipairs({ '', '-h', '--all' }) do
                 local unchanged = helpers.snapshot_editor_state()
@@ -493,7 +503,8 @@ describe('read-only base mode UI', function()
     )
 
     it(
-        'rejects base mode outside Git with explicit or omitted cwd without editor side effects',
+        'rejects base mode outside Git with explicit '
+            .. 'or omitted cwd without editor side effects',
         function()
             local outside = vim.fn.tempname()
             vim.fn.mkdir(outside, 'p')
@@ -521,7 +532,8 @@ describe('read-only base mode UI', function()
     )
 
     it(
-        'validates the base option and constructor types before creating editor resources',
+        'validates the base option and constructor '
+            .. 'types before creating editor resources',
         function()
             local unchanged = helpers.snapshot_editor_state()
             assert.has_error(function()
@@ -556,7 +568,8 @@ describe('read-only base mode UI', function()
     end)
 
     it(
-        'shows the empty state for a clean base comparison without unpushed commits',
+        'shows the empty state for a clean base '
+            .. 'comparison without unpushed commits',
         function()
             minifugit.open({ base = 'HEAD' })
             local text = lines(vim.api.nvim_get_current_buf())
@@ -571,7 +584,8 @@ describe('read-only base mode UI', function()
     )
 
     it(
-        'keeps visible base status when base is omitted and refreshes equivalent revisions in place',
+        'keeps visible base status when base is omitted '
+            .. 'and refreshes equivalent revisions in place',
         function()
             changes_since_base()
             run({ 'tag', 'review-base', base })
@@ -619,7 +633,8 @@ describe('read-only base mode UI', function()
     )
 
     it(
-        'replaces hidden base status for a different hash but reuses an equivalent hidden pin',
+        'replaces hidden base status for a different '
+            .. 'hash but reuses an equivalent hidden pin',
         function()
             changes_since_base()
             minifugit.open({ base = base })
@@ -700,7 +715,8 @@ describe('read-only base mode UI', function()
     end)
 
     it(
-        'replaces a hidden same-root owned-tab candidate for an explicit different base',
+        'replaces a hidden same-root owned-tab '
+            .. 'candidate for an explicit different base',
         function()
             changes_since_base()
             local origin = vim.api.nvim_get_current_tabpage()
@@ -722,7 +738,8 @@ describe('read-only base mode UI', function()
     )
 
     it(
-        'recreates a hidden owned-tab base candidate in normal mode when base is omitted',
+        'recreates a hidden owned-tab base candidate '
+            .. 'in normal mode when base is omitted',
         function()
             local origin = vim.api.nvim_get_current_tabpage()
             minifugit.open({ base = base, open_in_tab = true })
@@ -742,7 +759,8 @@ describe('read-only base mode UI', function()
     )
 
     it(
-        'keeps a visible owned-tab base candidate when omitted or equivalent and refreshes it',
+        'keeps a visible owned-tab base candidate '
+            .. 'when omitted or equivalent and refreshes it',
         function()
             local origin = vim.api.nvim_get_current_tabpage()
             minifugit.open({ base = base, open_in_tab = true })
@@ -832,7 +850,8 @@ describe('read-only base mode UI', function()
     )
 
     it(
-        'shows pure-rename metadata in split mode without changing the chosen layout or leaving empty windows',
+        'shows pure-rename metadata in split mode without '
+            .. 'changing the chosen layout or leaving empty windows',
         function()
             changes_since_base()
             local target = vim.api.nvim_get_current_win()
@@ -903,7 +922,8 @@ describe('read-only base mode UI', function()
     end)
 
     it(
-        'previews untracked files in both layouts and untracked binary files safely',
+        'previews untracked files in both layouts '
+            .. 'and untracked binary files safely',
         function()
             changes_since_base()
             minifugit.open({ base = base })
@@ -941,7 +961,8 @@ describe('read-only base mode UI', function()
     )
 
     it(
-        'resolves and previews against explicit cwd without changing or following the editor cwd',
+        'resolves and previews against explicit cwd '
+            .. 'without changing or following the editor cwd',
         function()
             changes_since_base()
             local other = vim.fn.tempname()
@@ -971,7 +992,8 @@ describe('read-only base mode UI', function()
     )
 
     it(
-        'returns invalid revision errors without creating windows, buffers or tabs',
+        'returns invalid revision errors without '
+            .. 'creating windows, buffers or tabs',
         function()
             local unchanged = helpers.snapshot_editor_state()
             local ok, err = minifugit.open({
