@@ -17,7 +17,8 @@
 - **Conflict**: A status entry whose index still holds merge stages instead of one staged version; it stays a conflict until the user stages a resolution. Git calls these paths "unmerged".
 
 ## Commands
-- Test: `nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedDirectory tests { minimal_init = 'tests/minimal_init.lua' }"`
+- Test: `just test`
+- Check: `just check` (stylua `--check` and luacheck; install luacheck with `brew install luacheck`)
 - Format: `stylua lua tests plugin`
 - Health: `:checkhealth minifugit`
 

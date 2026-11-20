@@ -2,6 +2,8 @@
 
 These conventions apply to all project changes.
 
+Mechanical rules are enforced by `just check`: Stylua formatting (4 spaces, Unix line endings, always-parenthesized calls, single quotes) and the 80-column limit (luacheck). Reviewers skip what `just check` catches. Every other rule is a judgement rule that reviewers check.
+
 ## Project shape
 
 - Keep the public `minifugit` entrypoints thin and move behavior into focused modules.
@@ -11,7 +13,6 @@ These conventions apply to all project changes.
 
 ## Lua style
 
-- Follow the repo's Stylua rules: 4 spaces, 80-column width, Unix line endings, always-parenthesized calls, and a preference for single quotes.
 - Use LuaLS annotations for non-trivial modules and APIs: `---@class`, `---@field`, `---@alias`, `---@param`, and `---@return`.
 - Default to `local` functions and locals; only export what is part of a module API.
 - Prefer early returns and explicit `nil` handling over deeply nested conditionals.

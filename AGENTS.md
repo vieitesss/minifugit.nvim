@@ -2,6 +2,10 @@
 
 This is a Neovim plugin, written in Lua, that provides a lightweight Git status UI inspired by fugitive.nvim.
 
+## Before finishing a change
+
+Run `just check` and `just test`. Both must pass. Commands are listed in `CONTEXT.md`.
+
 ## Tests
 
 - Use `plenary.nvim` for creating/managing tests.
@@ -18,7 +22,7 @@ This is a Neovim plugin, written in Lua, that provides a lightweight Git status 
 
 ## Formatting
 
-Use `stylua` for formatting.
+Use `stylua` for formatting. `just check` verifies it.
 
 ---
 
