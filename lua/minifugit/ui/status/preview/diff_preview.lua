@@ -25,7 +25,8 @@ local DiffWindow = require('minifugit.ui.status.preview.diff_window')
 ---@field right_rows MiniFugitSplitRow[]?
 ---@field anchors table<integer, integer>?
 ---@field preview_key string?
----@field views table<string, table> View of each file shown while the preview is open, by layout and preview key.
+---@field views table<string, table> View of each file shown while the
+---  preview is open, by layout and preview key.
 ---@field raw_lines string[]?
 ---@field raw_rows integer[]?
 ---@field hunks MiniFugitDiffHunk[]?
@@ -171,7 +172,7 @@ function DiffPreview.new(host)
     return obj
 end
 
--- ── Internal helpers ─────────────────────────────────────────────────────────
+-- Internal helpers ------------------------------------------------------------
 
 ---@param self DiffPreview
 ---@return 'stacked'|'split'
@@ -340,7 +341,7 @@ local function schedule_stacked_syntax(self, lines, entry, section, preview_key)
     end)
 end
 
--- ── Public interface ──────────────────────────────────────────────────────────
+-- Public interface ------------------------------------------------------------
 
 ---@return boolean
 function DiffPreview:has_open()

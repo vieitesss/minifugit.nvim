@@ -1,6 +1,12 @@
 local render = require('minifugit.ui.render')
 
----@alias GitStatusSectionName 'conflicts'|'staged'|'unstaged'|'untracked'|'unpushed'|'base'
+---@alias GitStatusSectionName
+---| 'conflicts'
+---| 'staged'
+---| 'unstaged'
+---| 'untracked'
+---| 'unpushed'
+---| 'base'
 
 ---@class GitStatusSection
 ---@field name GitStatusSectionName
@@ -415,7 +421,7 @@ local function render_lines(snapshot, groups, opts)
     return lines
 end
 
--- ── Status items ─────────────────────────────────────────────────────────────
+-- Status items ----------------------------------------------------------------
 
 ---@param entry GitStatusEntry
 ---@return string
@@ -602,7 +608,7 @@ local function state_item_row(lines, state, kind, entry_fallback)
     return nil
 end
 
--- ── Public interface ─────────────────────────────────────────────────────────
+-- Public interface ------------------------------------------------------------
 
 ---@class StatusDocument
 ---@field lines MiniFugitRenderLine[] Read-only rendered status lines.

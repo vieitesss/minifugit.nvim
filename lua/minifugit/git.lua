@@ -134,6 +134,13 @@ end
 ---stderr: string,
 ---}
 
+---@alias GitRunOptions {
+---cwd?: string,
+---ignore_error?: boolean,
+---text?: boolean,
+---git_env?: string,
+---}
+
 ---@alias GitAsyncCallback fun(ok: boolean, output: string)
 
 local return_result
@@ -231,7 +238,7 @@ end
 ---`'ignored'` hides the editor's `GIT_DIR` and `GIT_WORK_TREE`, `'inherited'`
 ---keeps them and skips the pinned environment of `cwd`.
 ---@param args string[] List of git arguments (e.g., {"status", "--porcelain"})
----@param opts? {cwd: string?, ignore_error: boolean?, text: boolean?, git_env: string?}
+---@param opts? GitRunOptions
 ---@return GitResult
 function git.run(args, opts)
     opts = opts or {}
@@ -260,7 +267,7 @@ end
 ---The callback runs on the main loop; `text` selects text mode exactly like
 ---`git.run`, so NUL-separated output keeps its bytes.
 ---@param args string[]
----@param opts? { cwd: string?, ignore_error: boolean?, text: boolean?, git_env: string? }
+---@param opts? GitRunOptions
 ---@param callback fun(res: GitResult)
 local function run_async_result(args, opts, callback)
     opts = opts or {}
@@ -304,7 +311,7 @@ end
 
 ---Executes a git command asynchronously.
 ---@param args string[] List of git arguments (e.g., {"push"})
----@param opts? { cwd: string?, ignore_error: boolean?, text: boolean?, git_env: string? }
+---@param opts? GitRunOptions
 ---@param callback GitAsyncCallback
 function git.run_async(args, opts, callback)
     run_async_result(args, opts, function(res)
@@ -724,7 +731,8 @@ end
 
 ---`git rm --cached` reports the path as deleted from the pinned commit while
 ---the still-present worktree file is untracked. One modified entry describes
----that single change: the base blob on the left, the worktree file on the right.
+---that single change: the base blob on the left, the worktree file on the
+---right.
 ---@param entries GitStatusEntry[]
 ---@return GitStatusEntry[]
 local function merge_cached_deletions(entries)
@@ -780,7 +788,9 @@ local function parse_base_entries(diff_output, untracked_output)
         end
     end
 
-    for _, path in ipairs(vim.split(untracked_output, '\0', { plain = true })) do
+    local untracked_paths = vim.split(untracked_output, '\0', { plain = true })
+
+    for _, path in ipairs(untracked_paths) do
         if path ~= '' then
             table.insert(records, '?? ' .. path .. '\0')
         end

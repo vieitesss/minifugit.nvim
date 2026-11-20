@@ -171,7 +171,10 @@ local function treesitter_spans(filetype, lines, rows)
                 local node_start_row, start_col, node_end_row, end_col =
                     node:range()
 
-                for row = math.max(node_start_row + 1, first), math.min(node_end_row + 1, last) do
+                local row_start = math.max(node_start_row + 1, first)
+                local row_end = math.min(node_end_row + 1, last)
+
+                for row = row_start, row_end do
                     add_span(
                         spans,
                         lines,

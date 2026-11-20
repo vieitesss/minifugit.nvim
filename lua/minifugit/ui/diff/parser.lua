@@ -12,7 +12,17 @@
 ---A `-` column marks a line that parent still holds but the worktree dropped,
 ---so those rows are removed lines: `conflict_head_removed` (first parent) or
 ---`conflict_incoming_removed` (second parent), never context or additions.
----@alias MiniFugitDiffLineKind 'header'|'hunk'|'context'|'added'|'removed'|'conflict_head'|'conflict_head_removed'|'conflict_incoming'|'conflict_incoming_removed'|'conflict_marker'
+---@alias MiniFugitDiffLineKind
+---| 'header'
+---| 'hunk'
+---| 'context'
+---| 'added'
+---| 'removed'
+---| 'conflict_head'
+---| 'conflict_head_removed'
+---| 'conflict_incoming'
+---| 'conflict_incoming_removed'
+---| 'conflict_marker'
 
 ---@class MiniFugitDiffHunk
 ---@field index integer
